@@ -20,9 +20,28 @@ class DrawingSurfaceView extends View {
     }
 
     drawSelf(port, frameNum) {
-        const area = port.getDrawingArea();
+        const area = this.getViewArea();
+
         // fill the area with white
         port.fillRect(area, 'white');
+        
+        // Draw all shapes from the drawing
+        const drawing = this.controller.getDrawing();
+        if (drawing) {
+            const shapes = drawing.getShapes();
+            shapes.forEach(shape => {
+                shape.draw(port);
+            });
+            
+            // Draw current shape being drawn
+            const toolManager = this.controller.getToolManager();
+            if (toolManager.isCurrentlyDrawing()) {
+                const currentShape = toolManager.getCurrentShape();
+                if (currentShape) {
+                    currentShape.draw(port);
+                }
+            }
+        }
     }
 }
 

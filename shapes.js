@@ -1,9 +1,7 @@
 // Base Shape class and all shape implementations
 
-const pdg = require('pdg');
-
 // Base Shape class
-export class Shape {
+class Shape {
     constructor(x, y, fillColor = 'white', strokeColor = 'black', strokeWidth = 1) {
         this.x = x;
         this.y = y;
@@ -34,7 +32,7 @@ export class Shape {
 }
 
 // Line Shape
-export class Line extends Shape {
+class Line extends Shape {
     constructor(x1, y1, x2, y2, strokeColor = 'black', strokeWidth = 1) {
         super(x1, y1, null, strokeColor, strokeWidth);
         this.x2 = x2;
@@ -97,7 +95,7 @@ export class Line extends Shape {
 }
 
 // Circle Shape
-export class Circle extends Shape {
+class Circle extends Shape {
     constructor(x, y, radius, fillColor = 'white', strokeColor = 'black', strokeWidth = 1) {
         super(x, y, fillColor, strokeColor, strokeWidth);
         this.radius = radius;
@@ -138,7 +136,7 @@ export class Circle extends Shape {
 }
 
 // Rectangle Shape
-export class Rectangle extends Shape {
+class Rectangle extends Shape {
     constructor(x, y, width, height, fillColor = 'white', strokeColor = 'black', strokeWidth = 1) {
         super(x, y, fillColor, strokeColor, strokeWidth);
         this.width = width;
@@ -181,7 +179,7 @@ export class Rectangle extends Shape {
 }
 
 // Spline Shape
-export class Spline extends Shape {
+class Spline extends Shape {
     constructor(points, fillColor = '#ffffff', strokeColor = '#000000', strokeWidth = 1) {
         super(points[0].x, points[0].y, fillColor, strokeColor, strokeWidth);
         this.points = points;
@@ -254,7 +252,7 @@ export class Spline extends Shape {
 }
 
 // Oval Shape (ellipse)
-export class Oval extends Shape {
+class Oval extends Shape {
     constructor(x, y, radiusX, radiusY, fillColor = 'white', strokeColor = 'black', strokeWidth = 1) {
         super(x, y, fillColor, strokeColor, strokeWidth);
         this.radiusX = radiusX;
@@ -296,7 +294,7 @@ export class Oval extends Shape {
 }
 
 // Polygon Shape
-export class Polygon extends Shape {
+class Polygon extends Shape {
     constructor(points, fillColor = '#ffffff', strokeColor = '#000000', strokeWidth = 1) {
         super(points[0].x, points[0].y, fillColor, strokeColor, strokeWidth);
         this.points = points;
@@ -350,3 +348,13 @@ export class Polygon extends Shape {
         return [...this.points];
     }
 }
+
+module.exports = {
+    Shape,
+    Line,
+    Circle,
+    Rectangle,
+    Spline,
+    Oval,
+    Polygon
+};

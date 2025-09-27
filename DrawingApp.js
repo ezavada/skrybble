@@ -60,9 +60,9 @@ class DrawingApp extends Application {
         
         // Create a window port for the application, centered on the primary screen
         const screenRect = pdg.gfx.getScreenBounds();
-        const windowRect = new pdg.Rect(0, 0, 800, 600);
+        const windowRect = new pdg.Rect(0, 0, screenRect.width() - 100, screenRect.height() - 100);
         windowRect.center(screenRect);
-        this.mainPort = pdg.gfx.createWindowPort(windowRect, 'PDG Sample Application', 0);
+        this.mainPort = pdg.gfx.createWindowPort(windowRect, 'PDG Drawing', 0);
         
         if (this.mainPort) {
             console.log('Graphics port created successfully');

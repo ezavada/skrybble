@@ -3,25 +3,25 @@
 const TOOLS = {
     SELECT: 'select',
     LINE: 'line',
+    SPLINE: 'spline',
     CIRCLE: 'circle',
     OVAL: 'oval',
-    POLY: 'poly',
-    SPLINE: 'spline',
-    IMAGE: 'image',
     RECT: 'rect',
-    QUAD: 'quad'
+    QUAD: 'quad',
+    POLY: 'poly',
+    IMAGE: 'image'
 };
 
 const TOOL_SHORTCUTS = {
-    '1': TOOLS.LINE,
-    '2': TOOLS.CIRCLE,
-    '3': TOOLS.OVAL,
-    '4': TOOLS.POLY,
-    '5': TOOLS.SPLINE,
-    '6': TOOLS.IMAGE,
-    '7': TOOLS.RECT,
-    '8': TOOLS.QUAD,
-    's': TOOLS.SELECT
+    'esc': TOOLS.SELECT,
+    'L': TOOLS.LINE,
+    'S': TOOLS.SPLINE,
+    'C': TOOLS.CIRCLE,
+    'O': TOOLS.OVAL,
+    'R': TOOLS.RECT,
+    'Q': TOOLS.QUAD,
+    'P': TOOLS.POLY,
+    'I': TOOLS.IMAGE
 };
 
 class Tools {

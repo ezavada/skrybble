@@ -143,6 +143,36 @@ class Tools {
         return this.isDrawing;
     }
 
+    hasMinimumSize() {
+        // Minimum distance threshold in pixels
+        const MIN_SIZE = 3;
+        
+        if (!this.currentShape || !this.startPoint) {
+            return false;
+        }
+        
+        // Check based on tool type
+        switch (this.currentTool) {
+            case TOOLS.LINE:
+                const dx = this.currentShape.x2 - this.currentShape.x;
+                const dy = this.currentShape.y2 - this.currentShape.y;
+                return Math.sqrt(dx * dx + dy * dy) >= MIN_SIZE;
+            
+            case TOOLS.CIRCLE:
+                return this.currentShape.radius >= MIN_SIZE;
+            
+            case TOOLS.OVAL:
+                return this.currentShape.radiusX >= MIN_SIZE || this.currentShape.radiusY >= MIN_SIZE;
+            
+            case TOOLS.RECT:
+                return Math.abs(this.currentShape.width) >= MIN_SIZE || 
+                       Math.abs(this.currentShape.height) >= MIN_SIZE;
+            
+            default:
+                return true;
+        }
+    }
+
     getDrawingState() {
         return {
             isDrawing: this.isDrawing,

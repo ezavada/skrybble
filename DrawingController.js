@@ -99,7 +99,7 @@ class DrawingController extends Controller {
         const pos = this.getMousePosition(event);
         const currentTool = this.toolManager.getCurrentTool();
 
-        if (currentTool === 'select') {
+        if (currentTool === Tools.TOOLS.SELECT) {
             this.handleSelectMode(pos.x, pos.y);
         } else {
             this.toolManager.startDrawing(pos.x, pos.y, this.drawing.getShapeClasses());
@@ -122,10 +122,26 @@ class DrawingController extends Controller {
         const pos = this.getMousePosition(event);
 
         if (this.toolManager.isCurrentlyDrawing()) {
-            const finishedShape = this.toolManager.addPoint(pos.x, pos.y, this.drawing.getShapeClasses());
-            if (finishedShape) {
-                this.drawing.addShape(finishedShape);
-                this.selectShape(finishedShape);
+            const currentTool = this.toolManager.getCurrentTool();
+            
+            // For single-click tools (line, circle, oval, rect), finish on mouse up
+            if (currentTool === Tools.TOOLS.LINE || currentTool === Tools.TOOLS.CIRCLE || 
+                currentTool === Tools.TOOLS.OVAL || currentTool === Tools.TOOLS.RECT) {
+                const finishedShape = this.toolManager.getCurrentShape();
+                
+                // Check if the shape is valid (mouse moved more than minimum distance)
+                if (finishedShape && this.toolManager.hasMinimumSize()) {
+                    this.drawing.addShape(finishedShape);
+                    this.selectShape(finishedShape);
+                }
+                this.toolManager.finishCurrentDrawing();
+            } else {
+                // For multi-click tools (spline, poly), handle via addPoint
+                const finishedShape = this.toolManager.addPoint(pos.x, pos.y, this.drawing.getShapeClasses());
+                if (finishedShape) {
+                    this.drawing.addShape(finishedShape);
+                    this.selectShape(finishedShape);
+                }
             }
         }
         

@@ -108,11 +108,12 @@ class Circle extends Shape {
         const center = new pdg.Point(this.x, this.y);
         const attrs = new pdg.Attributes();
         
+        attrs.lineColor(new pdg.Color(this.strokeColor))
+             .lineThickness(this.strokeWidth)
+             .lineStyle(pdg.lineStyle_Solid);
         if (this.fillColor) {
             attrs.fillColor(new pdg.Color(this.fillColor));
         }
-        attrs.lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth);
-        
         port.drawCircle(center, this.radius, attrs);
 
         if (this.selected) {
@@ -156,11 +157,12 @@ class Rectangle extends Shape {
         const rect = new pdg.Rect(this.x, this.y, this.x + this.width, this.y + this.height);
         const attrs = new pdg.Attributes();
         
+        attrs.lineColor(new pdg.Color(this.strokeColor))
+             .lineThickness(this.strokeWidth)
+             .lineStyle(pdg.lineStyle_Solid);
         if (this.fillColor) {
             attrs.fillColor(new pdg.Color(this.fillColor));
         }
-        attrs.lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth);
-        
         port.drawRect(rect, attrs);
 
         if (this.selected) {
@@ -232,11 +234,12 @@ class Spline extends Shape {
         
         // Draw the spline
         const attrs = new pdg.Attributes();
+        attrs.lineColor(new pdg.Color(this.strokeColor))
+             .lineThickness(this.strokeWidth)
+             .lineStyle(pdg.lineStyle_Solid);
         if (this.fillColor) {
             attrs.fillColor(new pdg.Color(this.fillColor));
         }
-        attrs.lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth);
-        
         port.drawSpline(spline, attrs);
 
         if (this.selected) {
@@ -280,11 +283,12 @@ class Oval extends Shape {
         const center = new pdg.Point(this.x, this.y);
         const attrs = new pdg.Attributes();
         
+        attrs.lineColor(new pdg.Color(this.strokeColor))
+             .lineThickness(this.strokeWidth)
+             .lineStyle(pdg.lineStyle_Solid);
         if (this.fillColor) {
             attrs.fillColor(new pdg.Color(this.fillColor));
         }
-        attrs.lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth);
-        
         port.drawEllipse(center, this.radiusX, this.radiusY, attrs);
 
         if (this.selected) {
@@ -334,11 +338,12 @@ class Polygon extends Shape {
         
         // Draw the polygon
         const attrs = new pdg.Attributes();
+        attrs.lineColor(new pdg.Color(this.strokeColor))
+             .lineThickness(this.strokeWidth)
+             .lineStyle(pdg.lineStyle_Solid);
         if (this.fillColor) {
             attrs.fillColor(new pdg.Color(this.fillColor));
         }
-        attrs.lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth);
-        
         port.drawPolygon(polygon, attrs);
 
         if (this.selected) {

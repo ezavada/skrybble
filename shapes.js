@@ -212,46 +212,50 @@ class Spline extends Shape {
         return controls;
     }
 
-    draw(ctx) {
-        ctx.beginPath();
-        ctx.moveTo(this.points[0].x, this.points[0].y);
+    draw(port) {
+        // Create a PDG Spline object
+        const spline = new pdg.Spline(pdg.spline_CubicBezier);
         
+        // Add points to the spline
         for (let i = 0; i < this.points.length - 1; i++) {
-            const cp1 = this.controlPoints[i] || this.points[i];
-            const cp2 = this.controlPoints[i] || this.points[i + 1];
-            ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, this.points[i + 1].x, this.points[i + 1].y);
+            const p1 = this.points[i];
+            const p2 = this.controlPoints[i] || this.points[i];
+            const p3 = this.controlPoints[i] || this.points[i + 1];
+            const p4 = this.points[i + 1];
+            spline.addSegment(
+                new pdg.Point(p1.x, p1.y),
+                new pdg.Point(p2.x, p2.y),
+                new pdg.Point(p3.x, p3.y),
+                new pdg.Point(p4.x, p4.y)
+            );
         }
         
+        // Draw the spline
+        const attrs = new pdg.Attributes();
         if (this.fillColor) {
-            ctx.fillStyle = this.fillColor;
-            ctx.fill();
+            attrs.fillColor(new pdg.Color(this.fillColor));
         }
+        attrs.lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth);
         
-        ctx.strokeStyle = this.strokeColor;
-        ctx.lineWidth = this.strokeWidth;
-        ctx.stroke();
+        port.drawSpline(spline, attrs);
 
         if (this.selected) {
-            this.drawEndpoints(ctx);
-            this.drawControlPoints(ctx);
+            this.drawEndpoints(port);
+            this.drawControlPoints(port);
         }
     }
 
-    drawEndpoints(ctx) {
-        ctx.fillStyle = '#ff0000';
+    drawEndpoints(port) {
+        const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
         this.points.forEach(point => {
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
-            ctx.fill();
+            port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
         });
     }
 
-    drawControlPoints(ctx) {
-        ctx.fillStyle = '#00ff00';
+    drawControlPoints(port) {
+        const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('green'));
         this.controlPoints.forEach(point => {
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 3, 0, 2 * Math.PI);
-            ctx.fill();
+            port.drawCircle(new pdg.Point(point.x, point.y), 3, fillAttrs);
         });
     }
 
@@ -319,35 +323,33 @@ class Polygon extends Shape {
         this.points = points;
     }
 
-    draw(ctx) {
-        ctx.beginPath();
-        ctx.moveTo(this.points[0].x, this.points[0].y);
+    draw(port) {
+        // Create a PDG Polygon object
+        const polygon = new pdg.Polygon();
         
-        for (let i = 1; i < this.points.length; i++) {
-            ctx.lineTo(this.points[i].x, this.points[i].y);
-        }
-        ctx.closePath();
+        // Add all points to the polygon
+        this.points.forEach(point => {
+            polygon.addPoint(new pdg.Point(point.x, point.y));
+        });
         
+        // Draw the polygon
+        const attrs = new pdg.Attributes();
         if (this.fillColor) {
-            ctx.fillStyle = this.fillColor;
-            ctx.fill();
+            attrs.fillColor(new pdg.Color(this.fillColor));
         }
+        attrs.lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth);
         
-        ctx.strokeStyle = this.strokeColor;
-        ctx.lineWidth = this.strokeWidth;
-        ctx.stroke();
+        port.drawPolygon(polygon, attrs);
 
         if (this.selected) {
-            this.drawEndpoints(ctx);
+            this.drawEndpoints(port);
         }
     }
 
-    drawEndpoints(ctx) {
-        ctx.fillStyle = '#ff0000';
+    drawEndpoints(port) {
+        const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
         this.points.forEach(point => {
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
-            ctx.fill();
+            port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
         });
     }
 

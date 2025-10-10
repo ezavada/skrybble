@@ -23,7 +23,7 @@ class DrawingSurfaceView extends View {
         const area = this.getViewArea();
 
         // fill the area with white
-        port.fillRect(area, 'white');
+        port.drawRect(area, new pdg.Attributes().fillColor(new pdg.Color('white')));
         
         // Draw all shapes from the drawing
         const drawing = this.controller.getDrawing();

@@ -40,7 +40,8 @@ class Line extends Shape {
     }
 
     draw(port) {
-        port.drawLine(new pdg.Point(this.x, this.y), new pdg.Point(this.x2, this.y2), this.strokeColor);
+        port.drawLine(new pdg.Point(this.x, this.y), new pdg.Point(this.x2, this.y2), 
+            new pdg.Attributes().lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth));
 
         if (this.selected) {
             this.drawEndpoints(port);
@@ -48,8 +49,10 @@ class Line extends Shape {
     }
 
     drawEndpoints(port) {
-        port.fillCircle(new pdg.Point(this.x, this.y), 4, 'red');
-        port.fillCircle(new pdg.Point(this.x2, this.y2), 4, 'red');
+        port.drawCircle(new pdg.Point(this.x, this.y), 4, 
+            new pdg.Attributes().fillColor(new pdg.Color('red')));
+        port.drawCircle(new pdg.Point(this.x2, this.y2), 4, 
+            new pdg.Attributes().fillColor(new pdg.Color('red')));
     }
 
     contains(x, y) {
@@ -102,10 +105,15 @@ class Circle extends Shape {
     }
 
     draw(port) {
+        const center = new pdg.Point(this.x, this.y);
+        const attrs = new pdg.Attributes();
+        
         if (this.fillColor) {
-            port.fillCircle(new pdg.Point(this.x, this.y), this.radius, this.fillColor);
+            attrs.fillColor(new pdg.Color(this.fillColor));
         }
-        port.frameCircle(new pdg.Point(this.x, this.y), this.radius, this.strokeColor);
+        attrs.lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth);
+        
+        port.drawCircle(center, this.radius, attrs);
 
         if (this.selected) {
             this.drawEndpoints(port);
@@ -113,10 +121,11 @@ class Circle extends Shape {
     }
 
     drawEndpoints(port) {
-        port.fillCircle(new pdg.Point(this.x, this.y - this.radius), 4, 'red');
-        port.fillCircle(new pdg.Point(this.x + this.radius, this.y), 4, 'red');
-        port.fillCircle(new pdg.Point(this.x, this.y + this.radius), 4, 'red');
-        port.fillCircle(new pdg.Point(this.x - this.radius, this.y), 4, 'red');
+        const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        port.drawCircle(new pdg.Point(this.x, this.y - this.radius), 4, fillAttrs);
+        port.drawCircle(new pdg.Point(this.x + this.radius, this.y), 4, fillAttrs);
+        port.drawCircle(new pdg.Point(this.x, this.y + this.radius), 4, fillAttrs);
+        port.drawCircle(new pdg.Point(this.x - this.radius, this.y), 4, fillAttrs);
     }
 
     contains(x, y) {
@@ -144,12 +153,15 @@ class Rectangle extends Shape {
     }
 
     draw(port) {
-        const rect = new pdg.Rect(this.x, this.y, this.width, this.height);
+        const rect = new pdg.Rect(this.x, this.y, this.x + this.width, this.y + this.height);
+        const attrs = new pdg.Attributes();
         
         if (this.fillColor) {
-            port.fillRect(rect, this.fillColor);
+            attrs.fillColor(new pdg.Color(this.fillColor));
         }
-        port.frameRect(rect, this.strokeColor);
+        attrs.lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth);
+        
+        port.drawRect(rect, attrs);
 
         if (this.selected) {
             this.drawEndpoints(port);
@@ -158,8 +170,9 @@ class Rectangle extends Shape {
 
     drawEndpoints(port) {
         const points = this.getEndpoints();
+        const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
         points.forEach(point => {
-            port.fillCircle(new pdg.Point(point.x, point.y), 4, 'red');
+            port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
         });
     }
 
@@ -260,10 +273,15 @@ class Oval extends Shape {
     }
 
     draw(port) {
+        const center = new pdg.Point(this.x, this.y);
+        const attrs = new pdg.Attributes();
+        
         if (this.fillColor) {
-            port.fillOval(new pdg.Point(this.x, this.y), this.radiusX, this.radiusY, this.fillColor);
+            attrs.fillColor(new pdg.Color(this.fillColor));
         }
-        port.frameOval(new pdg.Point(this.x, this.y), this.radiusX, this.radiusY, this.strokeColor);
+        attrs.lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth);
+        
+        port.drawEllipse(center, this.radiusX, this.radiusY, attrs);
 
         if (this.selected) {
             this.drawEndpoints(port);
@@ -271,10 +289,11 @@ class Oval extends Shape {
     }
 
     drawEndpoints(port) {
-        port.fillCircle(new pdg.Point(this.x, this.y - this.radiusY), 4, 'red');
-        port.fillCircle(new pdg.Point(this.x + this.radiusX, this.y), 4, 'red');
-        port.fillCircle(new pdg.Point(this.x, this.y + this.radiusY), 4, 'red');
-        port.fillCircle(new pdg.Point(this.x - this.radiusX, this.y), 4, 'red');
+        const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        port.drawCircle(new pdg.Point(this.x, this.y - this.radiusY), 4, fillAttrs);
+        port.drawCircle(new pdg.Point(this.x + this.radiusX, this.y), 4, fillAttrs);
+        port.drawCircle(new pdg.Point(this.x, this.y + this.radiusY), 4, fillAttrs);
+        port.drawCircle(new pdg.Point(this.x - this.radiusX, this.y), 4, fillAttrs);
     }
 
     contains(x, y) {

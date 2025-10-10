@@ -37,10 +37,10 @@ class ToolPaletteView extends View {
         const viewArea = this.getViewArea();
         
         // Draw background
-        port.fillRect(viewArea, new pdg.Color(0.9, 0.9, 0.9, 1.0));
+        port.drawRect(viewArea, new pdg.Attributes().fillColor(new pdg.Color(0.9, 0.9, 0.9, 1.0)));
         
         // Draw border
-        port.frameRect(viewArea, new pdg.Color(0.7, 0.7, 0.7, 1.0), 1);
+        port.drawRect(viewArea, new pdg.Attributes().lineColor(new pdg.Color(0.7, 0.7, 0.7, 1.0)).lineThickness(1));
         
         let x = viewArea.left;
         const toolColor = new pdg.Color(0.2, 0.2, 0.2, 1.0);
@@ -49,33 +49,38 @@ class ToolPaletteView extends View {
             const tool = Tools.TOOLS[whichTool];
             let toolShortcut = tool.toUpperCase()[0];
             if (tool == this.activeTool) {
-                port.fillRect(new pdg.Rect(x+1, viewArea.top+1, x + 49, viewArea.top + 49), new pdg.Color(0.8, 0.8, 0.8, 1.0));
+                port.drawRect(new pdg.Rect(x+1, viewArea.top+1, x + 49, viewArea.top + 49), 
+                    new pdg.Attributes().fillColor(new pdg.Color(0.8, 0.8, 0.8, 1.0)));
             }
             switch (tool) {
                 case Tools.TOOLS.SELECT:
                     toolShortcut = 'esc';
-                    port.drawText('+', new pdg.Point(x + 25, viewArea.top + 30), 20, pdg.textStyle_Centered, toolColor);
+                    port.drawText('+', new pdg.Point(x + 25, viewArea.top + 30), 
+                        new pdg.Attributes().textSize(20).textStyle(pdg.textStyle_Centered).fillColor(toolColor));
                     break;
                 case Tools.TOOLS.LINE:
-                    port.drawLine(new pdg.Point(x + 10, viewArea.top + 35), new pdg.Point(x + 40, viewArea.top + 10), toolColor, 2.0);
+                    port.drawLine(new pdg.Point(x + 10, viewArea.top + 35), new pdg.Point(x + 40, viewArea.top + 10), 
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
                     break;
                 case Tools.TOOLS.CIRCLE:
-                    port.frameCircle(new pdg.Point(x + 25, viewArea.top + 25), 15, toolColor, 2.0);
+                    port.drawCircle(new pdg.Point(x + 25, viewArea.top + 25), 15, 
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
                     break;
                 case Tools.TOOLS.OVAL:
-                    port.frameOval(new pdg.Point(x + 25, viewArea.top + 25), 18, 12, toolColor, 2.0);
+                    port.drawEllipse(new pdg.Point(x + 25, viewArea.top + 25), 18, 12, 
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
                     break;
                 case Tools.TOOLS.RECT:
                     const r = new pdg.Rect(x + 10, viewArea.top + 10, x + 40, viewArea.top + 35);
-                    port.frameRect(r, toolColor, 2.0);
+                    port.drawRect(r, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
                     break;
                 case Tools.TOOLS.SPLINE:
                     const spline = new pdg.Spline(pdg.spline_Hermite);
-                    spline.initialize(new pdg.Point(x + 10, viewArea.top + 10), // start point
-                                    new pdg.Point(x + 40, viewArea.top + 40), // end point
-                                    new pdg.Point(x + 40, viewArea.top + 35), // control point 1
-                                    new pdg.Point(x + 10, viewArea.top + 10)); // control point 2
-                    port.drawSpline(spline, toolColor, 2.0);
+                    spline.addSegment(new pdg.Point(x + 10, viewArea.top + 10), // p1
+                                    new pdg.Point(x + 40, viewArea.top + 35), // p2 (control point 1)
+                                    new pdg.Point(x + 10, viewArea.top + 10), // p3 (control point 2)
+                                    new pdg.Point(x + 40, viewArea.top + 40)); // p4 (end point)
+                    port.drawSpline(spline, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
                     break;
                 case Tools.TOOLS.POLY:
                     const poly = new pdg.Polygon();
@@ -84,28 +89,32 @@ class ToolPaletteView extends View {
                     poly.addPoint(new pdg.Point(x + 40, viewArea.top + 35));
                     poly.addPoint(new pdg.Point(x + 25, viewArea.top + 30));
                     poly.addPoint(new pdg.Point(x + 10, viewArea.top + 35));
-                    port.framePolygon(poly, toolColor, 2.0);
+                    port.drawPolygon(poly, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
                     break;
                 case Tools.TOOLS.IMAGE:
-                    port.drawText('IMG', new pdg.Point(x + 25, viewArea.top + 30), 20, pdg.textStyle_Centered, toolColor);
+                    port.drawText('IMG', new pdg.Point(x + 25, viewArea.top + 30), 
+                        new pdg.Attributes().textSize(20).textStyle(pdg.textStyle_Centered).fillColor(toolColor));
                     break;
                 case Tools.TOOLS.QUAD:
                     const r2 = new pdg.Rect(x + 10, viewArea.top + 10, x + 40, viewArea.top + 35);
                     const quad = new pdg.Quad(r2);
                     quad.points[0].x += 5;
                     quad.points[2].x -= 5;
-                    port.frameRect(quad, toolColor, 2.0);
+                    port.drawQuad(quad, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
                     break;
                 default:
-                    port.drawText(tool, new pdg.Point(x + 25, viewArea.top + 30), 10, pdg.textStyle_Centered, toolColor);
+                    port.drawText(tool, new pdg.Point(x + 25, viewArea.top + 30), 
+                        new pdg.Attributes().textSize(10).textStyle(pdg.textStyle_Centered).fillColor(toolColor));
             }
-            port.drawText(toolShortcut, new pdg.Point(x + 2, viewArea.top + 10), 9, pdg.textStyle_Plain, toolColor);
+            port.drawText(toolShortcut, new pdg.Point(x + 2, viewArea.top + 10), 
+                new pdg.Attributes().textSize(9).textStyle(pdg.textStyle_Plain).fillColor(toolColor));
             x += 50;
-            port.drawLine(new pdg.Point(x, viewArea.top), new pdg.Point(x, viewArea.top + 50), toolColor);
+            port.drawLine(new pdg.Point(x, viewArea.top), new pdg.Point(x, viewArea.top + 50), 
+                new pdg.Attributes().lineColor(toolColor).lineThickness(1));
         }
         
         // Draw clickable parts for debugging
-        this.drawClickableParts();
+        // this.drawClickableParts(); // Commented out - internal method uses old PDG API
     }
 
     updateToolSelection(selectedToolId) {

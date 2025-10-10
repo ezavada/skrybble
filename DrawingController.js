@@ -58,7 +58,17 @@ class DrawingController extends Controller {
             return this.handleMouseDown(mouseInfo);
         }
         if (view === this.toolPaletteView) {
-            // TODO: Handle tool selection from tool palette
+            // Handle tool selection from tool palette
+            // Part numbers correspond to tool indices (1-based)
+            if (part > 0) {
+                const toolNames = Object.values(Tools.TOOLS);
+                const selectedTool = toolNames[part - 1];
+                if (selectedTool) {
+                    this.toolManager.setTool(selectedTool);
+                    this.updateToolSelection(selectedTool);
+                    return true;
+                }
+            }
         }
         return false;
     }

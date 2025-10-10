@@ -13,7 +13,7 @@ const TOOLS = {
 };
 
 const TOOL_SHORTCUTS = {
-    'esc': TOOLS.SELECT,
+    // Note: ESC key is handled specially in DrawingController.handleKeyPress
     'L': TOOLS.LINE,
     'S': TOOLS.SPLINE,
     'C': TOOLS.CIRCLE,

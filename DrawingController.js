@@ -310,6 +310,9 @@ class DrawingController extends Controller {
             case '\u001b': // Escape key
                 this.toolManager.finishCurrentDrawing();
                 this.selectShape(null);
+                // Switch to SELECT tool
+                this.toolManager.setTool(Tools.TOOLS.SELECT);
+                this.updateToolSelection(Tools.TOOLS.SELECT);
                 return true;
         }
         return true;

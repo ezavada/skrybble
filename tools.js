@@ -4,6 +4,7 @@ const TOOLS = {
     SELECT: 'select',
     LINE: 'line',
     SPLINE: 'spline',
+    BEZIER: 'bezier',
     CIRCLE: 'circle',
     OVAL: 'oval',
     RECT: 'rect',
@@ -16,6 +17,7 @@ const TOOL_SHORTCUTS = {
     // Note: ESC key is handled specially in DrawingController.handleKeyPress
     'L': TOOLS.LINE,
     'S': TOOLS.SPLINE,
+    'B': TOOLS.BEZIER,
     'C': TOOLS.CIRCLE,
     'O': TOOLS.OVAL,
     'R': TOOLS.RECT,
@@ -28,7 +30,8 @@ class Tools {
     static TOOL_SHORTCUTS = TOOL_SHORTCUTS;
     static TOOLS = TOOLS;
 
-    constructor() {
+    constructor(ShapeClasses) {
+        this.ShapeClasses = ShapeClasses;
         this.currentTool = TOOLS.SELECT;
         this.fillColor = 'white';
         this.strokeColor = 'black';
@@ -38,8 +41,7 @@ class Tools {
         this.isDrawing = false;
         this.currentShape = null;
         this.startPoint = null;
-        this.tempPoints = [];
-        this.polygonPoints = [];
+        this.lastPoint = null;
     }
 
     setTool(tool) {
@@ -60,27 +62,35 @@ class Tools {
         this.strokeWidth = width;
     }
 
-    startDrawing(x, y, ShapeClasses) {
+    startDrawing(x, y) {
         this.isDrawing = true;
         this.startPoint = { x, y };
-        this.tempPoints = [{ x, y }];
+        this.lastPoint = { x, y };
 
         switch (this.currentTool) {
             case TOOLS.LINE:
-                this.currentShape = new ShapeClasses.Line(x, y, x, y, this.strokeColor, this.strokeWidth);
+                this.currentShape = new this.ShapeClasses.Line(x, y, x, y, this.strokeColor, this.strokeWidth);
                 break;
             case TOOLS.CIRCLE:
-                this.currentShape = new ShapeClasses.Circle(x, y, 0, this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape = new this.ShapeClasses.Circle(x, y, 0, this.fillColor, this.strokeColor, this.strokeWidth);
                 break;
             case TOOLS.OVAL:
-                this.currentShape = new ShapeClasses.Oval(x, y, 0, 0, this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape = new this.ShapeClasses.Oval(x, y, 0, 0, this.fillColor, this.strokeColor, this.strokeWidth);
                 break;
             case TOOLS.RECT:
-                this.currentShape = new ShapeClasses.Rectangle(x, y, 0, 0, this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape = new this.ShapeClasses.Rectangle(x, y, 0, 0, this.fillColor, this.strokeColor, this.strokeWidth);
                 break;
             case TOOLS.SPLINE:
+                this.currentShape = new this.ShapeClasses.Spline([{ x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                this.selected = true;
+                break;
+            case TOOLS.BEZIER:
+                console.log('created bezier spline');
+                this.currentShape = new this.ShapeClasses.BezierSpline([{ x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                this.selected = true;
+                break;
             case TOOLS.POLY:
-                // These will be handled differently - no immediate shape creation
+                this.currentShape = new this.ShapeClasses.Polygon([{ x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
                 break;
         }
     }
@@ -108,31 +118,32 @@ class Tools {
                 this.currentShape.width = x - this.startPoint.x;
                 this.currentShape.height = y - this.startPoint.y;
                 break;
+            case TOOLS.SPLINE:
+            case TOOLS.BEZIER:
+            case TOOLS.POLY:
+                const numPoints = this.currentShape.points.length;
+                if (numPoints > 1) {
+                    this.currentShape.points[numPoints - 1] = { x, y };
+                }
+                break;
         }
     }
 
-    addPoint(x, y, ShapeClasses) {
-        if (this.currentTool === TOOLS.SPLINE) {
-            this.tempPoints.push({ x, y });
-            if (this.tempPoints.length >= 2) {
-                this.currentShape = new ShapeClasses.Spline([...this.tempPoints], this.fillColor, this.strokeColor, this.strokeWidth);
-                return this.currentShape;
-            }
+    addPoint(x, y) {
+        if (this.currentTool === TOOLS.SPLINE || this.currentTool === TOOLS.BEZIER) {
+            console.log('adding point ' + x + ', ' + y + ' to spline');
+            this.currentShape.addPoint({ x, y });
         } else if (this.currentTool === TOOLS.POLY) {
-            this.polygonPoints.push({ x, y });
-            if (this.polygonPoints.length >= 3) {
-                this.currentShape = new ShapeClasses.Polygon([...this.polygonPoints], this.fillColor, this.strokeColor, this.strokeWidth);
-                return this.currentShape;
-            }
+            this.currentShape.addPoint({ x, y });
         }
+        this.lastPoint = { x, y };
         return null;
     }
 
     finishCurrentDrawing() {
         this.isDrawing = false;
         this.currentShape = null;
-        this.tempPoints = [];
-        this.polygonPoints = [];
+        this.lastPoint = null;
     }
 
     getCurrentShape() {
@@ -171,16 +182,6 @@ class Tools {
             default:
                 return true;
         }
-    }
-
-    getDrawingState() {
-        return {
-            isDrawing: this.isDrawing,
-            currentShape: this.currentShape,
-            startPoint: this.startPoint,
-            tempPoints: this.tempPoints,
-            polygonPoints: this.polygonPoints
-        };
     }
 }
 

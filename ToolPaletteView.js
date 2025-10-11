@@ -75,12 +75,23 @@ class ToolPaletteView extends View {
                     port.drawRect(r, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
                     break;
                 case Tools.TOOLS.SPLINE:
+                case Tools.TOOLS.BEZIER:
+                    const p1 = new pdg.Point(x + 10, viewArea.top + 10);
+                    const p2 = new pdg.Point(x + 40, viewArea.top + 35);
+                    const v1 = new pdg.Vector(160, 10); // 
+                    const v2 = new pdg.Vector(190, 10);
                     const spline = new pdg.Spline(pdg.spline_Hermite);
-                    spline.addSegment(new pdg.Point(x + 10, viewArea.top + 10), // p1
-                                    new pdg.Point(x + 40, viewArea.top + 35), // p2 (control point 1)
-                                    new pdg.Point(x + 10, viewArea.top + 10), // p3 (control point 2)
-                                    new pdg.Point(x + 40, viewArea.top + 40)); // p4 (end point)
+                    spline.addSegment(p1, p2, v1, v2);
                     port.drawSpline(spline, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
+                    port.drawCircle(new pdg.Point(x + 12, viewArea.top + 10), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
+                    port.drawCircle(new pdg.Point(x + 40, viewArea.top + 35), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
+                    if (tool == Tools.TOOLS.SPLINE) {
+                        port.drawCircle(new pdg.Point(x + 28, viewArea.top + 14), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
+                        port.drawCircle(new pdg.Point(x + 16, viewArea.top + 29), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
+                    } else if (tool == Tools.TOOLS.BEZIER) {
+                        port.drawCircle(new pdg.Point(x + 38, viewArea.top + 10), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
+                        port.drawCircle(new pdg.Point(x + 8, viewArea.top + 33), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
+                    }
                     break;
                 case Tools.TOOLS.POLY:
                     const poly = new pdg.Polygon();

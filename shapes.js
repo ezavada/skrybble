@@ -29,6 +29,10 @@ class Shape {
         // Override in subclasses
         return [];
     }
+
+    addPoint(point) {
+        // Override in subclasses where applicable
+    }
 }
 
 // Line Shape
@@ -193,8 +197,82 @@ class Rectangle extends Shape {
     }
 }
 
-// Spline Shape
+// Cardinal Spline Shape
 class Spline extends Shape {
+    constructor(points, fillColor = '#ffffff', strokeColor = '#000000', strokeWidth = 1) {
+        super(points[0].x, points[0].y, fillColor, strokeColor, strokeWidth);
+        this.points = points;
+        this.controlPoints = this.generateControlPoints();
+    }
+
+    generateControlPoints() {
+        const controls = [];
+        controls.push({
+            x: this.points[0].x,
+            y: this.points[0].y
+        });
+        controls.push({
+            x: this.points[this.points.length - 1].x,
+            y: this.points[this.points.length - 1].y
+        });
+        return controls;
+    }
+
+    draw(port) {
+        // Create a PDG Spline object
+        const spline = new pdg.Spline(pdg.spline_Cardinal);
+        
+        // Add points to the spline
+        for (let i = 0; i < this.points.length - 1; i++) {
+            spline.addPoint(new pdg.Point(this.points[i].x, this.points[i].y));
+        }
+        
+        // Draw the spline
+        const attrs = new pdg.Attributes();
+        attrs.lineColor(new pdg.Color(this.strokeColor))
+             .lineThickness(this.strokeWidth)
+             .lineStyle(pdg.lineStyle_Solid);
+        if (this.fillColor) {
+            attrs.fillColor(new pdg.Color(this.fillColor));
+        }
+        port.drawSpline(spline, attrs);
+
+        if (this.selected) {
+            this.drawEndpoints(port);
+            this.drawControlPoints(port);
+        }
+    }
+
+    drawEndpoints(port) {
+        const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        this.points.forEach(point => {
+            port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
+        });
+    }
+
+    drawControlPoints(port) {
+        const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('green'));
+        this.controlPoints.forEach(point => {
+            port.drawCircle(new pdg.Point(point.x, point.y), 3, fillAttrs);
+        });
+    }
+
+    getEndpoints() {
+        return [...this.points];
+    }
+
+    getControlPoints() {
+        return [...this.controlPoints];
+    }
+
+    addPoint(point) {
+        this.points.push(point);
+        this.controlPoints = this.generateControlPoints();
+    }
+}
+
+// Bezier Spline Shape
+class BezierSpline extends Shape {
     constructor(points, fillColor = '#ffffff', strokeColor = '#000000', strokeWidth = 1) {
         super(points[0].x, points[0].y, fillColor, strokeColor, strokeWidth);
         this.points = points;
@@ -268,6 +346,11 @@ class Spline extends Shape {
 
     getControlPoints() {
         return [...this.controlPoints];
+    }
+
+    addPoint(point) {
+        this.points.push(point);
+        this.controlPoints = this.generateControlPoints();
     }
 }
 
@@ -381,6 +464,7 @@ module.exports = {
     Circle,
     Rectangle,
     Spline,
+    BezierSpline,
     Oval,
     Polygon
 };

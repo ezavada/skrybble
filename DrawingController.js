@@ -23,8 +23,8 @@ class DrawingController extends Controller {
         // super calls setupViews()
         // this is the top level controller, so we give it app and port rather than a parent
         super(null, app, port, true, true, true, false, true);
-        this.toolManager = new Tools();
         this.drawing = new Drawing();
+        this.toolManager = new Tools(this.drawing.getShapeClasses());
         
         // Input handling state
         this.draggedPoint = null;
@@ -111,8 +111,12 @@ class DrawingController extends Controller {
 
         if (currentTool === Tools.TOOLS.SELECT) {
             this.handleSelectMode(pos.x, pos.y);
+        } else if (!this.toolManager.getCurrentShape()) {
+            this.toolManager.startDrawing(pos.x, pos.y);
+        } else if (event.clickCount > 1) {
+            this.toolManager.addPoint(pos.x, pos.y);
         } else {
-            this.toolManager.startDrawing(pos.x, pos.y, this.drawing.getShapeClasses());
+            this.toolManager.finishCurrentDrawing();
         }
         return true;
     }
@@ -146,12 +150,7 @@ class DrawingController extends Controller {
                 }
                 this.toolManager.finishCurrentDrawing();
             } else {
-                // For multi-click tools (spline, poly), handle via addPoint
-                const finishedShape = this.toolManager.addPoint(pos.x, pos.y, this.drawing.getShapeClasses());
-                if (finishedShape) {
-                    this.drawing.addShape(finishedShape);
-                    this.selectShape(finishedShape);
-                }
+                // For multi-click tools (spline, poly), we already added the point in handleMouseDown
             }
         }
         

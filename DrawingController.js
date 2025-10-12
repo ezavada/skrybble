@@ -335,6 +335,10 @@ class DrawingController extends Controller {
                 } else if (shape.constructor.name === 'BezierSpline') {
                     controlPoints[index].x = x;
                     controlPoints[index].y = y;
+                    // Mark this control point as manually edited
+                    if (shape.manuallyEditedControls) {
+                        shape.manuallyEditedControls.add(index);
+                    }
                 }
             }
         }
@@ -377,6 +381,15 @@ class DrawingController extends Controller {
                 // So endpoint[0] maps to points[1], endpoint[1] maps to points[2], etc.
                 shape.points[index + 1].x = x;
                 shape.points[index + 1].y = y;
+                break;
+            case 'BezierSpline':
+                // For Bezier splines, all points in the array are endpoints
+                shape.points[index].x = x;
+                shape.points[index].y = y;
+                // Regenerate control points when endpoints move, but preserve manual edits
+                if (shape.generateControlPoints) {
+                    shape.controlPoints = shape.generateControlPoints(true);
+                }
                 break;
         }
     }

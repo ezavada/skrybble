@@ -342,18 +342,85 @@ class BezierSpline extends Shape {
         super(points[0].x, points[0].y, fillColor, strokeColor, strokeWidth);
         this.points = points;
         this.controlPoints = this.generateControlPoints();
+        this.manuallyEditedControls = new Set(); // Track which control points were manually edited
+        this.underConstruction = false; // Track if shape is still being built
     }
 
-    generateControlPoints() {
+    generateControlPoints(preserveManualEdits = false) {
+        // For a Bezier spline with N points, we need 2*(N-1) control points
+        // Each segment between two endpoints needs 2 control points
         const controls = [];
+        
+        if (this.points.length < 2) return controls;
+        
+        // For each segment between consecutive endpoints
         for (let i = 0; i < this.points.length - 1; i++) {
             const current = this.points[i];
             const next = this.points[i + 1];
-            controls.push({
-                x: (current.x + next.x) / 2,
-                y: (current.y + next.y) / 2
-            });
+            
+            // Check if these control points were manually edited
+            const ctrl1Index = i * 2;
+            const ctrl2Index = i * 2 + 1;
+            
+            // If preserving manual edits and these were edited, keep them
+            if (preserveManualEdits && this.manuallyEditedControls && 
+                this.manuallyEditedControls.has(ctrl1Index) && 
+                this.controlPoints && this.controlPoints[ctrl1Index]) {
+                controls.push(this.controlPoints[ctrl1Index]);
+            } else {
+                // Calculate tangent direction for smooth curve
+                let tangentStart;
+                if (i === 0) {
+                    // First segment: use direction to next point
+                    tangentStart = { x: next.x - current.x, y: next.y - current.y };
+                } else {
+                    // Interior point: use average of directions to neighbors
+                    const prev = this.points[i - 1];
+                    tangentStart = { 
+                        x: (next.x - prev.x) / 2, 
+                        y: (next.y - prev.y) / 2 
+                    };
+                }
+                
+                // Control points are placed 1/3 of the way along the tangents
+                const ctrlDist = 0.33;
+                
+                // First control point (leaving current point)
+                controls.push({
+                    x: current.x + tangentStart.x * ctrlDist,
+                    y: current.y + tangentStart.y * ctrlDist
+                });
+            }
+            
+            // Second control point
+            if (preserveManualEdits && this.manuallyEditedControls && 
+                this.manuallyEditedControls.has(ctrl2Index) && 
+                this.controlPoints && this.controlPoints[ctrl2Index]) {
+                controls.push(this.controlPoints[ctrl2Index]);
+            } else {
+                let tangentEnd;
+                if (i === this.points.length - 2) {
+                    // Last segment: use direction from previous point
+                    tangentEnd = { x: next.x - current.x, y: next.y - current.y };
+                } else {
+                    // Interior point: use average of directions to neighbors
+                    const nextNext = this.points[i + 2];
+                    tangentEnd = { 
+                        x: (nextNext.x - current.x) / 2, 
+                        y: (nextNext.y - current.y) / 2 
+                    };
+                }
+                
+                const ctrlDist = 0.33;
+                
+                // Second control point (arriving at next point)
+                controls.push({
+                    x: next.x - tangentEnd.x * ctrlDist,
+                    y: next.y - tangentEnd.y * ctrlDist
+                });
+            }
         }
+        
         return controls;
     }
 
@@ -361,12 +428,14 @@ class BezierSpline extends Shape {
         // Create a PDG Spline object
         const spline = new pdg.Spline(pdg.spline_CubicBezier);
         
-        // Add points to the spline
+        // Add segments to the spline
+        // Each segment uses 2 control points: controls[i*2] and controls[i*2+1]
         for (let i = 0; i < this.points.length - 1; i++) {
             const p1 = this.points[i];
-            const p2 = this.controlPoints[i] || this.points[i];
-            const p3 = this.controlPoints[i] || this.points[i + 1];
             const p4 = this.points[i + 1];
+            const p2 = this.controlPoints[i * 2] || p1;
+            const p3 = this.controlPoints[i * 2 + 1] || p4;
+            
             spline.addSegment(
                 new pdg.Point(p1.x, p1.y),
                 new pdg.Point(p2.x, p2.y),
@@ -385,7 +454,7 @@ class BezierSpline extends Shape {
         }
         port.drawSpline(spline, attrs);
 
-        if (this.selected) {
+        if (this.selected || this.underConstruction) {
             this.drawEndpoints(port);
             this.drawControlPoints(port);
         }
@@ -421,9 +490,10 @@ class BezierSpline extends Shape {
         const spline = new pdg.Spline(pdg.spline_CubicBezier);
         for (let i = 0; i < this.points.length - 1; i++) {
             const p1 = this.points[i];
-            const p2 = this.controlPoints[i] || this.points[i];
-            const p3 = this.controlPoints[i] || this.points[i + 1];
             const p4 = this.points[i + 1];
+            const p2 = this.controlPoints[i * 2] || p1;
+            const p3 = this.controlPoints[i * 2 + 1] || p4;
+            
             spline.addSegment(
                 new pdg.Point(p1.x, p1.y),
                 new pdg.Point(p2.x, p2.y),
@@ -482,7 +552,9 @@ class BezierSpline extends Shape {
 
     addPoint(point) {
         this.points.push(point);
-        this.controlPoints = this.generateControlPoints();
+        // Regenerate all control points to maintain smooth curves
+        // Preserve any manually edited control points
+        this.controlPoints = this.generateControlPoints(true);
     }
 }
 

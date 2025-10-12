@@ -81,18 +81,18 @@ class Tools {
                 this.currentShape = new this.ShapeClasses.Rectangle(x, y, 0, 0, this.fillColor, this.strokeColor, this.strokeWidth);
                 break;
             case TOOLS.SPLINE:
-                this.currentShape = new this.ShapeClasses.Spline([{ x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape = new this.ShapeClasses.Spline([{ x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
                 this.currentShape.underConstruction = true;
                 this.selected = true;
                 break;
             case TOOLS.BEZIER:
                 console.log('created bezier spline');
-                this.currentShape = new this.ShapeClasses.BezierSpline([{ x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape = new this.ShapeClasses.BezierSpline([{ x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
                 this.currentShape.underConstruction = true;
                 this.selected = true;
                 break;
             case TOOLS.POLY:
-                this.currentShape = new this.ShapeClasses.Polygon([{ x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape = new this.ShapeClasses.Polygon([{ x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
                 this.currentShape.underConstruction = true;
                 break;
         }
@@ -125,8 +125,19 @@ class Tools {
             case TOOLS.BEZIER:
             case TOOLS.POLY:
                 const numPoints = this.currentShape.points.length;
-                if (numPoints > 1) {
-                    this.currentShape.points[numPoints - 1] = { x, y };
+                if (numPoints > 0) {
+                    // Update or add a temporary preview point
+                    if (numPoints === 1) {
+                        // Only one point so far, add temporary second point for preview
+                        this.currentShape.points.push({ x, y });
+                    } else {
+                        // Update the last (temporary) point
+                        this.currentShape.points[numPoints - 1] = { x, y };
+                    }
+                    // Regenerate control points for preview
+                    if (this.currentShape.generateControlPoints) {
+                        this.currentShape.controlPoints = this.currentShape.generateControlPoints();
+                    }
                 }
                 break;
         }
@@ -146,13 +157,29 @@ class Tools {
         switch (this.currentTool) {
             case TOOLS.SPLINE:
             case TOOLS.BEZIER:
-                if (this.currentShape.addPoint) {
-                    this.currentShape.addPoint(point);
+                if (this.currentShape.points) {
+                    // Replace the last (preview) point with the clicked point
+                    // This "confirms" the preview point as a real point
+                    const numPoints = this.currentShape.points.length;
+                    if (numPoints > 0) {
+                        this.currentShape.points[numPoints - 1] = point;
+                    }
+                    // Add a new preview point at the same location
+                    this.currentShape.points.push({ ...point });
+                    // Regenerate control points
+                    if (this.currentShape.generateControlPoints) {
+                        this.currentShape.controlPoints = this.currentShape.generateControlPoints(true);
+                    }
                 }
                 break;
             case TOOLS.POLY:
                 if (this.currentShape.points) {
-                    this.currentShape.points.push(point);
+                    // Same logic for polygons
+                    const numPoints = this.currentShape.points.length;
+                    if (numPoints > 0) {
+                        this.currentShape.points[numPoints - 1] = point;
+                    }
+                    this.currentShape.points.push({ ...point });
                 }
                 break;
         }
@@ -191,6 +218,14 @@ class Tools {
         }
         
         if (shape.points && shape.points.length >= minPoints) {
+            // Remove the last preview point (it's just following the mouse)
+            shape.points.pop();
+            
+            // Regenerate control points one final time after removing preview
+            if (shape.generateControlPoints) {
+                shape.controlPoints = shape.generateControlPoints(true);
+            }
+            
             // Mark shape as no longer under construction
             if (shape.underConstruction !== undefined) {
                 shape.underConstruction = false;

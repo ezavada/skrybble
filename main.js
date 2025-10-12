@@ -12,7 +12,8 @@ const DrawingApp = require('./DrawingApp.js');
 function main() {
     try {
         // Create the application (initialization happens automatically in base class constructor)
-        const app = new DrawingApp();
+        // Pass process.argv from this context to ensure arguments are passed correctly
+        const app = new DrawingApp(process.argv);
     } catch (error) {
         console.error('Failed to start DrawingApp:', error);
         pdg.quit();

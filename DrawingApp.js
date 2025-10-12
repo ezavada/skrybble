@@ -11,6 +11,8 @@ const Application = require('./index').Application;
 const AppStates = require('./index').AppStates;
 const DrawingController = require('./DrawingController.js');
 
+const fs = require('fs');
+
 // -----------------------------------------------
 // Drawing Application class
 // 
@@ -34,10 +36,27 @@ class DrawingApp extends Application {
         this.configMgr = pdg.cfg;
         
         this.drawingController = null;
+        this.filename = null;
      }
      
     initialize(args) {
         try {
+            // Parse command line arguments for filename
+            const argList = args || [];
+            console.log('argList:', argList);
+            
+            if (argList && argList.length > 0) {
+                // Look for .skrbl file in arguments
+                for (let arg of argList) {
+                    console.log('Checking arg:', arg);
+                    if (arg.endsWith('.skrbl')) {
+                        this.filename = arg;
+                        console.log('Found .skrbl file:', this.filename);
+                        break;
+                    }
+                }
+            }
+            
             // Create graphics port first
             this.createGraphicsPort();
             
@@ -46,6 +65,17 @@ class DrawingApp extends Application {
             
             // Create drawing controller
             this.createDrawingController();
+            
+            // Load file if specified
+            if (this.filename) {
+                if (fs.existsSync(this.filename)) {
+                    console.log('Loading file:', this.filename);
+                    this.drawingController.loadFile(this.filename);
+                } else {
+                    console.log('File does not exist, will use for save:', this.filename);
+                    this.drawingController.setFilename(this.filename);
+                }
+            }
 
             // Start the application
             this.setState(AppStates.state_Running);

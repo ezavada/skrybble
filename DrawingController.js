@@ -14,6 +14,8 @@ const Drawing = require('./index').Drawing;
 const DrawingSurfaceView = require('./DrawingSurfaceView.js');
 const ToolPaletteView = require('./ToolPaletteView.js');
 
+const fs = require('fs');
+
 // -----------------------------------------------
 // Drawing Controller class
 // -----------------------------------------------
@@ -51,6 +53,9 @@ class DrawingController extends Controller {
         this.maxUndoLevels = 50;
         this.isNudging = false; // Track if we're in a nudge sequence
         this.nudgeTimer = null; // Timer to finalize nudge after inactivity
+        
+        // File handling
+        this.currentFilename = null;
     }
     
     setupViews() {
@@ -630,6 +635,9 @@ class DrawingController extends Controller {
                         this.undo();
                     }
                     return true;
+                case 'S': // Save
+                    this.saveFile();
+                    return true;
             }
         }
         
@@ -1016,6 +1024,76 @@ class DrawingController extends Controller {
         }
         
         this.selectedShape = null;
+    }
+
+    // ============================ File Operations ============================
+
+    setFilename(filename) {
+        this.currentFilename = filename;
+    }
+
+    loadFile(filename) {
+        try {
+            const fileData = fs.readFileSync(filename, 'utf8');
+            const data = JSON.parse(fileData);
+            
+            // Verify file format
+            if (!data.fileFormat || !data.fileFormat.startsWith('skrbl-v')) {
+                console.error('Invalid file format');
+                return false;
+            }
+            
+            // Clear current drawing
+            this.drawing.clearShapes();
+            
+            // Load shapes
+            if (data.shapes) {
+                for (let shapeInfo of data.shapes) {
+                    const shape = this.drawing.deserializeShape(shapeInfo.type, shapeInfo.data);
+                    if (shape) {
+                        this.drawing.addShape(shape);
+                    }
+                }
+            }
+            
+            this.currentFilename = filename;
+            console.log('Loaded file:', filename);
+            return true;
+        } catch (error) {
+            console.error('Failed to load file:', error);
+            return false;
+        }
+    }
+
+    saveFile() {
+        // Generate filename if not set
+        if (!this.currentFilename) {
+            const now = new Date();
+            const dateStr = now.toISOString().replace(/[:.]/g, '-').split('T')[0];
+            const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+            this.currentFilename = `drawing-${dateStr}-${timeStr}.skrbl`;
+        }
+        
+        try {
+            const data = {
+                fileFormat: 'skrbl-v0.0.1',
+                shapes: this.drawing.getShapes().map(shape => {
+                    const serialized = this.drawing.serializeShape(shape);
+                    return {
+                        type: serialized.type,
+                        data: serialized
+                    };
+                })
+            };
+            
+            const jsonData = JSON.stringify(data, null, 2);
+            fs.writeFileSync(this.currentFilename, jsonData, 'utf8');
+            console.log('Saved file:', this.currentFilename);
+            return true;
+        } catch (error) {
+            console.error('Failed to save file:', error);
+            return false;
+        }
     }
 }
 

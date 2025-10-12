@@ -202,28 +202,18 @@ class Spline extends Shape {
     constructor(points, fillColor = '#ffffff', strokeColor = '#000000', strokeWidth = 1) {
         super(points[0].x, points[0].y, fillColor, strokeColor, strokeWidth);
         this.points = points;
-        this.controlPoints = this.generateControlPoints();
-    }
-
-    generateControlPoints() {
-        const controls = [];
-        controls.push({
-            x: this.points[0].x,
-            y: this.points[0].y
-        });
-        controls.push({
-            x: this.points[this.points.length - 1].x,
-            y: this.points[this.points.length - 1].y
-        });
-        return controls;
+        this.underConstruction = false; // Track if shape is still being built
     }
 
     draw(port) {
+        // Need at least 2 points to draw a spline
+        if (this.points.length < 2) return;
+        
         // Create a PDG Spline object
         const spline = new pdg.Spline(pdg.spline_Cardinal);
         
-        // Add points to the spline
-        for (let i = 0; i < this.points.length - 1; i++) {
+        // Add ALL points to the spline (including last one)
+        for (let i = 0; i < this.points.length; i++) {
             spline.addPoint(new pdg.Point(this.points[i].x, this.points[i].y));
         }
         
@@ -237,7 +227,7 @@ class Spline extends Shape {
         }
         port.drawSpline(spline, attrs);
 
-        if (this.selected) {
+        if (this.selected || this.underConstruction) {
             this.drawEndpoints(port);
             this.drawControlPoints(port);
         }
@@ -245,29 +235,104 @@ class Spline extends Shape {
 
     drawEndpoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
-        this.points.forEach(point => {
+        // For Cardinal splines, only interior points are on the curve
+        // First and last points are control points
+        for (let i = 1; i < this.points.length - 1; i++) {
+            const point = this.points[i];
             port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
-        });
+        }
     }
 
     drawControlPoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('green'));
-        this.controlPoints.forEach(point => {
-            port.drawCircle(new pdg.Point(point.x, point.y), 3, fillAttrs);
-        });
+        // First and last points are the control points for Cardinal splines
+        if (this.points.length > 0) {
+            port.drawCircle(new pdg.Point(this.points[0].x, this.points[0].y), 3, fillAttrs);
+        }
+        if (this.points.length > 1) {
+            const lastIdx = this.points.length - 1;
+            port.drawCircle(new pdg.Point(this.points[lastIdx].x, this.points[lastIdx].y), 3, fillAttrs);
+        }
     }
 
     getEndpoints() {
-        return [...this.points];
+        // Return only the interior points (actual curve points)
+        return this.points.slice(1, -1);
     }
 
     getControlPoints() {
-        return [...this.controlPoints];
+        // First and last points are control points
+        const controls = [];
+        if (this.points.length > 0) {
+            controls.push(this.points[0]);
+        }
+        if (this.points.length > 1) {
+            controls.push(this.points[this.points.length - 1]);
+        }
+        return controls;
+    }
+
+    contains(x, y) {
+        // Sample points along the spline and check distance to each segment
+        if (this.points.length < 2) return false;
+        
+        // Create a temporary PDG spline to sample points
+        const spline = new pdg.Spline(pdg.spline_Cardinal);
+        for (let i = 0; i < this.points.length; i++) {
+            spline.addPoint(new pdg.Point(this.points[i].x, this.points[i].y));
+        }
+        
+        const maxU = spline.getMaxU();
+        const samples = 50; // Number of samples to check
+        const threshold = 5; // Distance threshold in pixels
+        
+        for (let i = 0; i < samples; i++) {
+            const u1 = (maxU * i) / samples;
+            const u2 = (maxU * (i + 1)) / samples;
+            const p1 = spline.getFirstOrder(u1);
+            const p2 = spline.getFirstOrder(u2);
+            
+            // Check distance to this segment
+            const dist = this.pointToLineSegmentDistance(x, y, p1.x, p1.y, p2.x, p2.y);
+            if (dist < threshold) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    pointToLineSegmentDistance(px, py, x1, y1, x2, y2) {
+        const A = px - x1;
+        const B = py - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
+
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        let param = -1;
+        if (lenSq !== 0) param = dot / lenSq;
+
+        let xx, yy;
+
+        if (param < 0) {
+            xx = x1;
+            yy = y1;
+        } else if (param > 1) {
+            xx = x2;
+            yy = y2;
+        } else {
+            xx = x1 + param * C;
+            yy = y1 + param * D;
+        }
+
+        const dx = px - xx;
+        const dy = py - yy;
+        return Math.sqrt(dx * dx + dy * dy);
     }
 
     addPoint(point) {
         this.points.push(point);
-        this.controlPoints = this.generateControlPoints();
     }
 }
 
@@ -348,6 +413,73 @@ class BezierSpline extends Shape {
         return [...this.controlPoints];
     }
 
+    contains(x, y) {
+        // Sample points along the Bezier spline and check distance to each segment
+        if (this.points.length < 2) return false;
+        
+        // Create a temporary PDG spline to sample points
+        const spline = new pdg.Spline(pdg.spline_CubicBezier);
+        for (let i = 0; i < this.points.length - 1; i++) {
+            const p1 = this.points[i];
+            const p2 = this.controlPoints[i] || this.points[i];
+            const p3 = this.controlPoints[i] || this.points[i + 1];
+            const p4 = this.points[i + 1];
+            spline.addSegment(
+                new pdg.Point(p1.x, p1.y),
+                new pdg.Point(p2.x, p2.y),
+                new pdg.Point(p3.x, p3.y),
+                new pdg.Point(p4.x, p4.y)
+            );
+        }
+        
+        const maxU = spline.getMaxU();
+        const samples = 50;
+        const threshold = 5;
+        
+        for (let i = 0; i < samples; i++) {
+            const u1 = (maxU * i) / samples;
+            const u2 = (maxU * (i + 1)) / samples;
+            const p1 = spline.getFirstOrder(u1);
+            const p2 = spline.getFirstOrder(u2);
+            
+            const dist = this.pointToLineSegmentDistance(x, y, p1.x, p1.y, p2.x, p2.y);
+            if (dist < threshold) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    pointToLineSegmentDistance(px, py, x1, y1, x2, y2) {
+        const A = px - x1;
+        const B = py - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
+
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        let param = -1;
+        if (lenSq !== 0) param = dot / lenSq;
+
+        let xx, yy;
+
+        if (param < 0) {
+            xx = x1;
+            yy = y1;
+        } else if (param > 1) {
+            xx = x2;
+            yy = y2;
+        } else {
+            xx = x1 + param * C;
+            yy = y1 + param * D;
+        }
+
+        const dx = px - xx;
+        const dy = py - yy;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
     addPoint(point) {
         this.points.push(point);
         this.controlPoints = this.generateControlPoints();
@@ -408,6 +540,7 @@ class Polygon extends Shape {
     constructor(points, fillColor = '#ffffff', strokeColor = '#000000', strokeWidth = 1) {
         super(points[0].x, points[0].y, fillColor, strokeColor, strokeWidth);
         this.points = points;
+        this.underConstruction = false; // Track if shape is still being built
     }
 
     draw(port) {
@@ -429,7 +562,7 @@ class Polygon extends Shape {
         }
         port.drawPolygon(polygon, attrs);
 
-        if (this.selected) {
+        if (this.selected || this.underConstruction) {
             this.drawEndpoints(port);
         }
     }
@@ -442,7 +575,18 @@ class Polygon extends Shape {
     }
 
     contains(x, y) {
-        // Ray casting algorithm for point-in-polygon
+        // First check if near any edge
+        const threshold = 5;
+        for (let i = 0; i < this.points.length; i++) {
+            const p1 = this.points[i];
+            const p2 = this.points[(i + 1) % this.points.length]; // Wrap around to first point
+            const dist = this.pointToLineSegmentDistance(x, y, p1.x, p1.y, p2.x, p2.y);
+            if (dist < threshold) {
+                return true;
+            }
+        }
+        
+        // Then check if inside using ray casting algorithm for point-in-polygon
         let inside = false;
         for (let i = 0, j = this.points.length - 1; i < this.points.length; j = i++) {
             if (((this.points[i].y > y) !== (this.points[j].y > y)) &&
@@ -451,6 +595,35 @@ class Polygon extends Shape {
             }
         }
         return inside;
+    }
+
+    pointToLineSegmentDistance(px, py, x1, y1, x2, y2) {
+        const A = px - x1;
+        const B = py - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
+
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        let param = -1;
+        if (lenSq !== 0) param = dot / lenSq;
+
+        let xx, yy;
+
+        if (param < 0) {
+            xx = x1;
+            yy = y1;
+        } else if (param > 1) {
+            xx = x2;
+            yy = y2;
+        } else {
+            xx = x1 + param * C;
+            yy = y1 + param * D;
+        }
+
+        const dx = px - xx;
+        const dy = py - yy;
+        return Math.sqrt(dx * dx + dy * dy);
     }
 
     getEndpoints() {

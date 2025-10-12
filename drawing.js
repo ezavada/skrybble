@@ -95,6 +95,7 @@ class Drawing {
                 break;
             case 'Polygon':
             case 'Spline':
+            case 'BezierSpline':
                 shape.points.forEach(point => {
                     point.x += dx;
                     point.y += dy;

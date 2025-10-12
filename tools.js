@@ -82,15 +82,18 @@ class Tools {
                 break;
             case TOOLS.SPLINE:
                 this.currentShape = new this.ShapeClasses.Spline([{ x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape.underConstruction = true;
                 this.selected = true;
                 break;
             case TOOLS.BEZIER:
                 console.log('created bezier spline');
                 this.currentShape = new this.ShapeClasses.BezierSpline([{ x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape.underConstruction = true;
                 this.selected = true;
                 break;
             case TOOLS.POLY:
                 this.currentShape = new this.ShapeClasses.Polygon([{ x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape.underConstruction = true;
                 break;
         }
     }
@@ -129,21 +132,76 @@ class Tools {
         }
     }
 
-    addPoint(x, y) {
-        if (this.currentTool === TOOLS.SPLINE || this.currentTool === TOOLS.BEZIER) {
-            console.log('adding point ' + x + ', ' + y + ' to spline');
-            this.currentShape.addPoint({ x, y });
-        } else if (this.currentTool === TOOLS.POLY) {
-            this.currentShape.addPoint({ x, y });
-        }
-        this.lastPoint = { x, y };
-        return null;
-    }
-
     finishCurrentDrawing() {
         this.isDrawing = false;
         this.currentShape = null;
         this.lastPoint = null;
+    }
+
+    addPointToShape(x, y) {
+        if (!this.currentShape) return;
+        
+        const point = { x, y };
+        
+        switch (this.currentTool) {
+            case TOOLS.SPLINE:
+            case TOOLS.BEZIER:
+                if (this.currentShape.addPoint) {
+                    this.currentShape.addPoint(point);
+                }
+                break;
+            case TOOLS.POLY:
+                if (this.currentShape.points) {
+                    this.currentShape.points.push(point);
+                }
+                break;
+        }
+    }
+
+    removeLastPoint() {
+        if (!this.currentShape) return;
+        
+        switch (this.currentTool) {
+            case TOOLS.SPLINE:
+            case TOOLS.BEZIER:
+            case TOOLS.POLY:
+                if (this.currentShape.points && this.currentShape.points.length > 2) {
+                    this.currentShape.points.pop();
+                    // For splines, regenerate control points
+                    if (this.currentShape.generateControlPoints) {
+                        this.currentShape.controlPoints = this.currentShape.generateControlPoints();
+                    }
+                } else if (this.currentShape.points && this.currentShape.points.length <= 2) {
+                    // If only 2 or fewer points left, cancel the drawing
+                    this.finishCurrentDrawing();
+                }
+                break;
+        }
+    }
+
+    finishMultiPointShape() {
+        if (!this.currentShape) return null;
+        
+        const shape = this.currentShape;
+        
+        // Check if we have enough points to make a valid shape
+        let minPoints = 2;
+        if (this.currentTool === TOOLS.POLY) {
+            minPoints = 3;
+        }
+        
+        if (shape.points && shape.points.length >= minPoints) {
+            // Mark shape as no longer under construction
+            if (shape.underConstruction !== undefined) {
+                shape.underConstruction = false;
+            }
+            this.finishCurrentDrawing();
+            return shape;
+        }
+        
+        // Not enough points, cancel
+        this.finishCurrentDrawing();
+        return null;
     }
 
     getCurrentShape() {

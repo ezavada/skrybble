@@ -29,22 +29,24 @@ class DrawingController extends Controller {
         // Input handling state
         this.draggedPoint = null;
         this.selectedShape = null;
+        this.lastDrawnShape = null; // Track the most recently drawn shape
     }
     
     setupViews() {
         const drawingArea = this.port.getDrawingArea();
         
-        // Create tool palette at the top
-        const paletteHeight = 50;
-        const paletteRect = new pdg.Rect(drawingArea);
-        paletteRect.setHeight(paletteHeight);
-        this.toolPaletteView = new ToolPaletteView(this, paletteRect, ViewBinding.grow_Horiz + ViewBinding.bind_Top);
-        
+        const paletteHeight = 50;         
+
         // Create drawing surface below the palette
         const surfaceRect = new pdg.Rect(drawingArea);
         surfaceRect.top = paletteHeight;
         surfaceRect.setHeight(drawingArea.height() - paletteHeight);
         this.backgroundView = new DrawingSurfaceView(this, surfaceRect, ViewBinding.grow);
+
+        // Create tool palette at the top (but drawn after the drawing surface)
+        const paletteRect = new pdg.Rect(drawingArea);
+        paletteRect.setHeight(paletteHeight);
+        this.toolPaletteView = new ToolPaletteView(this, paletteRect, ViewBinding.grow_Horiz + ViewBinding.bind_Top);
 
         console.log('DrawingController::setupViews, paletteRect', paletteRect);
         console.log('DrawingController::setupViews, surfaceRect', surfaceRect);
@@ -53,10 +55,6 @@ class DrawingController extends Controller {
     // ============================ Event Handling Overrides ============================
 
     doMouseDown(mouseInfo, view, id, part) {
-        // Only handle mouse events on the drawing surface
-        if (view === this.backgroundView) {
-            return this.handleMouseDown(mouseInfo);
-        }
         if (view === this.toolPaletteView) {
             // Handle tool selection from tool palette
             // Part numbers correspond to tool indices (1-based)
@@ -69,6 +67,18 @@ class DrawingController extends Controller {
                     return true;
                 }
             }
+            return false;
+        }
+        
+        if (view === this.backgroundView) {
+            const currentTool = this.toolManager.getCurrentTool();
+            // For multi-point tools, don't fully handle mouseDown - let it generate clicks
+            if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+                this.handleMouseDown(mouseInfo);
+                return false; // Allow click events to be generated
+            }
+            // For other tools, fully handle the event
+            return this.handleMouseDown(mouseInfo);
         }
         return false;
     }
@@ -76,6 +86,13 @@ class DrawingController extends Controller {
     doMouseUp(mouseInfo, view, id, part) {
         // Only handle mouse events on the drawing surface
         if (view === this.backgroundView) {
+            const currentTool = this.toolManager.getCurrentTool();
+            // For multi-point tools, don't fully handle mouseUp - let it generate clicks
+            if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+                this.handleMouseUp(mouseInfo);
+                return false; // Allow click events to be generated
+            }
+            // For other tools, fully handle the event
             return this.handleMouseUp(mouseInfo);
         }
         return false;
@@ -87,6 +104,26 @@ class DrawingController extends Controller {
             return this.handleMouseMove(mouseInfo);
         }
         return false;
+    }
+
+    doLeftClick(mouseInfo, view, id, part) {
+        // Handle single clicks on the drawing surface
+        if (view === this.backgroundView) {
+            return this.handleMouseClick(mouseInfo);
+        }
+        return false;
+    }
+
+    doDoubleClick(mouseInfo, view, id, part, clickCount) {
+        // Handle double clicks on the drawing surface
+        if (view === this.backgroundView) {
+            return this.handleMouseDoubleClick(mouseInfo);
+        }
+        return false;
+    }
+
+    doKeyUp(keyUpInfo, view, id, part) {
+        return this.handleKeyUp(keyUpInfo);
     }
 
     doKeyPress(keyPressInfo, view, id, part) {
@@ -111,12 +148,16 @@ class DrawingController extends Controller {
 
         if (currentTool === Tools.TOOLS.SELECT) {
             this.handleSelectMode(pos.x, pos.y);
-        } else if (!this.toolManager.getCurrentShape()) {
-            this.toolManager.startDrawing(pos.x, pos.y);
-        } else if (event.clickCount > 1) {
-            this.toolManager.addPoint(pos.x, pos.y);
+        } else if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+            // For multi-point tools, start drawing but wait for clicks to add points
+            if (!this.toolManager.isCurrentlyDrawing()) {
+                // Deselect any previously selected shape
+                this.selectShape(null);
+                this.toolManager.startDrawing(pos.x, pos.y, this.drawing.getShapeClasses());
+            }
         } else {
-            this.toolManager.finishCurrentDrawing();
+            // For single-action tools, start drawing on mouse down
+            this.toolManager.startDrawing(pos.x, pos.y, this.drawing.getShapeClasses());
         }
         return true;
     }
@@ -134,11 +175,10 @@ class DrawingController extends Controller {
 
     handleMouseUp(event) {
         const pos = this.getMousePosition(event);
+        const currentTool = this.toolManager.getCurrentTool();
 
         if (this.toolManager.isCurrentlyDrawing()) {
-            const currentTool = this.toolManager.getCurrentTool();
-            
-            // For single-click tools (line, circle, oval, rect), finish on mouse up
+            // For single-action tools (line, circle, oval, rect), finish on mouse up
             if (currentTool === Tools.TOOLS.LINE || currentTool === Tools.TOOLS.CIRCLE || 
                 currentTool === Tools.TOOLS.OVAL || currentTool === Tools.TOOLS.RECT) {
                 const finishedShape = this.toolManager.getCurrentShape();
@@ -146,16 +186,76 @@ class DrawingController extends Controller {
                 // Check if the shape is valid (mouse moved more than minimum distance)
                 if (finishedShape && this.toolManager.hasMinimumSize()) {
                     this.drawing.addShape(finishedShape);
-                    this.selectShape(finishedShape);
+                    this.lastDrawnShape = finishedShape;
+                    
+                    // If shift is held, stay in drawing mode. Otherwise, select and switch to SELECT
+                    if (event.shift) {
+                        // Don't select, stay in current tool
+                        this.selectShape(null);
+                    } else {
+                        // Select the shape and switch to SELECT mode
+                        this.selectShape(finishedShape);
+                        this.toolManager.setTool(Tools.TOOLS.SELECT);
+                        this.updateToolSelection(Tools.TOOLS.SELECT);
+                        this.lastDrawnShape = null;
+                    }
                 }
                 this.toolManager.finishCurrentDrawing();
-            } else {
-                // For multi-click tools (spline, poly), we already added the point in handleMouseDown
             }
+            // For multi-point tools, don't finish on mouse up - wait for click or double-click
         }
         
         this.draggedPoint = null;
         return true;
+    }
+
+    handleMouseClick(event) {
+        const pos = this.getMousePosition(event);
+        const currentTool = this.toolManager.getCurrentTool();
+
+        console.log('handleMouseClick: tool=', currentTool, 'isDrawing=', this.toolManager.isCurrentlyDrawing());
+
+        // For multi-point tools (spline, poly, bezier), add a point on click
+        if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+            if (this.toolManager.isCurrentlyDrawing()) {
+                console.log('Adding point at', pos.x, pos.y);
+                this.toolManager.addPointToShape(pos.x, pos.y);
+            }
+            return true;
+        }
+        
+        return false;
+    }
+
+    handleMouseDoubleClick(event) {
+        const pos = this.getMousePosition(event);
+        const currentTool = this.toolManager.getCurrentTool();
+
+        // For multi-point tools, finish the shape on double-click
+        if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+            if (this.toolManager.isCurrentlyDrawing()) {
+                const finishedShape = this.toolManager.finishMultiPointShape();
+                if (finishedShape) {
+                    this.drawing.addShape(finishedShape);
+                    this.lastDrawnShape = finishedShape;
+                    
+                    // If shift is held, stay in drawing mode. Otherwise, select and switch to SELECT
+                    if (event.shift) {
+                        // Don't select, stay in current tool
+                        this.selectShape(null);
+                    } else {
+                        // Select the shape and switch to SELECT mode
+                        this.selectShape(finishedShape);
+                        this.toolManager.setTool(Tools.TOOLS.SELECT);
+                        this.updateToolSelection(Tools.TOOLS.SELECT);
+                        this.lastDrawnShape = null;
+                    }
+                }
+            }
+            return true;
+        }
+        
+        return false;
     }
 
     handleSelectMode(x, y) {
@@ -165,20 +265,20 @@ class DrawingController extends Controller {
             const endpoints = shape.getEndpoints();
             const controlPoints = shape.getControlPoints();
             
+            // Check control points FIRST (they're smaller and have priority)
+            for (let i = 0; i < controlPoints.length; i++) {
+                const cp = controlPoints[i];
+                if (Math.abs(x - cp.x) < 6 && Math.abs(y - cp.y) < 6) {
+                    this.draggedPoint = { shape, type: 'control', index: i };
+                    return;
+                }
+            }
+            
             // Check endpoints
             for (let i = 0; i < endpoints.length; i++) {
                 const ep = endpoints[i];
                 if (Math.abs(x - ep.x) < 6 && Math.abs(y - ep.y) < 6) {
                     this.draggedPoint = { shape, type: 'endpoint', index: i };
-                    return;
-                }
-            }
-            
-            // Check control points
-            for (let i = 0; i < controlPoints.length; i++) {
-                const cp = controlPoints[i];
-                if (Math.abs(x - cp.x) < 6 && Math.abs(y - cp.y) < 6) {
-                    this.draggedPoint = { shape, type: 'control', index: i };
                     return;
                 }
             }
@@ -221,9 +321,21 @@ class DrawingController extends Controller {
             }
         } else if (type === 'control') {
             const controlPoints = shape.getControlPoints();
-            if (controlPoints[index] && shape.constructor.name === 'Spline') {
-                controlPoints[index].x = x;
-                controlPoints[index].y = y;
+            if (controlPoints[index]) {
+                if (shape.constructor.name === 'Spline') {
+                    // For Cardinal splines, control points are first and last points in the array
+                    if (index === 0) {
+                        shape.points[0].x = x;
+                        shape.points[0].y = y;
+                    } else if (index === 1) {
+                        const lastIdx = shape.points.length - 1;
+                        shape.points[lastIdx].x = x;
+                        shape.points[lastIdx].y = y;
+                    }
+                } else if (shape.constructor.name === 'BezierSpline') {
+                    controlPoints[index].x = x;
+                    controlPoints[index].y = y;
+                }
             }
         }
     }
@@ -257,9 +369,14 @@ class DrawingController extends Controller {
                 this.updateRectangleCorner(shape, index, x, y);
                 break;
             case 'Polygon':
-            case 'Spline':
                 shape.points[index].x = x;
                 shape.points[index].y = y;
+                break;
+            case 'Spline':
+                // For Cardinal splines, endpoints are the interior points (index 1 onwards)
+                // So endpoint[0] maps to points[1], endpoint[1] maps to points[2], etc.
+                shape.points[index + 1].x = x;
+                shape.points[index + 1].y = y;
                 break;
         }
     }
@@ -292,11 +409,54 @@ class DrawingController extends Controller {
         }
     }
 
+    handleKeyUp(event) {
+        // When shift is released, if we have a last drawn shape, select it and switch to SELECT mode
+        if (event.keyCode === pdg.keyCode_Shift || event.keyCode === pdg.keyCode_ShiftLeft || event.keyCode === pdg.keyCode_ShiftRight) {
+            if (this.lastDrawnShape) {
+                this.selectShape(this.lastDrawnShape);
+                this.toolManager.setTool(Tools.TOOLS.SELECT);
+                this.updateToolSelection(Tools.TOOLS.SELECT);
+                this.lastDrawnShape = null;
+            }
+        }
+        return false;
+    }
+
     handleKeyPress(event) {
-        // Handle key press events for color selection
+        // Get unicode value (used for both regular keys and arrow keys)
+        const unicode = event && event.unicode;
+        
+        // Check for arrow keys (unicode values 28-31)
+        if (unicode >= 28 && unicode <= 31) {
+            if (this.selectedShape) {
+                const moveAmount = event.shift ? 1 : 10;
+                let dx = 0, dy = 0;
+                
+                switch (unicode) {
+                    case 28: // Left arrow (pdg.key_LeftArrow)
+                        dx = -moveAmount;
+                        break;
+                    case 29: // Right arrow (pdg.key_RightArrow)
+                        dx = moveAmount;
+                        break;
+                    case 30: // Up arrow (pdg.key_UpArrow)
+                        dy = -moveAmount;
+                        break;
+                    case 31: // Down arrow (pdg.key_DownArrow)
+                        dy = moveAmount;
+                        break;
+                }
+                
+                this.drawing.moveShape(this.selectedShape, dx, dy);
+                return true;
+            }
+            return false;
+        }
+        
+        // Handle key press events for color and tool selection
         let key = '';
-        if (event && event.unicode) {
-            key = String.fromCharCode(event.unicode).toUpperCase();
+        if (unicode) {
+            key = String.fromCharCode(unicode).toUpperCase();
         }
 
         // Tool selection
@@ -309,6 +469,14 @@ class DrawingController extends Controller {
         }
 
         switch (key) {
+            case '\t': // Tab key
+                // Check if shift is pressed for reverse direction
+                const shiftPressed = event && event.shift;
+                this.selectNextShape(shiftPressed);
+                // Switch to SELECT mode when using TAB to navigate shapes
+                this.toolManager.setTool(Tools.TOOLS.SELECT);
+                this.updateToolSelection(Tools.TOOLS.SELECT);
+                return true;
             case '\u007f': // Delete key
             case '\b': // Backspace key
                 if (this.selectedShape) {
@@ -317,14 +485,51 @@ class DrawingController extends Controller {
                 }
                 return true;
             case '\u001b': // Escape key
-                this.toolManager.finishCurrentDrawing();
-                this.selectShape(null);
-                // Switch to SELECT tool
-                this.toolManager.setTool(Tools.TOOLS.SELECT);
-                this.updateToolSelection(Tools.TOOLS.SELECT);
+                const currentTool = this.toolManager.getCurrentTool();
+                // For multi-point tools, remove last point instead of canceling
+                if ((currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) 
+                    && this.toolManager.isCurrentlyDrawing()) {
+                    this.toolManager.removeLastPoint();
+                } else {
+                    // For other tools or when not drawing, finish and switch to SELECT
+                    this.toolManager.finishCurrentDrawing();
+                    this.selectShape(null);
+                    this.toolManager.setTool(Tools.TOOLS.SELECT);
+                    this.updateToolSelection(Tools.TOOLS.SELECT);
+                }
                 return true;
         }
         return true;
+    }
+
+    selectNextShape(reverse = false) {
+        const shapes = this.drawing.getShapes();
+        if (shapes.length === 0) return;
+
+        let newIndex = -1;
+
+        if (!this.selectedShape) {
+            // Nothing selected - select most recent (last) if forward, first if reverse
+            newIndex = reverse ? 0 : shapes.length - 1;
+        } else {
+            // Find current selection
+            const currentIndex = shapes.indexOf(this.selectedShape);
+            if (currentIndex === -1) {
+                // Current selection not found, select most recent
+                newIndex = shapes.length - 1;
+            } else {
+                // Move to next/previous
+                if (reverse) {
+                    // SHIFT-TAB: forward in drawing order (newer shapes)
+                    newIndex = (currentIndex + 1) % shapes.length;
+                } else {
+                    // TAB: backward in drawing order (older shapes)
+                    newIndex = (currentIndex - 1 + shapes.length) % shapes.length;
+                }
+            }
+        }
+
+        this.selectShape(shapes[newIndex]);
     }
 
 

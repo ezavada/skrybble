@@ -190,48 +190,59 @@ class Drawing {
     }
 
     serializeShape(shape) {
-        switch (shape.constructor.name) {
+        const typeName = shape.constructor.name;
+        let data;
+        
+        switch (typeName) {
             case 'Line':
-                return {
+                data = {
                     x: shape.x, y: shape.y,
                     x2: shape.x2, y2: shape.y2,
                     strokeColor: shape.strokeColor,
                     strokeWidth: shape.strokeWidth
                 };
+                break;
             case 'Circle':
-                return {
+                data = {
                     x: shape.x, y: shape.y, radius: shape.radius,
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
                     strokeWidth: shape.strokeWidth
                 };
+                break;
             case 'Oval':
-                return {
+                data = {
                     x: shape.x, y: shape.y,
                     radiusX: shape.radiusX, radiusY: shape.radiusY,
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
                     strokeWidth: shape.strokeWidth
                 };
+                break;
             case 'Rectangle':
-                return {
+                data = {
                     x: shape.x, y: shape.y,
                     width: shape.width, height: shape.height,
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
                     strokeWidth: shape.strokeWidth
                 };
+                break;
             case 'Polygon':
             case 'Spline':
-                return {
+            case 'BezierSpline':
+                data = {
                     points: shape.points,
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
                     strokeWidth: shape.strokeWidth
                 };
+                break;
             default:
                 return null;
         }
+        
+        return { type: typeName, ...data };
     }
 
     deserializeShape(type, data) {
@@ -263,6 +274,11 @@ class Drawing {
                 );
             case 'Spline':
                 return new ShapeClasses.Spline(
+                    data.points,
+                    data.fillColor, data.strokeColor, data.strokeWidth
+                );
+            case 'BezierSpline':
+                return new ShapeClasses.BezierSpline(
                     data.points,
                     data.fillColor, data.strokeColor, data.strokeWidth
                 );

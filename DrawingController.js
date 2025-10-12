@@ -40,6 +40,17 @@ class DrawingController extends Controller {
         this.rubberBandTimer = null;
         this.rubberBandModifiers = null; // Store modifier keys (shift, ctrl, etc.) for selection
         this.rubberBandInitialStates = null; // Store initial selection states for toggle mode
+        
+        // Clipboard for cut/copy/paste
+        this.clipboard = null;
+        this.pasteCount = 0; // Track how many times current clipboard has been pasted
+        
+        // Undo/Redo history
+        this.undoStack = [];
+        this.redoStack = [];
+        this.maxUndoLevels = 50;
+        this.isNudging = false; // Track if we're in a nudge sequence
+        this.nudgeTimer = null; // Timer to finalize nudge after inactivity
     }
     
     setupViews() {
@@ -217,6 +228,7 @@ class DrawingController extends Controller {
                 
                 // Check if the shape is valid (mouse moved more than minimum distance)
                 if (finishedShape && this.toolManager.hasMinimumSize()) {
+                    this.saveUndoState('add shape');
                     this.drawing.addShape(finishedShape);
                     this.lastDrawnShape = finishedShape;
                     
@@ -268,6 +280,7 @@ class DrawingController extends Controller {
             if (this.toolManager.isCurrentlyDrawing()) {
                 const finishedShape = this.toolManager.finishMultiPointShape();
                 if (finishedShape) {
+                    this.saveUndoState('add shape');
                     this.drawing.addShape(finishedShape);
                     this.lastDrawnShape = finishedShape;
                     
@@ -593,6 +606,32 @@ class DrawingController extends Controller {
     handleKeyPress(event) {
         // Get unicode value (used for both regular keys and arrow keys)
         const unicode = event && event.unicode;
+   
+        // Check for keyboard shortcuts with Cmd/Ctrl modifiers
+        const cmdOrCtrl = event && (event.meta || event.ctrl);
+        
+        if (cmdOrCtrl && unicode) {
+            const key = String.fromCharCode(unicode).toUpperCase();
+            
+            switch (key) {
+                case 'C': // Copy
+                    this.copySelectedShapes();
+                    return true;
+                case 'X': // Cut
+                    this.cutSelectedShapes();
+                    return true;
+                case 'V': // Paste
+                    this.pasteShapes();
+                    return true;
+                case 'Z': // Undo or Redo
+                    if (event.shift) {
+                        this.redo();
+                    } else {
+                        this.undo();
+                    }
+                    return true;
+            }
+        }
         
         // Check for arrow keys (unicode values 28-31)
         if (unicode >= 28 && unicode <= 31) {
@@ -618,10 +657,28 @@ class DrawingController extends Controller {
                         break;
                 }
                 
+                // Save undo state only at the start of a nudge sequence
+                if (!this.isNudging) {
+                    this.saveUndoState('move');
+                    this.isNudging = true;
+                }
+                
+                // Clear existing nudge timer
+                if (this.nudgeTimer) {
+                    clearTimeout(this.nudgeTimer);
+                }
+                
                 // Move all selected shapes
                 for (let shape of selectedShapes) {
                     this.drawing.moveShape(shape, dx, dy);
                 }
+                
+                // Set timer to finalize nudge after 500ms of inactivity
+                this.nudgeTimer = setTimeout(() => {
+                    this.isNudging = false;
+                    this.nudgeTimer = null;
+                }, 500);
+                
                 return true;
             }
             return false;
@@ -656,6 +713,7 @@ class DrawingController extends Controller {
                 // Delete all selected shapes
                 const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
                 if (selectedShapes.length > 0) {
+                    this.saveUndoState('delete');
                     for (let shape of selectedShapes) {
                         this.drawing.removeShape(shape);
                     }
@@ -743,6 +801,221 @@ class DrawingController extends Controller {
 
     getDrawing() {
         return this.drawing;
+    }
+
+    // ============================ Clipboard Operations ============================
+
+    copySelectedShapes() {
+        const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+        if (selectedShapes.length === 0) return;
+        
+        // Serialize selected shapes to clipboard
+        this.clipboard = selectedShapes.map(shape => this.drawing.serializeShape(shape));
+        // Reset paste count for new clipboard content
+        this.pasteCount = 0;
+    }
+
+    cutSelectedShapes() {
+        const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+        if (selectedShapes.length === 0) return;
+        
+        // Copy to clipboard
+        this.copySelectedShapes();
+        
+        // Save state for undo
+        this.saveUndoState('cut');
+        
+        // Delete selected shapes
+        for (let shape of selectedShapes) {
+            this.drawing.removeShape(shape);
+        }
+        this.selectedShape = null;
+    }
+
+    pasteShapes() {
+        if (!this.clipboard || this.clipboard.length === 0) return;
+        
+        // Save state for undo
+        this.saveUndoState('paste');
+        
+        // Increment paste count for cumulative offset
+        this.pasteCount++;
+        
+        // Clear current selection
+        this.drawing.clearSelection();
+        
+        // Paste shapes with cumulative offset (10 pixels per paste)
+        const offset = 10 * this.pasteCount;
+        for (let shapeData of this.clipboard) {
+            // Deserialize the shape
+            const shape = this.deserializeShapeWithOffset(shapeData, offset);
+            if (shape) {
+                this.drawing.addShape(shape);
+                shape.selected = true;
+            }
+        }
+    }
+
+    deserializeShapeWithOffset(shapeData, offset) {
+        const ShapeClasses = this.drawing.getShapeClasses();
+        const type = shapeData.type;
+        
+        switch (type) {
+            case 'Line':
+                return new ShapeClasses.Line(
+                    shapeData.x + offset, shapeData.y + offset,
+                    shapeData.x2 + offset, shapeData.y2 + offset,
+                    shapeData.strokeColor, shapeData.strokeWidth
+                );
+            case 'Circle':
+                return new ShapeClasses.Circle(
+                    shapeData.x + offset, shapeData.y + offset,
+                    shapeData.radius,
+                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
+                );
+            case 'Oval':
+                return new ShapeClasses.Oval(
+                    shapeData.x + offset, shapeData.y + offset,
+                    shapeData.radiusX, shapeData.radiusY,
+                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
+                );
+            case 'Rectangle':
+                return new ShapeClasses.Rectangle(
+                    shapeData.x + offset, shapeData.y + offset,
+                    shapeData.width, shapeData.height,
+                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
+                );
+            case 'Polygon':
+                const polyPoints = shapeData.points.map(p => ({ x: p.x + offset, y: p.y + offset }));
+                return new ShapeClasses.Polygon(
+                    polyPoints,
+                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
+                );
+            case 'Spline':
+                const splinePoints = shapeData.points.map(p => ({ x: p.x + offset, y: p.y + offset }));
+                return new ShapeClasses.Spline(
+                    splinePoints,
+                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
+                );
+            case 'BezierSpline':
+                const bezierPoints = shapeData.points.map(p => ({ x: p.x + offset, y: p.y + offset }));
+                return new ShapeClasses.BezierSpline(
+                    bezierPoints,
+                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
+                );
+            default:
+                return null;
+        }
+    }
+
+    // ============================ Undo Operations ============================
+
+    saveUndoState(action) {
+        // Finalize any ongoing nudge sequence before saving new state
+        if (this.isNudging && action !== 'move') {
+            this.finalizeNudge();
+        }
+        
+        const state = {
+            action: action,
+            shapes: this.drawing.getShapes().map(shape => {
+                const serialized = this.drawing.serializeShape(shape);
+                return {
+                    data: serialized,
+                    type: serialized.type
+                };
+            })
+        };
+        
+        this.undoStack.push(state);
+        
+        // Clear redo stack when a new action is performed
+        this.redoStack = [];
+        
+        // Limit undo stack size
+        if (this.undoStack.length > this.maxUndoLevels) {
+            this.undoStack.shift();
+        }
+    }
+
+    finalizeNudge() {
+        if (this.nudgeTimer) {
+            clearTimeout(this.nudgeTimer);
+            this.nudgeTimer = null;
+        }
+        this.isNudging = false;
+    }
+
+    undo() {
+        if (this.undoStack.length === 0) return;
+        
+        // Finalize any ongoing nudge sequence
+        this.finalizeNudge();
+        
+        // Save current state to redo stack
+        const currentState = {
+            action: 'undo',
+            shapes: this.drawing.getShapes().map(shape => {
+                const serialized = this.drawing.serializeShape(shape);
+                return {
+                    data: serialized,
+                    type: serialized.type
+                };
+            })
+        };
+        this.redoStack.push(currentState);
+        
+        // Get and restore previous state
+        const previousState = this.undoStack.pop();
+        
+        // Clear current shapes
+        this.drawing.clearShapes();
+        
+        // Restore previous shapes
+        for (let shapeInfo of previousState.shapes) {
+            const shape = this.drawing.deserializeShape(shapeInfo.type, shapeInfo.data);
+            if (shape) {
+                this.drawing.addShape(shape);
+            }
+        }
+        
+        this.selectedShape = null;
+    }
+
+    redo() {
+        if (this.redoStack.length === 0) return;
+        
+        // Finalize any ongoing nudge sequence
+        this.finalizeNudge();
+        
+        // Save current state to undo stack
+        const currentState = {
+            action: 'redo',
+            shapes: this.drawing.getShapes().map(shape => {
+                const serialized = this.drawing.serializeShape(shape);
+                return {
+                    data: serialized,
+                    type: serialized.type
+                };
+            })
+        };
+        this.undoStack.push(currentState);
+        
+        // Get and restore redo state
+        const redoState = this.redoStack.pop();
+        
+        // Clear current shapes
+        this.drawing.clearShapes();
+        
+        // Restore redo shapes
+        for (let shapeInfo of redoState.shapes) {
+            const shape = this.drawing.deserializeShape(shapeInfo.type, shapeInfo.data);
+            if (shape) {
+                this.drawing.addShape(shape);
+            }
+        }
+        
+        this.selectedShape = null;
     }
 }
 

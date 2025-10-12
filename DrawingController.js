@@ -30,6 +30,16 @@ class DrawingController extends Controller {
         this.draggedPoint = null;
         this.selectedShape = null;
         this.lastDrawnShape = null; // Track the most recently drawn shape
+        
+        // Rubber-band selection state
+        this.rubberBandStart = null;
+        this.rubberBandEnd = null;
+        this.rubberBandActive = false;
+        this.rubberBandPending = false; // True when mouse is down but hasn't moved minimum distance
+        this.rubberBandColorToggle = false;
+        this.rubberBandTimer = null;
+        this.rubberBandModifiers = null; // Store modifier keys (shift, ctrl, etc.) for selection
+        this.rubberBandInitialStates = null; // Store initial selection states for toggle mode
     }
     
     setupViews() {
@@ -147,7 +157,7 @@ class DrawingController extends Controller {
         const currentTool = this.toolManager.getCurrentTool();
 
         if (currentTool === Tools.TOOLS.SELECT) {
-            this.handleSelectMode(pos.x, pos.y);
+            this.handleSelectMode(pos.x, pos.y, event);
         } else if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
             // For multi-point tools, start drawing but wait for clicks to add points
             if (!this.toolManager.isCurrentlyDrawing()) {
@@ -167,6 +177,20 @@ class DrawingController extends Controller {
 
         if (this.toolManager.isCurrentlyDrawing()) {
             this.toolManager.updateDrawing(pos.x, pos.y);
+        } else if (this.rubberBandPending) {
+            // Check if we've moved enough to activate rubber-band selection
+            const MIN_DISTANCE = 3;
+            const dx = pos.x - this.rubberBandStart.x;
+            const dy = pos.y - this.rubberBandStart.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance >= MIN_DISTANCE) {
+                // Activate rubber-band selection
+                this.activateRubberBandSelection();
+                this.updateRubberBandSelection(pos.x, pos.y);
+            }
+        } else if (this.rubberBandActive) {
+            this.updateRubberBandSelection(pos.x, pos.y);
         } else if (this.draggedPoint) {
             this.updateDraggedPoint(pos.x, pos.y);
         }
@@ -177,7 +201,15 @@ class DrawingController extends Controller {
         const pos = this.getMousePosition(event);
         const currentTool = this.toolManager.getCurrentTool();
 
-        if (this.toolManager.isCurrentlyDrawing()) {
+        if (this.rubberBandActive) {
+            this.finishRubberBandSelection();
+        } else if (this.rubberBandPending) {
+            // Mouse up before moving minimum distance - cancel rubber-band
+            this.rubberBandPending = false;
+            this.rubberBandStart = null;
+            this.rubberBandModifiers = null;
+            this.rubberBandInitialStates = null;
+        } else if (this.toolManager.isCurrentlyDrawing()) {
             // For single-action tools (line, circle, oval, rect), finish on mouse up
             if (currentTool === Tools.TOOLS.LINE || currentTool === Tools.TOOLS.CIRCLE || 
                 currentTool === Tools.TOOLS.OVAL || currentTool === Tools.TOOLS.RECT) {
@@ -258,7 +290,10 @@ class DrawingController extends Controller {
         return false;
     }
 
-    handleSelectMode(x, y) {
+    handleSelectMode(x, y, event) {
+        const shiftKey = event && event.shift;
+        const toggleKey = event && (event.ctrl || event.alt || event.command);
+        
         // Check if clicking on an endpoint or control point
         const shapes = this.drawing.getShapes();
         for (let shape of shapes) {
@@ -270,6 +305,10 @@ class DrawingController extends Controller {
                 const cp = controlPoints[i];
                 if (Math.abs(x - cp.x) < 6 && Math.abs(y - cp.y) < 6) {
                     this.draggedPoint = { shape, type: 'control', index: i };
+                    // Select the shape if it's not already selected
+                    if (!shape.selected) {
+                        this.selectShape(shape, false, false); // Normal selection for dragging
+                    }
                     return;
                 }
             }
@@ -279,6 +318,10 @@ class DrawingController extends Controller {
                 const ep = endpoints[i];
                 if (Math.abs(x - ep.x) < 6 && Math.abs(y - ep.y) < 6) {
                     this.draggedPoint = { shape, type: 'endpoint', index: i };
+                    // Select the shape if it's not already selected
+                    if (!shape.selected) {
+                        this.selectShape(shape, false, false); // Normal selection for dragging
+                    }
                     return;
                 }
             }
@@ -293,20 +336,132 @@ class DrawingController extends Controller {
             }
         }
 
-        // Update selection
-        this.selectShape(clickedShape);
+        if (clickedShape) {
+            // Update selection with modifier keys
+            if (toggleKey) {
+                // Toggle selection state
+                clickedShape.selected = !clickedShape.selected;
+            } else if (shiftKey) {
+                // Add to selection
+                clickedShape.selected = true;
+            } else {
+                // Normal selection - clear others
+                this.selectShape(clickedShape, false, false);
+            }
+        } else {
+            // Clicked on background - prepare for rubber-band selection
+            // (will only activate if mouse moves minimum distance)
+            this.rubberBandStart = { x, y };
+            this.rubberBandPending = true;
+            this.rubberBandModifiers = { shift: shiftKey, toggle: toggleKey };
+            
+            if (!shiftKey && !toggleKey) {
+                // Clear selection only if not using modifiers
+                this.selectShape(null, false, false);
+            }
+        }
     }
 
-    selectShape(shape) {
-        // Clear previous selections
-        this.drawing.clearSelection();
+    selectShape(shape, additive = false, toggle = false) {
+        if (!additive && !toggle) {
+            // Clear previous selections for normal selection
+            this.drawing.clearSelection();
+        }
         
         if (shape) {
-            shape.selected = true;
+            if (toggle) {
+                shape.selected = !shape.selected;
+            } else {
+                shape.selected = true;
+            }
             this.selectedShape = shape;
-        } else {
+        } else if (!additive && !toggle) {
             this.selectedShape = null;
         }
+    }
+
+    activateRubberBandSelection() {
+        // rubberBandStart is already set when pending was set
+        this.rubberBandEnd = { ...this.rubberBandStart };
+        this.rubberBandActive = true;
+        this.rubberBandPending = false;
+        this.rubberBandColorToggle = false;
+        
+        // Store initial selection states for all shapes (for toggle mode)
+        const shapes = this.drawing.getShapes();
+        this.rubberBandInitialStates = new Map();
+        for (let shape of shapes) {
+            this.rubberBandInitialStates.set(shape, shape.selected);
+        }
+        
+        // Clear any existing selection only if not using modifiers
+        if (!this.rubberBandModifiers || (!this.rubberBandModifiers.shift && !this.rubberBandModifiers.toggle)) {
+            this.drawing.clearSelection();
+        }
+        
+        // Start timer to alternate colors every 125ms
+        this.rubberBandTimer = setInterval(() => {
+            this.rubberBandColorToggle = !this.rubberBandColorToggle;
+        }, 125);
+    }
+
+    updateRubberBandSelection(x, y) {
+        if (!this.rubberBandActive) return;
+        this.rubberBandEnd = { x, y };
+        
+        // Dynamically update selection based on current rectangle
+        const left = Math.min(this.rubberBandStart.x, this.rubberBandEnd.x);
+        const right = Math.max(this.rubberBandStart.x, this.rubberBandEnd.x);
+        const top = Math.min(this.rubberBandStart.y, this.rubberBandEnd.y);
+        const bottom = Math.max(this.rubberBandStart.y, this.rubberBandEnd.y);
+        
+        const shiftMode = this.rubberBandModifiers && this.rubberBandModifiers.shift;
+        const toggleMode = this.rubberBandModifiers && this.rubberBandModifiers.toggle;
+        
+        // Update selection for all shapes
+        const shapes = this.drawing.getShapes();
+        for (let shape of shapes) {
+            const intersects = shape.intersectsRect && shape.intersectsRect(left, top, right, bottom);
+            const initialState = this.rubberBandInitialStates.get(shape);
+            
+            if (toggleMode) {
+                // Toggle mode: flip selection for intersecting shapes from their initial state
+                if (intersects) {
+                    shape.selected = !initialState;
+                } else {
+                    shape.selected = initialState;
+                }
+            } else if (shiftMode) {
+                // Shift mode: add to selection, preserve non-intersecting shapes
+                if (intersects) {
+                    shape.selected = true;
+                } else {
+                    shape.selected = initialState;
+                }
+            } else {
+                // Normal mode: only select intersecting shapes
+                shape.selected = intersects;
+            }
+        }
+    }
+
+    finishRubberBandSelection() {
+        if (!this.rubberBandActive) return;
+        
+        // Stop the color toggle timer
+        if (this.rubberBandTimer) {
+            clearInterval(this.rubberBandTimer);
+            this.rubberBandTimer = null;
+        }
+        
+        // Selection is already up-to-date from updateRubberBandSelection()
+        // Just reset rubber-band state
+        this.rubberBandActive = false;
+        this.rubberBandPending = false;
+        this.rubberBandStart = null;
+        this.rubberBandEnd = null;
+        this.rubberBandModifiers = null;
+        this.rubberBandInitialStates = null;
     }
 
     updateDraggedPoint(x, y) {
@@ -441,7 +596,10 @@ class DrawingController extends Controller {
         
         // Check for arrow keys (unicode values 28-31)
         if (unicode >= 28 && unicode <= 31) {
-            if (this.selectedShape) {
+            // Get all selected shapes
+            const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+            
+            if (selectedShapes.length > 0) {
                 const moveAmount = event.shift ? 1 : 10;
                 let dx = 0, dy = 0;
                 
@@ -460,7 +618,10 @@ class DrawingController extends Controller {
                         break;
                 }
                 
-                this.drawing.moveShape(this.selectedShape, dx, dy);
+                // Move all selected shapes
+                for (let shape of selectedShapes) {
+                    this.drawing.moveShape(shape, dx, dy);
+                }
                 return true;
             }
             return false;
@@ -492,8 +653,12 @@ class DrawingController extends Controller {
                 return true;
             case '\u007f': // Delete key
             case '\b': // Backspace key
-                if (this.selectedShape) {
-                    this.drawing.removeShape(this.selectedShape);
+                // Delete all selected shapes
+                const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+                if (selectedShapes.length > 0) {
+                    for (let shape of selectedShapes) {
+                        this.drawing.removeShape(shape);
+                    }
                     this.selectedShape = null;
                 }
                 return true;

@@ -99,6 +99,45 @@ class Line extends Shape {
             { x: this.x2, y: this.y2 }
         ];
     }
+
+    intersectsRect(left, top, right, bottom) {
+        // Check if line intersects with rectangle
+        // First check if any endpoint is inside the rectangle
+        if ((this.x >= left && this.x <= right && this.y >= top && this.y <= bottom) ||
+            (this.x2 >= left && this.x2 <= right && this.y2 >= top && this.y2 <= bottom)) {
+            return true;
+        }
+        
+        // Check if line intersects any edge of the rectangle
+        return this.lineIntersectsRect(this.x, this.y, this.x2, this.y2, left, top, right, bottom);
+    }
+
+    lineIntersectsRect(x1, y1, x2, y2, left, top, right, bottom) {
+        // Check intersection with each edge of the rectangle
+        const edges = [
+            [left, top, right, top],     // Top edge
+            [right, top, right, bottom],  // Right edge
+            [right, bottom, left, bottom], // Bottom edge
+            [left, bottom, left, top]     // Left edge
+        ];
+        
+        for (let edge of edges) {
+            if (this.linesIntersect(x1, y1, x2, y2, edge[0], edge[1], edge[2], edge[3])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    linesIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+        const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+        if (denom === 0) return false; // Lines are parallel
+        
+        const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+        const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+        
+        return (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1);
+    }
 }
 
 // Circle Shape
@@ -147,6 +186,20 @@ class Circle extends Shape {
             { x: this.x - this.radius, y: this.y }
         ];
     }
+
+    intersectsRect(left, top, right, bottom) {
+        // Find the closest point on the rectangle to the circle center
+        const closestX = Math.max(left, Math.min(this.x, right));
+        const closestY = Math.max(top, Math.min(this.y, bottom));
+        
+        // Calculate distance from circle center to this closest point
+        const dx = this.x - closestX;
+        const dy = this.y - closestY;
+        const distanceSquared = dx * dx + dy * dy;
+        
+        // Check if distance is less than radius (circle intersects or is inside)
+        return distanceSquared <= (this.radius * this.radius);
+    }
 }
 
 // Rectangle Shape
@@ -194,6 +247,17 @@ class Rectangle extends Shape {
             { x: this.x + this.width, y: this.y + this.height },
             { x: this.x, y: this.y + this.height }
         ];
+    }
+
+    intersectsRect(left, top, right, bottom) {
+        // Calculate this rectangle's bounds
+        const thisLeft = Math.min(this.x, this.x + this.width);
+        const thisRight = Math.max(this.x, this.x + this.width);
+        const thisTop = Math.min(this.y, this.y + this.height);
+        const thisBottom = Math.max(this.y, this.y + this.height);
+        
+        // Check if rectangles overlap
+        return !(thisRight < left || thisLeft > right || thisBottom < top || thisTop > bottom);
     }
 }
 
@@ -333,6 +397,38 @@ class Spline extends Shape {
 
     addPoint(point) {
         this.points.push(point);
+    }
+
+    intersectsRect(left, top, right, bottom) {
+        // Check if any point is inside the rectangle
+        for (let point of this.points) {
+            if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) {
+                return true;
+            }
+        }
+        
+        // Check if spline segments intersect with rectangle edges
+        // Sample points along the spline
+        if (this.points.length < 2) return false;
+        
+        const spline = new pdg.Spline(pdg.spline_Cardinal);
+        for (let i = 0; i < this.points.length; i++) {
+            spline.addPoint(new pdg.Point(this.points[i].x, this.points[i].y));
+        }
+        
+        const maxU = spline.getMaxU();
+        const samples = 30;
+        
+        for (let i = 0; i < samples; i++) {
+            const u = (maxU * i) / samples;
+            const p = spline.getFirstOrder(u);
+            
+            if (p.x >= left && p.x <= right && p.y >= top && p.y <= bottom) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 }
 
@@ -556,6 +652,48 @@ class BezierSpline extends Shape {
         // Preserve any manually edited control points
         this.controlPoints = this.generateControlPoints(true);
     }
+
+    intersectsRect(left, top, right, bottom) {
+        // Check if any endpoint is inside the rectangle
+        for (let point of this.points) {
+            if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) {
+                return true;
+            }
+        }
+        
+        // Check if bezier curve segments intersect with rectangle
+        // Sample points along the spline
+        if (this.points.length < 2) return false;
+        
+        const spline = new pdg.Spline(pdg.spline_CubicBezier);
+        for (let i = 0; i < this.points.length - 1; i++) {
+            const p1 = this.points[i];
+            const p4 = this.points[i + 1];
+            const p2 = this.controlPoints[i * 2] || p1;
+            const p3 = this.controlPoints[i * 2 + 1] || p4;
+            
+            spline.addSegment(
+                new pdg.Point(p1.x, p1.y),
+                new pdg.Point(p2.x, p2.y),
+                new pdg.Point(p3.x, p3.y),
+                new pdg.Point(p4.x, p4.y)
+            );
+        }
+        
+        const maxU = spline.getMaxU();
+        const samples = 30;
+        
+        for (let i = 0; i < samples; i++) {
+            const u = (maxU * i) / samples;
+            const p = spline.getFirstOrder(u);
+            
+            if (p.x >= left && p.x <= right && p.y >= top && p.y <= bottom) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
 }
 
 // Oval Shape (ellipse)
@@ -604,6 +742,35 @@ class Oval extends Shape {
             { x: this.x, y: this.y + this.radiusY },
             { x: this.x - this.radiusX, y: this.y }
         ];
+    }
+
+    intersectsRect(left, top, right, bottom) {
+        // Find the closest point on the rectangle to the ellipse center
+        const closestX = Math.max(left, Math.min(this.x, right));
+        const closestY = Math.max(top, Math.min(this.y, bottom));
+        
+        // Calculate normalized distance from ellipse center to this closest point
+        const dx = (closestX - this.x) / this.radiusX;
+        const dy = (closestY - this.y) / this.radiusY;
+        const distanceSquared = dx * dx + dy * dy;
+        
+        // Check if within ellipse
+        if (distanceSquared <= 1) return true;
+        
+        // Also check if any corner of the rectangle is inside the ellipse
+        const corners = [
+            [left, top], [right, top], [right, bottom], [left, bottom]
+        ];
+        
+        for (let [cx, cy] of corners) {
+            const ndx = (cx - this.x) / this.radiusX;
+            const ndy = (cy - this.y) / this.radiusY;
+            if (ndx * ndx + ndy * ndy <= 1) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 }
 
@@ -700,6 +867,73 @@ class Polygon extends Shape {
 
     getEndpoints() {
         return [...this.points];
+    }
+
+    intersectsRect(left, top, right, bottom) {
+        // Check if any vertex is inside the rectangle
+        for (let point of this.points) {
+            if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) {
+                return true;
+            }
+        }
+        
+        // Check if any edge of the polygon intersects with the rectangle
+        for (let i = 0; i < this.points.length; i++) {
+            const p1 = this.points[i];
+            const p2 = this.points[(i + 1) % this.points.length];
+            
+            if (this.lineIntersectsRect(p1.x, p1.y, p2.x, p2.y, left, top, right, bottom)) {
+                return true;
+            }
+        }
+        
+        // Check if rectangle is completely inside polygon
+        // (test if center of rectangle is inside)
+        const centerX = (left + right) / 2;
+        const centerY = (top + bottom) / 2;
+        if (this.pointInPolygon(centerX, centerY)) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    lineIntersectsRect(x1, y1, x2, y2, left, top, right, bottom) {
+        // Check intersection with each edge of the rectangle
+        const edges = [
+            [left, top, right, top],     // Top edge
+            [right, top, right, bottom],  // Right edge
+            [right, bottom, left, bottom], // Bottom edge
+            [left, bottom, left, top]     // Left edge
+        ];
+        
+        for (let edge of edges) {
+            if (this.linesIntersect(x1, y1, x2, y2, edge[0], edge[1], edge[2], edge[3])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    linesIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+        const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+        if (denom === 0) return false; // Lines are parallel
+        
+        const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+        const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+        
+        return (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1);
+    }
+
+    pointInPolygon(x, y) {
+        let inside = false;
+        for (let i = 0, j = this.points.length - 1; i < this.points.length; j = i++) {
+            if (((this.points[i].y > y) !== (this.points[j].y > y)) &&
+                (x < (this.points[j].x - this.points[i].x) * (y - this.points[i].y) / (this.points[j].y - this.points[i].y) + this.points[i].x)) {
+                inside = !inside;
+            }
+        }
+        return inside;
     }
 }
 

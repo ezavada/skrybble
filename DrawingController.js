@@ -334,7 +334,8 @@ class DrawingController extends Controller {
         const shapes = this.drawing.getShapes();
         for (let shape of shapes) {
             // Check rotation center point FIRST (highest priority)
-            if (shape.selected) {
+            // Skip circles - they can't be rotated (rotation-invariant)
+            if (shape.selected && shape.constructor.name !== 'Circle') {
                 const center = shape.getCenterPoint();
                 if (Math.abs(x - center.x) < 7 && Math.abs(y - center.y) < 7) {
                     // Start rotation
@@ -352,12 +353,22 @@ class DrawingController extends Controller {
             
             const endpoints = shape.getEndpoints();
             const controlPoints = shape.getControlPoints();
+            const center = shape.getCenterPoint();
+            const rotation = shape.rotation || 0;
             
             // Check control points FIRST (they're smaller and have priority)
             for (let i = 0; i < controlPoints.length; i++) {
-                const cp = controlPoints[i];
+                let cp = controlPoints[i];
+                
+                // If shape is rotated, get the rotated position of the control point
+                if (rotation !== 0) {
+                    cp = shape.rotatePoint(cp.x, cp.y, center.x, center.y, rotation);
+                }
+                
                 if (Math.abs(x - cp.x) < 6 && Math.abs(y - cp.y) < 6) {
                     this.draggedPoint = { shape, type: 'control', index: i };
+                    // Save undo state before dragging
+                    this.saveUndoState('drag control point');
                     // Select the shape if it's not already selected
                     if (!shape.selected) {
                         this.selectShape(shape, false, false); // Normal selection for dragging
@@ -368,9 +379,17 @@ class DrawingController extends Controller {
             
             // Check endpoints
             for (let i = 0; i < endpoints.length; i++) {
-                const ep = endpoints[i];
+                let ep = endpoints[i];
+                
+                // If shape is rotated, get the rotated position of the endpoint
+                if (rotation !== 0) {
+                    ep = shape.rotatePoint(ep.x, ep.y, center.x, center.y, rotation);
+                }
+                
                 if (Math.abs(x - ep.x) < 6 && Math.abs(y - ep.y) < 6) {
                     this.draggedPoint = { shape, type: 'endpoint', index: i };
+                    // Save undo state before dragging
+                    this.saveUndoState('drag endpoint');
                     // Select the shape if it's not already selected
                     if (!shape.selected) {
                         this.selectShape(shape, false, false); // Normal selection for dragging
@@ -521,11 +540,21 @@ class DrawingController extends Controller {
         if (!this.draggedPoint) return;
 
         const { shape, type, index } = this.draggedPoint;
+        
+        // If shape is rotated, inverse-rotate the mouse position to shape's local space
+        let localX = x, localY = y;
+        const rotation = shape.rotation || 0;
+        if (rotation !== 0) {
+            const center = shape.getCenterPoint();
+            const rotated = shape.rotatePoint(x, y, center.x, center.y, -rotation);
+            localX = rotated.x;
+            localY = rotated.y;
+        }
 
         if (type === 'endpoint') {
             const endpoints = shape.getEndpoints();
             if (endpoints[index]) {
-                this.updateShapeEndpoint(shape, index, x, y);
+                this.updateShapeEndpoint(shape, index, localX, localY);
             }
         } else if (type === 'control') {
             const controlPoints = shape.getControlPoints();
@@ -533,16 +562,16 @@ class DrawingController extends Controller {
                 if (shape.constructor.name === 'Spline') {
                     // For Cardinal splines, control points are first and last points in the array
                     if (index === 0) {
-                        shape.points[0].x = x;
-                        shape.points[0].y = y;
+                        shape.points[0].x = localX;
+                        shape.points[0].y = localY;
                     } else if (index === 1) {
                         const lastIdx = shape.points.length - 1;
-                        shape.points[lastIdx].x = x;
-                        shape.points[lastIdx].y = y;
+                        shape.points[lastIdx].x = localX;
+                        shape.points[lastIdx].y = localY;
                     }
                 } else if (shape.constructor.name === 'BezierSpline') {
-                    controlPoints[index].x = x;
-                    controlPoints[index].y = y;
+                    controlPoints[index].x = localX;
+                    controlPoints[index].y = localY;
                     // Mark this control point as manually edited
                     if (shape.manuallyEditedControls) {
                         shape.manuallyEditedControls.add(index);
@@ -564,17 +593,34 @@ class DrawingController extends Controller {
                 }
                 break;
             case 'Circle':
+                // Circles keep their center at shape.x, shape.y regardless of rotation
                 const dx = x - shape.x;
                 const dy = y - shape.y;
                 shape.radius = Math.sqrt(dx * dx + dy * dy);
                 break;
             case 'Oval':
-                const dxOval = Math.abs(x - shape.x);
-                const dyOval = Math.abs(y - shape.y);
-                if (index === 0 || index === 2) { // Top or bottom
-                    shape.radiusY = dyOval;
-                } else { // Left or right
-                    shape.radiusX = dxOval;
+                const rotation = shape.rotation || 0;
+                
+                if (rotation !== 0) {
+                    // For rotated ovals, keep center fixed and resize from center
+                    const center = shape.getCenterPoint();
+                    const dxOval = Math.abs(x - center.x);
+                    const dyOval = Math.abs(y - center.y);
+                    
+                    if (index === 0 || index === 2) { // Top or bottom
+                        shape.radiusY = dyOval;
+                    } else { // Left or right
+                        shape.radiusX = dxOval;
+                    }
+                } else {
+                    // Not rotated, use distance from current position
+                    const dxOval = Math.abs(x - shape.x);
+                    const dyOval = Math.abs(y - shape.y);
+                    if (index === 0 || index === 2) { // Top or bottom
+                        shape.radiusY = dyOval;
+                    } else { // Left or right
+                        shape.radiusX = dxOval;
+                    }
                 }
                 break;
             case 'Rectangle':
@@ -603,30 +649,65 @@ class DrawingController extends Controller {
     }
 
     updateRectangleCorner(shape, index, x, y) {
-        const endpoints = shape.getEndpoints();
-        const ep = endpoints[index];
+        const rotation = shape.rotation || 0;
         
-        switch (index) {
-            case 0: // Top-left
-                shape.width += shape.x - x;
-                shape.height += shape.y - y;
-                shape.x = x;
-                shape.y = y;
-                break;
-            case 1: // Top-right
-                shape.width = x - shape.x;
-                shape.height += shape.y - y;
-                shape.y = y;
-                break;
-            case 2: // Bottom-right
-                shape.width = x - shape.x;
-                shape.height = y - shape.y;
-                break;
-            case 3: // Bottom-left
-                shape.width += shape.x - x;
-                shape.height = y - shape.y;
-                shape.x = x;
-                break;
+        // If rotated, we need to keep the center fixed
+        if (rotation !== 0) {
+            const center = shape.getCenterPoint();
+            
+            // Calculate the vector from center to new corner position
+            const dx = x - center.x;
+            const dy = y - center.y;
+            
+            // The opposite corner moves the same distance in opposite direction
+            const oppositeIndex = (index + 2) % 4;
+            
+            // Update position and size based on which corner is being dragged
+            // We calculate new width and height from the center distances
+            if (index === 0 || index === 2) {
+                // Top-left or bottom-right: affects both x and y
+                const newHalfWidth = Math.abs(dx);
+                const newHalfHeight = Math.abs(dy);
+                shape.width = newHalfWidth * 2;
+                shape.height = newHalfHeight * 2;
+                shape.x = center.x - newHalfWidth;
+                shape.y = center.y - newHalfHeight;
+            } else {
+                // Top-right or bottom-left: affects x and y differently
+                const newHalfWidth = Math.abs(dx);
+                const newHalfHeight = Math.abs(dy);
+                shape.width = newHalfWidth * 2;
+                shape.height = newHalfHeight * 2;
+                shape.x = center.x - newHalfWidth;
+                shape.y = center.y - newHalfHeight;
+            }
+        } else {
+            // Not rotated, use original logic
+            const endpoints = shape.getEndpoints();
+            const ep = endpoints[index];
+            
+            switch (index) {
+                case 0: // Top-left
+                    shape.width += shape.x - x;
+                    shape.height += shape.y - y;
+                    shape.x = x;
+                    shape.y = y;
+                    break;
+                case 1: // Top-right
+                    shape.width = x - shape.x;
+                    shape.height += shape.y - y;
+                    shape.y = y;
+                    break;
+                case 2: // Bottom-right
+                    shape.width = x - shape.x;
+                    shape.height = y - shape.y;
+                    break;
+                case 3: // Bottom-left
+                    shape.width += shape.x - x;
+                    shape.height = y - shape.y;
+                    shape.x = x;
+                    break;
+            }
         }
     }
 

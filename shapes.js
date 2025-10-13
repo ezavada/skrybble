@@ -57,18 +57,22 @@ class Shape {
     drawRotationControl(port) {
         if (!this.selected) return;
         
+        // Don't draw rotation control for circles (rotation-invariant)
+        if (this.constructor.name === 'Circle') return;
+        
         const center = this.getCenterPoint();
         const lineLength = this.getRotationLineLength();
         
         // Draw blue center point
-        const centerAttrs = new pdg.Attributes().fillColor(new pdg.Color('blue'));
-        port.drawCircle(new pdg.Point(center.x, center.y), 5, centerAttrs);
+        const centerAttrs = new pdg.Attributes().fillColor(new pdg.Color('blue')).fillOpacity(0.5);
+        port.drawCircle(new pdg.Point(center.x, center.y), 4, centerAttrs);
         
         // Draw blue rotation line
         const endX = center.x + Math.cos(this.rotation) * lineLength;
         const endY = center.y + Math.sin(this.rotation) * lineLength;
         const lineAttrs = new pdg.Attributes()
             .lineColor(new pdg.Color('blue'))
+            .lineOpacity(0.5)
             .lineThickness(2);
         port.drawLine(new pdg.Point(center.x, center.y), new pdg.Point(endX, endY), lineAttrs);
     }
@@ -124,7 +128,16 @@ class Line extends Shape {
     }
 
     contains(x, y) {
-        const dist = this.pointToLineDistance(x, y, this.x, this.y, this.x2, this.y2);
+        // If rotated, inverse-rotate the test point
+        let testX = x, testY = y;
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            const rotated = this.rotatePoint(x, y, center.x, center.y, -this.rotation);
+            testX = rotated.x;
+            testY = rotated.y;
+        }
+        
+        const dist = this.pointToLineDistance(testX, testY, this.x, this.y, this.x2, this.y2);
         return dist < 5;
     }
 
@@ -252,6 +265,7 @@ class Circle extends Shape {
     }
 
     contains(x, y) {
+        // Circles are rotation-invariant, but we still check for consistency
         const dx = x - this.x;
         const dy = y - this.y;
         return Math.sqrt(dx * dx + dy * dy) <= this.radius;
@@ -353,8 +367,17 @@ class Rectangle extends Shape {
     }
 
     contains(x, y) {
-        return x >= this.x && x <= this.x + this.width && 
-               y >= this.y && y <= this.y + this.height;
+        // If rotated, inverse-rotate the test point
+        let testX = x, testY = y;
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            const rotated = this.rotatePoint(x, y, center.x, center.y, -this.rotation);
+            testX = rotated.x;
+            testY = rotated.y;
+        }
+        
+        return testX >= this.x && testX <= this.x + this.width && 
+               testY >= this.y && testY <= this.y + this.height;
     }
 
     getEndpoints() {
@@ -524,6 +547,15 @@ class Spline extends Shape {
     }
 
     contains(x, y) {
+        // If rotated, inverse-rotate the test point
+        let testX = x, testY = y;
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            const rotated = this.rotatePoint(x, y, center.x, center.y, -this.rotation);
+            testX = rotated.x;
+            testY = rotated.y;
+        }
+        
         // Sample points along the spline and check distance to each segment
         if (this.points.length < 2) return false;
         
@@ -544,7 +576,7 @@ class Spline extends Shape {
             const p2 = spline.getFirstOrder(u2);
             
             // Check distance to this segment
-            const dist = this.pointToLineSegmentDistance(x, y, p1.x, p1.y, p2.x, p2.y);
+            const dist = this.pointToLineSegmentDistance(testX, testY, p1.x, p1.y, p2.x, p2.y);
             if (dist < threshold) {
                 return true;
             }
@@ -824,6 +856,15 @@ class BezierSpline extends Shape {
     }
 
     contains(x, y) {
+        // If rotated, inverse-rotate the test point
+        let testX = x, testY = y;
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            const rotated = this.rotatePoint(x, y, center.x, center.y, -this.rotation);
+            testX = rotated.x;
+            testY = rotated.y;
+        }
+        
         // Sample points along the Bezier spline and check distance to each segment
         if (this.points.length < 2) return false;
         
@@ -853,7 +894,7 @@ class BezierSpline extends Shape {
             const p1 = spline.getFirstOrder(u1);
             const p2 = spline.getFirstOrder(u2);
             
-            const dist = this.pointToLineSegmentDistance(x, y, p1.x, p1.y, p2.x, p2.y);
+            const dist = this.pointToLineSegmentDistance(testX, testY, p1.x, p1.y, p2.x, p2.y);
             if (dist < threshold) {
                 return true;
             }
@@ -976,8 +1017,17 @@ class Oval extends Shape {
     }
 
     contains(x, y) {
-        const dx = (x - this.x) / this.radiusX;
-        const dy = (y - this.y) / this.radiusY;
+        // If rotated, inverse-rotate the test point
+        let testX = x, testY = y;
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            const rotated = this.rotatePoint(x, y, center.x, center.y, -this.rotation);
+            testX = rotated.x;
+            testY = rotated.y;
+        }
+        
+        const dx = (testX - this.x) / this.radiusX;
+        const dy = (testY - this.y) / this.radiusY;
         return dx * dx + dy * dy <= 1;
     }
 
@@ -1084,12 +1134,21 @@ class Polygon extends Shape {
     }
 
     contains(x, y) {
+        // If rotated, inverse-rotate the test point
+        let testX = x, testY = y;
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            const rotated = this.rotatePoint(x, y, center.x, center.y, -this.rotation);
+            testX = rotated.x;
+            testY = rotated.y;
+        }
+        
         // First check if near any edge
         const threshold = 5;
         for (let i = 0; i < this.points.length; i++) {
             const p1 = this.points[i];
             const p2 = this.points[(i + 1) % this.points.length]; // Wrap around to first point
-            const dist = this.pointToLineSegmentDistance(x, y, p1.x, p1.y, p2.x, p2.y);
+            const dist = this.pointToLineSegmentDistance(testX, testY, p1.x, p1.y, p2.x, p2.y);
             if (dist < threshold) {
                 return true;
             }
@@ -1098,8 +1157,8 @@ class Polygon extends Shape {
         // Then check if inside using ray casting algorithm for point-in-polygon
         let inside = false;
         for (let i = 0, j = this.points.length - 1; i < this.points.length; j = i++) {
-            if (((this.points[i].y > y) !== (this.points[j].y > y)) &&
-                (x < (this.points[j].x - this.points[i].x) * (y - this.points[i].y) / (this.points[j].y - this.points[i].y) + this.points[i].x)) {
+            if (((this.points[i].y > testY) !== (this.points[j].y > testY)) &&
+                (testX < (this.points[j].x - this.points[i].x) * (testY - this.points[i].y) / (this.points[j].y - this.points[i].y) + this.points[i].x)) {
                 inside = !inside;
             }
         }

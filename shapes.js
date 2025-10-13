@@ -9,6 +9,7 @@ class Shape {
         this.strokeColor = strokeColor;
         this.strokeWidth = strokeWidth;
         this.selected = false;
+        this.rotation = 0; // Rotation angle in radians
     }
 
     draw(port) {
@@ -30,6 +31,48 @@ class Shape {
         return [];
     }
 
+    getCenterPoint() {
+        // Override in subclasses
+        return { x: this.x, y: this.y };
+    }
+
+    getRotationLineLength() {
+        // Override in subclasses to return appropriate length for rotation indicator
+        return 30;
+    }
+
+    rotatePoint(px, py, centerX, centerY, angle) {
+        // Rotate a point (px, py) around center (centerX, centerY) by angle (in radians)
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const dx = px - centerX;
+        const dy = py - centerY;
+        
+        return {
+            x: centerX + (dx * cos - dy * sin),
+            y: centerY + (dx * sin + dy * cos)
+        };
+    }
+
+    drawRotationControl(port) {
+        if (!this.selected) return;
+        
+        const center = this.getCenterPoint();
+        const lineLength = this.getRotationLineLength();
+        
+        // Draw blue center point
+        const centerAttrs = new pdg.Attributes().fillColor(new pdg.Color('blue'));
+        port.drawCircle(new pdg.Point(center.x, center.y), 5, centerAttrs);
+        
+        // Draw blue rotation line
+        const endX = center.x + Math.cos(this.rotation) * lineLength;
+        const endY = center.y + Math.sin(this.rotation) * lineLength;
+        const lineAttrs = new pdg.Attributes()
+            .lineColor(new pdg.Color('blue'))
+            .lineThickness(2);
+        port.drawLine(new pdg.Point(center.x, center.y), new pdg.Point(endX, endY), lineAttrs);
+    }
+
     addPoint(point) {
         // Override in subclasses where applicable
     }
@@ -44,18 +87,39 @@ class Line extends Shape {
     }
 
     draw(port) {
-        port.drawLine(new pdg.Point(this.x, this.y), new pdg.Point(this.x2, this.y2), 
+        let p1 = { x: this.x, y: this.y };
+        let p2 = { x: this.x2, y: this.y2 };
+        
+        // Apply rotation if set
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            p1 = this.rotatePoint(p1.x, p1.y, center.x, center.y, this.rotation);
+            p2 = this.rotatePoint(p2.x, p2.y, center.x, center.y, this.rotation);
+        }
+        
+        port.drawLine(new pdg.Point(p1.x, p1.y), new pdg.Point(p2.x, p2.y), 
             new pdg.Attributes().lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth));
 
         if (this.selected) {
             this.drawEndpoints(port);
+            this.drawRotationControl(port);
         }
     }
 
     drawEndpoints(port) {
-        port.drawCircle(new pdg.Point(this.x, this.y), 4, 
+        let p1 = { x: this.x, y: this.y };
+        let p2 = { x: this.x2, y: this.y2 };
+        
+        // Apply rotation if set
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            p1 = this.rotatePoint(p1.x, p1.y, center.x, center.y, this.rotation);
+            p2 = this.rotatePoint(p2.x, p2.y, center.x, center.y, this.rotation);
+        }
+        
+        port.drawCircle(new pdg.Point(p1.x, p1.y), 4, 
             new pdg.Attributes().fillColor(new pdg.Color('red')));
-        port.drawCircle(new pdg.Point(this.x2, this.y2), 4, 
+        port.drawCircle(new pdg.Point(p2.x, p2.y), 4, 
             new pdg.Attributes().fillColor(new pdg.Color('red')));
     }
 
@@ -98,6 +162,20 @@ class Line extends Shape {
             { x: this.x, y: this.y },
             { x: this.x2, y: this.y2 }
         ];
+    }
+
+    getCenterPoint() {
+        return {
+            x: (this.x + this.x2) / 2,
+            y: (this.y + this.y2) / 2
+        };
+    }
+
+    getRotationLineLength() {
+        const dx = this.x2 - this.x;
+        const dy = this.y2 - this.y;
+        const lineLength = Math.sqrt(dx * dx + dy * dy);
+        return Math.min(lineLength / 2, 40);
     }
 
     intersectsRect(left, top, right, bottom) {
@@ -161,6 +239,7 @@ class Circle extends Shape {
 
         if (this.selected) {
             this.drawEndpoints(port);
+            this.drawRotationControl(port);
         }
     }
 
@@ -187,6 +266,14 @@ class Circle extends Shape {
         ];
     }
 
+    getCenterPoint() {
+        return { x: this.x, y: this.y };
+    }
+
+    getRotationLineLength() {
+        return Math.min(this.radius * 0.8, 40);
+    }
+
     intersectsRect(left, top, right, bottom) {
         // Find the closest point on the rectangle to the circle center
         const closestX = Math.max(left, Math.min(this.x, right));
@@ -211,7 +298,6 @@ class Rectangle extends Shape {
     }
 
     draw(port) {
-        const rect = new pdg.Rect(this.x, this.y, this.x + this.width, this.y + this.height);
         const attrs = new pdg.Attributes();
         
         attrs.lineColor(new pdg.Color(this.strokeColor))
@@ -220,19 +306,50 @@ class Rectangle extends Shape {
         if (this.fillColor) {
             attrs.fillColor(new pdg.Color(this.fillColor));
         }
-        port.drawRect(rect, attrs);
+        
+        // If rotation is applied, draw as a rotated polygon
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            const corners = [
+                { x: this.x, y: this.y },
+                { x: this.x + this.width, y: this.y },
+                { x: this.x + this.width, y: this.y + this.height },
+                { x: this.x, y: this.y + this.height }
+            ];
+            
+            const polygon = new pdg.Polygon();
+            for (let corner of corners) {
+                const rotated = this.rotatePoint(corner.x, corner.y, center.x, center.y, this.rotation);
+                polygon.addPoint(new pdg.Point(rotated.x, rotated.y));
+            }
+            port.drawPolygon(polygon, attrs);
+        } else {
+            // No rotation, draw as normal rectangle
+            const rect = new pdg.Rect(this.x, this.y, this.x + this.width, this.y + this.height);
+            port.drawRect(rect, attrs);
+        }
 
         if (this.selected) {
             this.drawEndpoints(port);
+            this.drawRotationControl(port);
         }
     }
 
     drawEndpoints(port) {
         const points = this.getEndpoints();
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
-        points.forEach(point => {
-            port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
-        });
+        
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            points.forEach(point => {
+                const rotated = this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation);
+                port.drawCircle(new pdg.Point(rotated.x, rotated.y), 4, fillAttrs);
+            });
+        } else {
+            points.forEach(point => {
+                port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
+            });
+        }
     }
 
     contains(x, y) {
@@ -247,6 +364,18 @@ class Rectangle extends Shape {
             { x: this.x + this.width, y: this.y + this.height },
             { x: this.x, y: this.y + this.height }
         ];
+    }
+
+    getCenterPoint() {
+        return {
+            x: this.x + this.width / 2,
+            y: this.y + this.height / 2
+        };
+    }
+
+    getRotationLineLength() {
+        const size = Math.min(Math.abs(this.width), Math.abs(this.height));
+        return Math.min(size * 0.4, 40);
     }
 
     intersectsRect(left, top, right, bottom) {
@@ -276,9 +405,14 @@ class Spline extends Shape {
         // Create a PDG Spline object
         const spline = new pdg.Spline(pdg.spline_Cardinal);
         
-        // Add ALL points to the spline (including last one)
+        // Add ALL points to the spline (including last one), applying rotation if set
+        const center = this.getCenterPoint();
         for (let i = 0; i < this.points.length; i++) {
-            spline.addPoint(new pdg.Point(this.points[i].x, this.points[i].y));
+            let point = this.points[i];
+            if (this.rotation !== 0) {
+                point = this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation);
+            }
+            spline.addPoint(new pdg.Point(point.x, point.y));
         }
         
         // Draw the spline
@@ -295,27 +429,46 @@ class Spline extends Shape {
             this.drawEndpoints(port);
             this.drawControlPoints(port);
         }
+        
+        if (this.selected) {
+            this.drawRotationControl(port);
+        }
     }
 
     drawEndpoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        const center = this.getCenterPoint();
+        
         // For Cardinal splines, only interior points are on the curve
         // First and last points are control points
         for (let i = 1; i < this.points.length - 1; i++) {
-            const point = this.points[i];
+            let point = this.points[i];
+            if (this.rotation !== 0) {
+                point = this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation);
+            }
             port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
         }
     }
 
     drawControlPoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('green'));
+        const center = this.getCenterPoint();
+        
         // First and last points are the control points for Cardinal splines
         if (this.points.length > 0) {
-            port.drawCircle(new pdg.Point(this.points[0].x, this.points[0].y), 3, fillAttrs);
+            let point = this.points[0];
+            if (this.rotation !== 0) {
+                point = this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation);
+            }
+            port.drawCircle(new pdg.Point(point.x, point.y), 3, fillAttrs);
         }
         if (this.points.length > 1) {
             const lastIdx = this.points.length - 1;
-            port.drawCircle(new pdg.Point(this.points[lastIdx].x, this.points[lastIdx].y), 3, fillAttrs);
+            let point = this.points[lastIdx];
+            if (this.rotation !== 0) {
+                point = this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation);
+            }
+            port.drawCircle(new pdg.Point(point.x, point.y), 3, fillAttrs);
         }
     }
 
@@ -334,6 +487,40 @@ class Spline extends Shape {
             controls.push(this.points[this.points.length - 1]);
         }
         return controls;
+    }
+
+    getCenterPoint() {
+        if (this.points.length === 0) return { x: 0, y: 0 };
+        
+        let sumX = 0, sumY = 0;
+        for (let point of this.points) {
+            sumX += point.x;
+            sumY += point.y;
+        }
+        return {
+            x: sumX / this.points.length,
+            y: sumY / this.points.length
+        };
+    }
+
+    getRotationLineLength() {
+        if (this.points.length < 2) return 30;
+        
+        // Calculate approximate size from bounding box
+        let minX = this.points[0].x, maxX = this.points[0].x;
+        let minY = this.points[0].y, maxY = this.points[0].y;
+        
+        for (let point of this.points) {
+            minX = Math.min(minX, point.x);
+            maxX = Math.max(maxX, point.x);
+            minY = Math.min(minY, point.y);
+            maxY = Math.max(maxY, point.y);
+        }
+        
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const size = Math.min(width, height);
+        return Math.min(size * 0.3, 40);
     }
 
     contains(x, y) {
@@ -523,14 +710,22 @@ class BezierSpline extends Shape {
     draw(port) {
         // Create a PDG Spline object
         const spline = new pdg.Spline(pdg.spline_CubicBezier);
+        const center = this.getCenterPoint();
         
-        // Add segments to the spline
+        // Add segments to the spline, applying rotation if set
         // Each segment uses 2 control points: controls[i*2] and controls[i*2+1]
         for (let i = 0; i < this.points.length - 1; i++) {
-            const p1 = this.points[i];
-            const p4 = this.points[i + 1];
-            const p2 = this.controlPoints[i * 2] || p1;
-            const p3 = this.controlPoints[i * 2 + 1] || p4;
+            let p1 = this.points[i];
+            let p4 = this.points[i + 1];
+            let p2 = this.controlPoints[i * 2] || p1;
+            let p3 = this.controlPoints[i * 2 + 1] || p4;
+            
+            if (this.rotation !== 0) {
+                p1 = this.rotatePoint(p1.x, p1.y, center.x, center.y, this.rotation);
+                p2 = this.rotatePoint(p2.x, p2.y, center.x, center.y, this.rotation);
+                p3 = this.rotatePoint(p3.x, p3.y, center.x, center.y, this.rotation);
+                p4 = this.rotatePoint(p4.x, p4.y, center.x, center.y, this.rotation);
+            }
             
             spline.addSegment(
                 new pdg.Point(p1.x, p1.y),
@@ -554,19 +749,35 @@ class BezierSpline extends Shape {
             this.drawEndpoints(port);
             this.drawControlPoints(port);
         }
+        
+        if (this.selected) {
+            this.drawRotationControl(port);
+        }
     }
 
     drawEndpoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        const center = this.getCenterPoint();
+        
         this.points.forEach(point => {
-            port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
+            let p = point;
+            if (this.rotation !== 0) {
+                p = this.rotatePoint(p.x, p.y, center.x, center.y, this.rotation);
+            }
+            port.drawCircle(new pdg.Point(p.x, p.y), 4, fillAttrs);
         });
     }
 
     drawControlPoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('green'));
+        const center = this.getCenterPoint();
+        
         this.controlPoints.forEach(point => {
-            port.drawCircle(new pdg.Point(point.x, point.y), 3, fillAttrs);
+            let p = point;
+            if (this.rotation !== 0) {
+                p = this.rotatePoint(p.x, p.y, center.x, center.y, this.rotation);
+            }
+            port.drawCircle(new pdg.Point(p.x, p.y), 3, fillAttrs);
         });
     }
 
@@ -576,6 +787,40 @@ class BezierSpline extends Shape {
 
     getControlPoints() {
         return [...this.controlPoints];
+    }
+
+    getCenterPoint() {
+        if (this.points.length === 0) return { x: 0, y: 0 };
+        
+        let sumX = 0, sumY = 0;
+        for (let point of this.points) {
+            sumX += point.x;
+            sumY += point.y;
+        }
+        return {
+            x: sumX / this.points.length,
+            y: sumY / this.points.length
+        };
+    }
+
+    getRotationLineLength() {
+        if (this.points.length < 2) return 30;
+        
+        // Calculate approximate size from bounding box
+        let minX = this.points[0].x, maxX = this.points[0].x;
+        let minY = this.points[0].y, maxY = this.points[0].y;
+        
+        for (let point of this.points) {
+            minX = Math.min(minX, point.x);
+            maxX = Math.max(maxX, point.x);
+            minY = Math.min(minY, point.y);
+            maxY = Math.max(maxY, point.y);
+        }
+        
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const size = Math.min(width, height);
+        return Math.min(size * 0.3, 40);
     }
 
     contains(x, y) {
@@ -718,6 +963,7 @@ class Oval extends Shape {
 
         if (this.selected) {
             this.drawEndpoints(port);
+            this.drawRotationControl(port);
         }
     }
 
@@ -742,6 +988,15 @@ class Oval extends Shape {
             { x: this.x, y: this.y + this.radiusY },
             { x: this.x - this.radiusX, y: this.y }
         ];
+    }
+
+    getCenterPoint() {
+        return { x: this.x, y: this.y };
+    }
+
+    getRotationLineLength() {
+        const avgRadius = (this.radiusX + this.radiusY) / 2;
+        return Math.min(avgRadius * 0.8, 40);
     }
 
     intersectsRect(left, top, right, bottom) {
@@ -785,10 +1040,15 @@ class Polygon extends Shape {
     draw(port) {
         // Create a PDG Polygon object
         const polygon = new pdg.Polygon();
+        const center = this.getCenterPoint();
         
-        // Add all points to the polygon
+        // Add all points to the polygon, applying rotation if set
         this.points.forEach(point => {
-            polygon.addPoint(new pdg.Point(point.x, point.y));
+            let p = point;
+            if (this.rotation !== 0) {
+                p = this.rotatePoint(p.x, p.y, center.x, center.y, this.rotation);
+            }
+            polygon.addPoint(new pdg.Point(p.x, p.y));
         });
         
         // Draw the polygon
@@ -804,12 +1064,22 @@ class Polygon extends Shape {
         if (this.selected || this.underConstruction) {
             this.drawEndpoints(port);
         }
+        
+        if (this.selected) {
+            this.drawRotationControl(port);
+        }
     }
 
     drawEndpoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        const center = this.getCenterPoint();
+        
         this.points.forEach(point => {
-            port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
+            let p = point;
+            if (this.rotation !== 0) {
+                p = this.rotatePoint(p.x, p.y, center.x, center.y, this.rotation);
+            }
+            port.drawCircle(new pdg.Point(p.x, p.y), 4, fillAttrs);
         });
     }
 
@@ -867,6 +1137,40 @@ class Polygon extends Shape {
 
     getEndpoints() {
         return [...this.points];
+    }
+
+    getCenterPoint() {
+        if (this.points.length === 0) return { x: 0, y: 0 };
+        
+        let sumX = 0, sumY = 0;
+        for (let point of this.points) {
+            sumX += point.x;
+            sumY += point.y;
+        }
+        return {
+            x: sumX / this.points.length,
+            y: sumY / this.points.length
+        };
+    }
+
+    getRotationLineLength() {
+        if (this.points.length < 2) return 30;
+        
+        // Calculate approximate size from bounding box
+        let minX = this.points[0].x, maxX = this.points[0].x;
+        let minY = this.points[0].y, maxY = this.points[0].y;
+        
+        for (let point of this.points) {
+            minX = Math.min(minX, point.x);
+            maxX = Math.max(maxX, point.x);
+            minY = Math.min(minY, point.y);
+            maxY = Math.max(maxY, point.y);
+        }
+        
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const size = Math.min(width, height);
+        return Math.min(size * 0.3, 40);
     }
 
     intersectsRect(left, top, right, bottom) {

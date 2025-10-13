@@ -31,6 +31,9 @@ class DrawingController extends Controller {
         // Input handling state
         this.draggedPoint = null;
         this.selectedShape = null;
+        this.rotatingShape = null; // Track if we're rotating a shape
+        this.rotationStartAngle = 0; // Initial angle when rotation started
+        this.shapeStartRotation = 0; // Shape's rotation when rotation started
         
         // Rubber-band selection state
         this.rubberBandStart = null;
@@ -52,6 +55,8 @@ class DrawingController extends Controller {
         this.maxUndoLevels = 50;
         this.isNudging = false; // Track if we're in a nudge sequence
         this.nudgeTimer = null; // Timer to finalize nudge after inactivity
+        this.isReordering = false; // Track if we're in a reorder sequence
+        this.reorderTimer = null; // Timer to finalize reorder after inactivity
         
         // File handling
         this.currentFilename = null;
@@ -201,6 +206,14 @@ class DrawingController extends Controller {
 
         if (this.toolManager.isCurrentlyDrawing()) {
             this.toolManager.updateDrawing(pos.x, pos.y);
+        } else if (this.rotatingShape) {
+            // Update rotation based on mouse position
+            const center = this.rotatingShape.getCenterPoint();
+            const dx = pos.x - center.x;
+            const dy = pos.y - center.y;
+            const currentAngle = Math.atan2(dy, dx);
+            const angleDelta = currentAngle - this.rotationStartAngle;
+            this.rotatingShape.rotation = this.shapeStartRotation + angleDelta;
         } else if (this.rubberBandPending) {
             // Check if we've moved enough to activate rubber-band selection
             const MIN_DISTANCE = 3;
@@ -251,6 +264,7 @@ class DrawingController extends Controller {
         }
         
         this.draggedPoint = null;
+        this.rotatingShape = null;
         return true;
     }
 
@@ -319,6 +333,23 @@ class DrawingController extends Controller {
         // Check if clicking on an endpoint or control point
         const shapes = this.drawing.getShapes();
         for (let shape of shapes) {
+            // Check rotation center point FIRST (highest priority)
+            if (shape.selected) {
+                const center = shape.getCenterPoint();
+                if (Math.abs(x - center.x) < 7 && Math.abs(y - center.y) < 7) {
+                    // Start rotation
+                    this.rotatingShape = shape;
+                    this.shapeStartRotation = shape.rotation || 0;
+                    // Calculate initial angle from center to mouse
+                    const dx = x - center.x;
+                    const dy = y - center.y;
+                    this.rotationStartAngle = Math.atan2(dy, dx);
+                    // Save undo state for rotation
+                    this.saveUndoState('rotate');
+                    return;
+                }
+            }
+            
             const endpoints = shape.getEndpoints();
             const controlPoints = shape.getControlPoints();
             
@@ -688,6 +719,80 @@ class DrawingController extends Controller {
             return false;
         }
         
+        // Check for draw order keys (+/- to move forward/backward, Ctrl/Cmd +/- to move to front/back)
+        if (unicode) {
+            const key = String.fromCharCode(unicode);
+            const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+            
+            // Handle + (plus) or = (as synonym for plus) to move forward
+            if ((key === '+' || key === '=') && selectedShapes.length > 0) {
+                // Save undo state only at the start of a reorder sequence
+                if (!this.isReordering) {
+                    this.saveUndoState('reorder');
+                    this.isReordering = true;
+                }
+                
+                // Clear existing reorder timer
+                if (this.reorderTimer) {
+                    clearTimeout(this.reorderTimer);
+                }
+                
+                if (cmdOrCtrl) {
+                    // Ctrl/Cmd + Plus: move to front
+                    for (let shape of selectedShapes) {
+                        this.drawing.moveShapeToFront(shape);
+                    }
+                } else {
+                    // Plus alone: move forward by 1
+                    for (let shape of selectedShapes) {
+                        this.drawing.moveShapeForward(shape, 1);
+                    }
+                }
+                
+                // Set timer to finalize reorder after 500ms of inactivity
+                this.reorderTimer = setTimeout(() => {
+                    this.isReordering = false;
+                    this.reorderTimer = null;
+                }, 500);
+                
+                return true;
+            }
+            
+            // Handle - (minus) to move backward
+            if (key === '-' && selectedShapes.length > 0) {
+                // Save undo state only at the start of a reorder sequence
+                if (!this.isReordering) {
+                    this.saveUndoState('reorder');
+                    this.isReordering = true;
+                }
+                
+                // Clear existing reorder timer
+                if (this.reorderTimer) {
+                    clearTimeout(this.reorderTimer);
+                }
+                
+                if (cmdOrCtrl) {
+                    // Ctrl/Cmd + Minus: move to back
+                    for (let shape of selectedShapes) {
+                        this.drawing.moveShapeToBack(shape);
+                    }
+                } else {
+                    // Minus alone: move backward by 1
+                    for (let shape of selectedShapes) {
+                        this.drawing.moveShapeBackward(shape, 1);
+                    }
+                }
+                
+                // Set timer to finalize reorder after 500ms of inactivity
+                this.reorderTimer = setTimeout(() => {
+                    this.isReordering = false;
+                    this.reorderTimer = null;
+                }, 500);
+                
+                return true;
+            }
+        }
+        
         // Handle key press events for color and tool selection
         let key = '';
         if (unicode) {
@@ -929,6 +1034,11 @@ class DrawingController extends Controller {
             this.finalizeNudge();
         }
         
+        // Finalize any ongoing reorder sequence before saving new state
+        if (this.isReordering && action !== 'reorder') {
+            this.finalizeReorder();
+        }
+        
         const state = {
             action: action,
             shapes: this.drawing.getShapes().map(shape => {
@@ -959,11 +1069,22 @@ class DrawingController extends Controller {
         this.isNudging = false;
     }
 
+    finalizeReorder() {
+        if (this.reorderTimer) {
+            clearTimeout(this.reorderTimer);
+            this.reorderTimer = null;
+        }
+        this.isReordering = false;
+    }
+
     undo() {
         if (this.undoStack.length === 0) return;
         
         // Finalize any ongoing nudge sequence
         this.finalizeNudge();
+        
+        // Finalize any ongoing reorder sequence
+        this.finalizeReorder();
         
         // Save current state to redo stack
         const currentState = {
@@ -1000,6 +1121,9 @@ class DrawingController extends Controller {
         
         // Finalize any ongoing nudge sequence
         this.finalizeNudge();
+        
+        // Finalize any ongoing reorder sequence
+        this.finalizeReorder();
         
         // Save current state to undo stack
         const currentState = {

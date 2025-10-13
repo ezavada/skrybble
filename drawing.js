@@ -110,6 +110,47 @@ class Drawing {
         }
     }
 
+    // Draw order manipulation methods
+    moveShapeForward(shape, steps = 1) {
+        const index = this.shapes.indexOf(shape);
+        if (index === -1 || index >= this.shapes.length - steps) return;
+        
+        // Remove shape from current position
+        this.shapes.splice(index, 1);
+        // Insert at new position (further forward in draw order)
+        this.shapes.splice(index + steps, 0, shape);
+    }
+
+    moveShapeBackward(shape, steps = 1) {
+        const index = this.shapes.indexOf(shape);
+        if (index === -1 || index < steps) return;
+        
+        // Remove shape from current position
+        this.shapes.splice(index, 1);
+        // Insert at new position (further back in draw order)
+        this.shapes.splice(index - steps, 0, shape);
+    }
+
+    moveShapeToFront(shape) {
+        const index = this.shapes.indexOf(shape);
+        if (index === -1 || index === this.shapes.length - 1) return;
+        
+        // Remove shape from current position
+        this.shapes.splice(index, 1);
+        // Add to end of array (drawn last, appears on top)
+        this.shapes.push(shape);
+    }
+
+    moveShapeToBack(shape) {
+        const index = this.shapes.indexOf(shape);
+        if (index === -1 || index === 0) return;
+        
+        // Remove shape from current position
+        this.shapes.splice(index, 1);
+        // Insert at beginning of array (drawn first, appears at bottom)
+        this.shapes.unshift(shape);
+    }
+
     duplicateShape(shape) {
         if (!shape) return null;
 
@@ -199,7 +240,8 @@ class Drawing {
                     x: shape.x, y: shape.y,
                     x2: shape.x2, y2: shape.y2,
                     strokeColor: shape.strokeColor,
-                    strokeWidth: shape.strokeWidth
+                    strokeWidth: shape.strokeWidth,
+                    rotation: shape.rotation || 0
                 };
                 break;
             case 'Circle':
@@ -207,7 +249,8 @@ class Drawing {
                     x: shape.x, y: shape.y, radius: shape.radius,
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
-                    strokeWidth: shape.strokeWidth
+                    strokeWidth: shape.strokeWidth,
+                    rotation: shape.rotation || 0
                 };
                 break;
             case 'Oval':
@@ -216,7 +259,8 @@ class Drawing {
                     radiusX: shape.radiusX, radiusY: shape.radiusY,
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
-                    strokeWidth: shape.strokeWidth
+                    strokeWidth: shape.strokeWidth,
+                    rotation: shape.rotation || 0
                 };
                 break;
             case 'Rectangle':
@@ -225,7 +269,8 @@ class Drawing {
                     width: shape.width, height: shape.height,
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
-                    strokeWidth: shape.strokeWidth
+                    strokeWidth: shape.strokeWidth,
+                    rotation: shape.rotation || 0
                 };
                 break;
             case 'Polygon':
@@ -234,7 +279,8 @@ class Drawing {
                     points: shape.points,
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
-                    strokeWidth: shape.strokeWidth
+                    strokeWidth: shape.strokeWidth,
+                    rotation: shape.rotation || 0
                 };
                 break;
             case 'BezierSpline':
@@ -244,7 +290,8 @@ class Drawing {
                     manuallyEditedControls: shape.manuallyEditedControls ? Array.from(shape.manuallyEditedControls) : [],
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
-                    strokeWidth: shape.strokeWidth
+                    strokeWidth: shape.strokeWidth,
+                    rotation: shape.rotation || 0
                 };
                 break;
             default:
@@ -255,54 +302,69 @@ class Drawing {
     }
 
     deserializeShape(type, data) {
+        let shape = null;
+        
         switch (type) {
             case 'Line':
-                return new ShapeClasses.Line(
+                shape = new ShapeClasses.Line(
                     data.x, data.y, data.x2, data.y2,
                     data.strokeColor, data.strokeWidth
                 );
+                break;
             case 'Circle':
-                return new ShapeClasses.Circle(
+                shape = new ShapeClasses.Circle(
                     data.x, data.y, data.radius,
                     data.fillColor, data.strokeColor, data.strokeWidth
                 );
+                break;
             case 'Oval':
-                return new ShapeClasses.Oval(
+                shape = new ShapeClasses.Oval(
                     data.x, data.y, data.radiusX, data.radiusY,
                     data.fillColor, data.strokeColor, data.strokeWidth
                 );
+                break;
             case 'Rectangle':
-                return new ShapeClasses.Rectangle(
+                shape = new ShapeClasses.Rectangle(
                     data.x, data.y, data.width, data.height,
                     data.fillColor, data.strokeColor, data.strokeWidth
                 );
+                break;
             case 'Polygon':
-                return new ShapeClasses.Polygon(
+                shape = new ShapeClasses.Polygon(
                     data.points,
                     data.fillColor, data.strokeColor, data.strokeWidth
                 );
+                break;
             case 'Spline':
-                return new ShapeClasses.Spline(
+                shape = new ShapeClasses.Spline(
                     data.points,
                     data.fillColor, data.strokeColor, data.strokeWidth
                 );
+                break;
             case 'BezierSpline':
-                const bezierSpline = new ShapeClasses.BezierSpline(
+                shape = new ShapeClasses.BezierSpline(
                     data.points,
                     data.fillColor, data.strokeColor, data.strokeWidth
                 );
                 // Restore saved control points if available
                 if (data.controlPoints) {
-                    bezierSpline.controlPoints = data.controlPoints;
+                    shape.controlPoints = data.controlPoints;
                 }
                 // Restore manually edited control points set
                 if (data.manuallyEditedControls) {
-                    bezierSpline.manuallyEditedControls = new Set(data.manuallyEditedControls);
+                    shape.manuallyEditedControls = new Set(data.manuallyEditedControls);
                 }
-                return bezierSpline;
+                break;
             default:
                 return null;
         }
+        
+        // Restore rotation if present
+        if (shape && data.rotation !== undefined) {
+            shape.rotation = data.rotation;
+        }
+        
+        return shape;
     }
 }
 

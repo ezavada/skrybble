@@ -34,6 +34,8 @@ class DrawingController extends Controller {
         this.rotatingShape = null; // Track if we're rotating a shape
         this.rotationStartAngle = 0; // Initial angle when rotation started
         this.shapeStartRotation = 0; // Shape's rotation when rotation started
+        this.dragReferencePointIndex = null; // Index of a non-dragged point to use as reference
+        this.dragReferencePointWorld = null; // Original world position of reference point
         
         // Rubber-band selection state
         this.rubberBandStart = null;
@@ -265,6 +267,8 @@ class DrawingController extends Controller {
         
         this.draggedPoint = null;
         this.rotatingShape = null;
+        this.dragReferencePointIndex = null;
+        this.dragReferencePointWorld = null;
         return true;
     }
 
@@ -367,6 +371,20 @@ class DrawingController extends Controller {
                 
                 if (Math.abs(x - cp.x) < 6 && Math.abs(y - cp.y) < 6) {
                     this.draggedPoint = { shape, type: 'control', index: i };
+                    
+                    // For rotated multi-point shapes, pick a reference point
+                    if (rotation !== 0 && shape.points && shape.points.length > 1) {
+                        // Pick the first point that isn't the one being dragged
+                        let refIdx = 0;
+                        if (shape.constructor.name === 'Spline') {
+                            // For splines, control points are at index 0 and last
+                            if (i === 0) refIdx = 1;
+                        }
+                        const refPoint = shape.points[refIdx];
+                        this.dragReferencePointIndex = refIdx;
+                        this.dragReferencePointWorld = shape.rotatePoint(refPoint.x, refPoint.y, center.x, center.y, rotation);
+                    }
+                    
                     // Save undo state before dragging
                     this.saveUndoState('drag control point');
                     // Select the shape if it's not already selected
@@ -388,6 +406,20 @@ class DrawingController extends Controller {
                 
                 if (Math.abs(x - ep.x) < 6 && Math.abs(y - ep.y) < 6) {
                     this.draggedPoint = { shape, type: 'endpoint', index: i };
+                    
+                    // For rotated multi-point shapes, pick a reference point
+                    if (rotation !== 0 && shape.points && shape.points.length > 1) {
+                        // Pick a point that isn't the one being dragged
+                        let refIdx = (i === 0) ? 1 : 0;
+                        if (shape.constructor.name === 'Spline') {
+                            // For splines, endpoints are indices 1 to length-2, so adjust
+                            refIdx = (i === 0) ? 2 : 1;
+                        }
+                        const refPoint = shape.points[refIdx];
+                        this.dragReferencePointIndex = refIdx;
+                        this.dragReferencePointWorld = shape.rotatePoint(refPoint.x, refPoint.y, center.x, center.y, rotation);
+                    }
+                    
                     // Save undo state before dragging
                     this.saveUndoState('drag endpoint');
                     // Select the shape if it's not already selected
@@ -540,10 +572,10 @@ class DrawingController extends Controller {
         if (!this.draggedPoint) return;
 
         const { shape, type, index } = this.draggedPoint;
-        
-        // If shape is rotated, inverse-rotate the mouse position to shape's local space
-        let localX = x, localY = y;
         const rotation = shape.rotation || 0;
+        
+        // Step 1: Update the dragged point in local space
+        let localX = x, localY = y;
         if (rotation !== 0) {
             const center = shape.getCenterPoint();
             const rotated = shape.rotatePoint(x, y, center.x, center.y, -rotation);
@@ -551,6 +583,7 @@ class DrawingController extends Controller {
             localY = rotated.y;
         }
 
+        // Step 2: Apply the change to the shape
         if (type === 'endpoint') {
             const endpoints = shape.getEndpoints();
             if (endpoints[index]) {
@@ -576,6 +609,33 @@ class DrawingController extends Controller {
                     if (shape.manuallyEditedControls) {
                         shape.manuallyEditedControls.add(index);
                     }
+                }
+            }
+        }
+        
+        // Step 3: For rotated multi-point shapes, compensate to keep reference point stable
+        if (rotation !== 0 && this.dragReferencePointIndex !== null && this.dragReferencePointWorld && shape.points) {
+            const refPoint = shape.points[this.dragReferencePointIndex];
+            const newCenter = shape.getCenterPoint();
+            
+            // Calculate where the reference point would be now
+            const newRefWorld = shape.rotatePoint(refPoint.x, refPoint.y, newCenter.x, newCenter.y, rotation);
+            
+            // Calculate the delta (how much it moved)
+            const deltaX = this.dragReferencePointWorld.x - newRefWorld.x;
+            const deltaY = this.dragReferencePointWorld.y - newRefWorld.y;
+            
+            // Apply the delta to all points to compensate
+            for (let point of shape.points) {
+                point.x += deltaX;
+                point.y += deltaY;
+            }
+            
+            // Also apply to control points if they exist
+            if (shape.controlPoints) {
+                for (let cp of shape.controlPoints) {
+                    cp.x += deltaX;
+                    cp.y += deltaY;
                 }
             }
         }

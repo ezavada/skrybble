@@ -192,15 +192,24 @@ class Line extends Shape {
     }
 
     intersectsRect(left, top, right, bottom) {
-        // Check if line intersects with rectangle
-        // First check if any endpoint is inside the rectangle
-        if ((this.x >= left && this.x <= right && this.y >= top && this.y <= bottom) ||
-            (this.x2 >= left && this.x2 <= right && this.y2 >= top && this.y2 <= bottom)) {
+        let p1 = { x: this.x, y: this.y };
+        let p2 = { x: this.x2, y: this.y2 };
+        
+        // Apply rotation if set
+        if (this.rotation !== 0) {
+            const center = this.getCenterPoint();
+            p1 = this.rotatePoint(p1.x, p1.y, center.x, center.y, this.rotation);
+            p2 = this.rotatePoint(p2.x, p2.y, center.x, center.y, this.rotation);
+        }
+        
+        // Check if any endpoint is inside the rectangle
+        if ((p1.x >= left && p1.x <= right && p1.y >= top && p1.y <= bottom) ||
+            (p2.x >= left && p2.x <= right && p2.y >= top && p2.y <= bottom)) {
             return true;
         }
         
         // Check if line intersects any edge of the rectangle
-        return this.lineIntersectsRect(this.x, this.y, this.x2, this.y2, left, top, right, bottom);
+        return this.lineIntersectsRect(p1.x, p1.y, p2.x, p2.y, left, top, right, bottom);
     }
 
     lineIntersectsRect(x1, y1, x2, y2, left, top, right, bottom) {
@@ -402,14 +411,62 @@ class Rectangle extends Shape {
     }
 
     intersectsRect(left, top, right, bottom) {
-        // Calculate this rectangle's bounds
-        const thisLeft = Math.min(this.x, this.x + this.width);
-        const thisRight = Math.max(this.x, this.x + this.width);
-        const thisTop = Math.min(this.y, this.y + this.height);
-        const thisBottom = Math.max(this.y, this.y + this.height);
+        if (this.rotation !== 0) {
+            // For rotated rectangles, check if any rotated corner is inside the selection rect
+            const center = this.getCenterPoint();
+            const corners = [
+                { x: this.x, y: this.y },
+                { x: this.x + this.width, y: this.y },
+                { x: this.x + this.width, y: this.y + this.height },
+                { x: this.x, y: this.y + this.height }
+            ];
+            
+            for (let corner of corners) {
+                const rotated = this.rotatePoint(corner.x, corner.y, center.x, center.y, this.rotation);
+                if (rotated.x >= left && rotated.x <= right && rotated.y >= top && rotated.y <= bottom) {
+                    return true;
+                }
+            }
+            
+            // Also check if any edge of the rotated rectangle intersects the selection rectangle
+            for (let i = 0; i < corners.length; i++) {
+                const p1 = this.rotatePoint(corners[i].x, corners[i].y, center.x, center.y, this.rotation);
+                const p2 = this.rotatePoint(corners[(i + 1) % 4].x, corners[(i + 1) % 4].y, center.x, center.y, this.rotation);
+                
+                const edges = [
+                    [left, top, right, top],
+                    [right, top, right, bottom],
+                    [right, bottom, left, bottom],
+                    [left, bottom, left, top]
+                ];
+                
+                for (let edge of edges) {
+                    if (this.linesIntersect(p1.x, p1.y, p2.x, p2.y, edge[0], edge[1], edge[2], edge[3])) {
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        } else {
+            // Not rotated, use simple bounds check
+            const thisLeft = Math.min(this.x, this.x + this.width);
+            const thisRight = Math.max(this.x, this.x + this.width);
+            const thisTop = Math.min(this.y, this.y + this.height);
+            const thisBottom = Math.max(this.y, this.y + this.height);
+            
+            return !(thisRight < left || thisLeft > right || thisBottom < top || thisTop > bottom);
+        }
+    }
+
+    linesIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+        const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+        if (denom === 0) return false;
         
-        // Check if rectangles overlap
-        return !(thisRight < left || thisLeft > right || thisBottom < top || thisTop > bottom);
+        const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+        const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+        
+        return (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1);
     }
 }
 
@@ -619,15 +676,21 @@ class Spline extends Shape {
     }
 
     intersectsRect(left, top, right, bottom) {
-        // Check if any point is inside the rectangle
+        const rotation = this.rotation || 0;
+        const center = this.getCenterPoint();
+        
+        // Check if any point is inside the rectangle (accounting for rotation)
         for (let point of this.points) {
-            if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) {
+            let checkPoint = point;
+            if (rotation !== 0) {
+                checkPoint = this.rotatePoint(point.x, point.y, center.x, center.y, rotation);
+            }
+            if (checkPoint.x >= left && checkPoint.x <= right && checkPoint.y >= top && checkPoint.y <= bottom) {
                 return true;
             }
         }
         
-        // Check if spline segments intersect with rectangle edges
-        // Sample points along the spline
+        // Sample points along the spline and check if any are in the rectangle
         if (this.points.length < 2) return false;
         
         const spline = new pdg.Spline(pdg.spline_Cardinal);
@@ -642,7 +705,12 @@ class Spline extends Shape {
             const u = (maxU * i) / samples;
             const p = spline.getFirstOrder(u);
             
-            if (p.x >= left && p.x <= right && p.y >= top && p.y <= bottom) {
+            let checkPoint = { x: p.x, y: p.y };
+            if (rotation !== 0) {
+                checkPoint = this.rotatePoint(p.x, p.y, center.x, center.y, rotation);
+            }
+            
+            if (checkPoint.x >= left && checkPoint.x <= right && checkPoint.y >= top && checkPoint.y <= bottom) {
                 return true;
             }
         }
@@ -940,15 +1008,21 @@ class BezierSpline extends Shape {
     }
 
     intersectsRect(left, top, right, bottom) {
-        // Check if any endpoint is inside the rectangle
+        const rotation = this.rotation || 0;
+        const center = this.getCenterPoint();
+        
+        // Check if any endpoint is inside the rectangle (accounting for rotation)
         for (let point of this.points) {
-            if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) {
+            let checkPoint = point;
+            if (rotation !== 0) {
+                checkPoint = this.rotatePoint(point.x, point.y, center.x, center.y, rotation);
+            }
+            if (checkPoint.x >= left && checkPoint.x <= right && checkPoint.y >= top && checkPoint.y <= bottom) {
                 return true;
             }
         }
         
-        // Check if bezier curve segments intersect with rectangle
-        // Sample points along the spline
+        // Sample points along the bezier curve and check if any are in the rectangle
         if (this.points.length < 2) return false;
         
         const spline = new pdg.Spline(pdg.spline_CubicBezier);
@@ -973,7 +1047,12 @@ class BezierSpline extends Shape {
             const u = (maxU * i) / samples;
             const p = spline.getFirstOrder(u);
             
-            if (p.x >= left && p.x <= right && p.y >= top && p.y <= bottom) {
+            let checkPoint = { x: p.x, y: p.y };
+            if (rotation !== 0) {
+                checkPoint = this.rotatePoint(p.x, p.y, center.x, center.y, rotation);
+            }
+            
+            if (checkPoint.x >= left && checkPoint.x <= right && checkPoint.y >= top && checkPoint.y <= bottom) {
                 return true;
             }
         }
@@ -1050,32 +1129,55 @@ class Oval extends Shape {
     }
 
     intersectsRect(left, top, right, bottom) {
-        // Find the closest point on the rectangle to the ellipse center
-        const closestX = Math.max(left, Math.min(this.x, right));
-        const closestY = Math.max(top, Math.min(this.y, bottom));
-        
-        // Calculate normalized distance from ellipse center to this closest point
-        const dx = (closestX - this.x) / this.radiusX;
-        const dy = (closestY - this.y) / this.radiusY;
-        const distanceSquared = dx * dx + dy * dy;
-        
-        // Check if within ellipse
-        if (distanceSquared <= 1) return true;
-        
-        // Also check if any corner of the rectangle is inside the ellipse
-        const corners = [
-            [left, top], [right, top], [right, bottom], [left, bottom]
-        ];
-        
-        for (let [cx, cy] of corners) {
-            const ndx = (cx - this.x) / this.radiusX;
-            const ndy = (cy - this.y) / this.radiusY;
-            if (ndx * ndx + ndy * ndy <= 1) {
+        if (this.rotation !== 0) {
+            // For rotated ovals, sample points around the ellipse and check if any are in the rect
+            const center = this.getCenterPoint();
+            const samples = 16;
+            
+            for (let i = 0; i < samples; i++) {
+                const angle = (i / samples) * Math.PI * 2;
+                const localX = this.x + Math.cos(angle) * this.radiusX;
+                const localY = this.y + Math.sin(angle) * this.radiusY;
+                const rotated = this.rotatePoint(localX, localY, center.x, center.y, this.rotation);
+                
+                if (rotated.x >= left && rotated.x <= right && rotated.y >= top && rotated.y <= bottom) {
+                    return true;
+                }
+            }
+            
+            // Also check if selection rect center is inside the rotated oval
+            const rectCenterX = (left + right) / 2;
+            const rectCenterY = (top + bottom) / 2;
+            if (this.contains(rectCenterX, rectCenterY)) {
                 return true;
             }
+            
+            return false;
+        } else {
+            // Not rotated, use original logic
+            const closestX = Math.max(left, Math.min(this.x, right));
+            const closestY = Math.max(top, Math.min(this.y, bottom));
+            
+            const dx = (closestX - this.x) / this.radiusX;
+            const dy = (closestY - this.y) / this.radiusY;
+            const distanceSquared = dx * dx + dy * dy;
+            
+            if (distanceSquared <= 1) return true;
+            
+            const corners = [
+                [left, top], [right, top], [right, bottom], [left, bottom]
+            ];
+            
+            for (let [cx, cy] of corners) {
+                const ndx = (cx - this.x) / this.radiusX;
+                const ndy = (cy - this.y) / this.radiusY;
+                if (ndx * ndx + ndy * ndy <= 1) {
+                    return true;
+                }
+            }
+            
+            return false;
         }
-        
-        return false;
     }
 }
 
@@ -1233,28 +1335,39 @@ class Polygon extends Shape {
     }
 
     intersectsRect(left, top, right, bottom) {
-        // Check if any vertex is inside the rectangle
+        const rotation = this.rotation || 0;
+        const center = this.getCenterPoint();
+        
+        // Check if any vertex is inside the rectangle (accounting for rotation)
         for (let point of this.points) {
-            if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) {
+            let checkPoint = point;
+            if (rotation !== 0) {
+                checkPoint = this.rotatePoint(point.x, point.y, center.x, center.y, rotation);
+            }
+            if (checkPoint.x >= left && checkPoint.x <= right && checkPoint.y >= top && checkPoint.y <= bottom) {
                 return true;
             }
         }
         
-        // Check if any edge of the polygon intersects with the rectangle
+        // Check if any edge of the polygon intersects with the rectangle (accounting for rotation)
         for (let i = 0; i < this.points.length; i++) {
-            const p1 = this.points[i];
-            const p2 = this.points[(i + 1) % this.points.length];
+            let p1 = this.points[i];
+            let p2 = this.points[(i + 1) % this.points.length];
+            
+            if (rotation !== 0) {
+                p1 = this.rotatePoint(p1.x, p1.y, center.x, center.y, rotation);
+                p2 = this.rotatePoint(p2.x, p2.y, center.x, center.y, rotation);
+            }
             
             if (this.lineIntersectsRect(p1.x, p1.y, p2.x, p2.y, left, top, right, bottom)) {
                 return true;
             }
         }
         
-        // Check if rectangle is completely inside polygon
-        // (test if center of rectangle is inside)
+        // Check if rectangle center is inside the polygon
         const centerX = (left + right) / 2;
         const centerY = (top + bottom) / 2;
-        if (this.pointInPolygon(centerX, centerY)) {
+        if (this.contains(centerX, centerY)) {
             return true;
         }
         

@@ -10,7 +10,9 @@ const TOOLS = {
     RECT: 'rect',
     QUAD: 'quad',
     POLY: 'poly',
-    IMAGE: 'image'
+    IMAGE: 'image',
+    FREEHAND: 'freehand',
+    HELP: 'help'
 };
 
 const TOOL_SHORTCUTS = {
@@ -23,7 +25,9 @@ const TOOL_SHORTCUTS = {
     'R': TOOLS.RECT,
     'Q': TOOLS.QUAD,
     'P': TOOLS.POLY,
-    'I': TOOLS.IMAGE
+    'I': TOOLS.IMAGE,
+    'F': TOOLS.FREEHAND,
+    'H': TOOLS.HELP
 };
 
 class Tools {
@@ -42,6 +46,7 @@ class Tools {
         this.currentShape = null;
         this.startPoint = null;
         this.lastPoint = null;
+        this.freehandPoints = []; // Track points for freehand drawing
     }
 
     setTool(tool) {
@@ -85,7 +90,6 @@ class Tools {
                 // addition point is created when click completes
                 this.currentShape = new this.ShapeClasses.Spline([{ x, y }, { x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
                 this.currentShape.underConstruction = true;
-                console.log('cardinal spline points:', this.currentShape.points);
                 break;
             case TOOLS.BEZIER:
                 this.currentShape = new this.ShapeClasses.BezierSpline([{ x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
@@ -94,6 +98,13 @@ class Tools {
             case TOOLS.POLY:
                 this.currentShape = new this.ShapeClasses.Polygon([{ x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
                 this.currentShape.underConstruction = true;
+                break;
+            case TOOLS.FREEHAND:
+                // Start collecting points for freehand drawing
+                this.freehandPoints = [{ x, y }];
+                this.currentShape = new this.ShapeClasses.Spline([{ x, y }, { x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape.underConstruction = true;
+                this.currentShape.freehand = true; // Mark as freehand to avoid drawing control points
                 break;
         }
     }
@@ -129,7 +140,6 @@ class Tools {
                     this.currentShape.points[numPointsSpline - 2] = { x, y };
                     this.currentShape.points[numPointsSpline - 1] = { x, y };
                 }
-                console.log('cardinal spline points:', this.currentShape.points);
                 break;
             case TOOLS.BEZIER:
             case TOOLS.POLY:
@@ -149,6 +159,30 @@ class Tools {
                     }
                 }
                 break;
+            case TOOLS.FREEHAND:
+                // Only add point if it's more than 2px from the last point
+                if (this.freehandPoints.length > 0) {
+                    const lastPoint = this.freehandPoints[this.freehandPoints.length - 1];
+                    const dx = x - lastPoint.x;
+                    const dy = y - lastPoint.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance >= 2) {
+                        this.freehandPoints.push({ x, y });
+                        
+                        // Update the spline with all collected points
+                        // For Cardinal spline, we need control points at start and end
+                        if (this.freehandPoints.length >= 2) {
+                            const points = [...this.freehandPoints];
+                            // Add control point at beginning
+                            points.unshift({ ...points[0] });
+                            // Add control point at end
+                            points.push({ ...points[points.length - 1] });
+                            this.currentShape.points = points;
+                        }
+                    }
+                }
+                break;
         }
     }
 
@@ -156,6 +190,7 @@ class Tools {
         this.isDrawing = false;
         this.currentShape = null;
         this.lastPoint = null;
+        this.freehandPoints = [];
     }
 
     addPointToShape(x, y) {
@@ -179,7 +214,6 @@ class Tools {
                     if (this.currentShape.generateControlPoints) {
                         this.currentShape.controlPoints = this.currentShape.generateControlPoints(true);
                     }
-                    console.log('ADD POINT ===> cardinal spline points:', this.currentShape.points);
                 }
                 break;
             case TOOLS.BEZIER:

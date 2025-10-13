@@ -62,6 +62,9 @@ class DrawingController extends Controller {
         
         // File handling
         this.currentFilename = null;
+        
+        // Help display state
+        this.showHelp = false;
     }
     
     setupViews() {
@@ -94,6 +97,11 @@ class DrawingController extends Controller {
                 const toolNames = Object.values(Tools.TOOLS);
                 const selectedTool = toolNames[part - 1];
                 if (selectedTool) {
+                    // Special handling for HELP tool - just toggle help, don't switch tools
+                    if (selectedTool === Tools.TOOLS.HELP) {
+                        this.toggleHelp();
+                        return true;
+                    }
                     this.toolManager.setTool(selectedTool);
                     this.updateToolSelection(selectedTool);
                     return true;
@@ -249,13 +257,26 @@ class DrawingController extends Controller {
             this.rubberBandModifiers = null;
             this.rubberBandInitialStates = null;
         } else if (this.toolManager.isCurrentlyDrawing()) {
-            // For single-action tools (line, circle, oval, rect), finish on mouse up
+            // For single-action tools (line, circle, oval, rect, freehand), finish on mouse up
             if (currentTool === Tools.TOOLS.LINE || currentTool === Tools.TOOLS.CIRCLE || 
                 currentTool === Tools.TOOLS.OVAL || currentTool === Tools.TOOLS.RECT) {
                 const finishedShape = this.toolManager.getCurrentShape();
                 
                 // Check if the shape is valid (mouse moved more than minimum distance)
                 if (finishedShape && this.toolManager.hasMinimumSize()) {
+                    this.saveUndoState('add shape');
+                    this.drawing.addShape(finishedShape);
+                    this.selectShape(null);
+                }
+                this.toolManager.finishCurrentDrawing();
+            } else if (currentTool === Tools.TOOLS.FREEHAND) {
+                const finishedShape = this.toolManager.getCurrentShape();
+                
+                // Check if we have enough points (at least 2)
+                if (finishedShape && this.toolManager.freehandPoints.length >= 2) {
+                    // Mark shape as no longer under construction or freehand
+                    finishedShape.underConstruction = false;
+                    finishedShape.freehand = false;
                     this.saveUndoState('add shape');
                     this.drawing.addShape(finishedShape);
                     this.selectShape(null);
@@ -944,6 +965,13 @@ class DrawingController extends Controller {
         if (key in Tools.TOOL_SHORTCUTS) {
             console.log("handleKeyPress", key, Tools.TOOL_SHORTCUTS[key]);
             const tool = Tools.TOOL_SHORTCUTS[key];
+            
+            // Special handling for HELP - just toggle help, don't switch tools
+            if (tool === Tools.TOOLS.HELP) {
+                this.toggleHelp();
+                return true;
+            }
+            
             this.toolManager.setTool(tool);
             this.updateToolSelection(tool);
             return true;
@@ -1051,6 +1079,14 @@ class DrawingController extends Controller {
 
     getDrawing() {
         return this.drawing;
+    }
+
+    toggleHelp() {
+        this.showHelp = !this.showHelp;
+    }
+
+    getShowHelp() {
+        return this.showHelp;
     }
 
     // ============================ Clipboard Operations ============================

@@ -1,11 +1,11 @@
 ### TODO ###
 
-## freehand tool ##
-- add a freehand tool that just collects points more than 2px apart as the user moves and holds down the mouse, creating a Cardinal Spline out of them
-- unlike normal Cardinal Spline creation, you should not draw control points or endpoints while the shape is under construction
+## freehand tool ## ✓ COMPLETED
+- ✓ add a freehand tool that just collects points more than 2px apart as the user moves and holds down the mouse, creating a Cardinal Spline out of them
+- ✓ unlike normal Cardinal Spline creation, you should not draw control points or endpoints while the shape is under construction
 
-## help tool ##
-- add a help tool to the far right of the tool palette that when clicked, shows the keyboard shortcuts
+## help tool ## ✓ COMPLETED
+- ✓ add a help tool to the far right of the tool palette that when clicked, shows the keyboard shortcuts
 
 ## color picker ##
 - An RGB color picker that has separate horizontal red, green, blue, and opacity slider with a number from 0.0 to 1.0 to the left of each slider

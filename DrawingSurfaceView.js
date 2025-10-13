@@ -69,6 +69,103 @@ class DrawingSurfaceView extends View {
             
             port.drawRect(rect, attrs);
         }
+        
+        // Draw help overlay
+        if (this.controller.getShowHelp()) {
+            this.drawHelpOverlay(port, area);
+        }
+    }
+
+    drawHelpOverlay(port, area) {
+        // Draw semi-transparent background
+        const bgAttrs = new pdg.Attributes().fillColor(new pdg.Color(0, 0, 0, 0.8));
+        port.drawRect(area, bgAttrs);
+        
+        // Calculate center for positioning
+        const centerX = area.left + area.width() / 2;
+        const startY = area.top + 50;
+        
+        // Draw title
+        const titleAttrs = new pdg.Attributes()
+            .textSize(24)
+            .textStyle(pdg.textStyle_Centered)
+            .fillColor(new pdg.Color('white'));
+        port.drawText('Keyboard Shortcuts', new pdg.Point(centerX, startY), titleAttrs);
+        
+        // Define keyboard shortcuts to display
+        const shortcuts = [
+            { key: 'ESC', description: 'Select tool / Cancel' },
+            { key: 'L', description: 'Line tool' },
+            { key: 'S', description: 'Cardinal Spline tool' },
+            { key: 'B', description: 'Bezier Spline tool' },
+            { key: 'F', description: 'Freehand tool' },
+            { key: 'C', description: 'Circle tool' },
+            { key: 'O', description: 'Oval tool' },
+            { key: 'R', description: 'Rectangle tool' },
+            { key: 'Q', description: 'Quad tool' },
+            { key: 'P', description: 'Polygon tool' },
+            { key: 'I', description: 'Image tool' },
+            { key: 'H', description: 'Help (this screen)' },
+            { key: '', description: '' },
+            { key: 'TAB', description: 'Select next shape' },
+            { key: 'SHIFT+TAB', description: 'Select previous shape' },
+            { key: 'DELETE/BKSP', description: 'Delete selected shapes' },
+            { key: 'ARROWS', description: 'Move selected shapes (10px)' },
+            { key: 'SHIFT+ARROWS', description: 'Move selected shapes (1px)' },
+            { key: '', description: '' },
+            { key: 'CMD/CTRL+C', description: 'Copy selected shapes' },
+            { key: 'CMD/CTRL+X', description: 'Cut selected shapes' },
+            { key: 'CMD/CTRL+V', description: 'Paste shapes' },
+            { key: 'CMD/CTRL+Z', description: 'Undo' },
+            { key: 'CMD/CTRL+SHIFT+Z', description: 'Redo' },
+            { key: 'CMD/CTRL+S', description: 'Save drawing' },
+            { key: '', description: '' },
+            { key: '+/=', description: 'Move shape forward' },
+            { key: '-', description: 'Move shape backward' },
+            { key: 'CMD/CTRL++', description: 'Move shape to front' },
+            { key: 'CMD/CTRL+-', description: 'Move shape to back' }
+        ];
+        
+        // Draw shortcuts in two columns
+        const leftX = centerX - 200;
+        const rightX = centerX + 50;
+        const lineHeight = 20;
+        let y = startY + 40;
+        
+        const keyAttrs = new pdg.Attributes()
+            .textSize(14)
+            .textStyle(pdg.textStyle_Plain)
+            .fillColor(new pdg.Color(0.8, 0.9, 1.0));
+        const descAttrs = new pdg.Attributes()
+            .textSize(14)
+            .textStyle(pdg.textStyle_Plain)
+            .fillColor(new pdg.Color(0.9, 0.9, 0.9));
+        
+        let column = 0;
+        const itemsPerColumn = Math.ceil(shortcuts.length / 2);
+        
+        for (let i = 0; i < shortcuts.length; i++) {
+            const shortcut = shortcuts[i];
+            
+            // Calculate position
+            const col = Math.floor(i / itemsPerColumn);
+            const row = i % itemsPerColumn;
+            const x = col === 0 ? leftX : rightX;
+            const currentY = startY + 40 + row * lineHeight;
+            
+            if (shortcut.key) {
+                port.drawText(shortcut.key, new pdg.Point(x, currentY), keyAttrs);
+                port.drawText(shortcut.description, new pdg.Point(x + 120, currentY), descAttrs);
+            }
+        }
+        
+        // Draw footer hint
+        const footerY = area.bottom - 30;
+        const footerAttrs = new pdg.Attributes()
+            .textSize(16)
+            .textStyle(pdg.textStyle_Centered)
+            .fillColor(new pdg.Color(1.0, 1.0, 0.6));
+        port.drawText('Press H to close', new pdg.Point(centerX, footerY), footerAttrs);
     }
 }
 

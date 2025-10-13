@@ -505,7 +505,8 @@ class Spline extends Shape {
         }
         port.drawSpline(spline, attrs);
 
-        if (this.selected || this.underConstruction) {
+        // Don't draw control points/endpoints for freehand shapes during construction
+        if (this.selected || (this.underConstruction && !this.freehand)) {
             this.drawEndpoints(port);
             this.drawControlPoints(port);
         }

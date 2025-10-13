@@ -48,6 +48,9 @@ class ToolPaletteView extends View {
         for (const whichTool in Tools.TOOLS) {
             const tool = Tools.TOOLS[whichTool];
             let toolShortcut = tool.toUpperCase()[0];
+            if (tool === Tools.TOOLS.HELP) {
+                toolShortcut = 'h';
+            }
             if (tool == this.activeTool) {
                 port.drawRect(new pdg.Rect(x+1, viewArea.top+1, x + 49, viewArea.top + 49), 
                     new pdg.Attributes().fillColor(new pdg.Color(0.8, 0.8, 0.8, 1.0)));
@@ -112,6 +115,21 @@ class ToolPaletteView extends View {
                     quad.points[0].x += 5;
                     quad.points[2].x -= 5;
                     port.drawQuad(quad, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
+                    break;
+                case Tools.TOOLS.FREEHAND:
+                    // Draw a freehand-looking wavy line
+                    const freehandSpline = new pdg.Spline(pdg.spline_Cardinal);
+                    freehandSpline.addPoint(new pdg.Point(x + 10, viewArea.top + 28));
+                    freehandSpline.addPoint(new pdg.Point(x + 15, viewArea.top + 12));
+                    freehandSpline.addPoint(new pdg.Point(x + 22, viewArea.top + 25));
+                    freehandSpline.addPoint(new pdg.Point(x + 30, viewArea.top + 15));
+                    freehandSpline.addPoint(new pdg.Point(x + 38, viewArea.top + 30));
+                    port.drawSpline(freehandSpline, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
+                    break;
+                case Tools.TOOLS.HELP:
+                    // Draw a question mark
+                    port.drawText('?', new pdg.Point(x + 25, viewArea.top + 32), 
+                        new pdg.Attributes().textSize(28).textStyle(pdg.textStyle_Centered).fillColor(toolColor));
                     break;
                 default:
                     port.drawText(tool, new pdg.Point(x + 25, viewArea.top + 30), 

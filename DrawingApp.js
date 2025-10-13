@@ -43,15 +43,12 @@ class DrawingApp extends Application {
         try {
             // Parse command line arguments for filename
             const argList = args || [];
-            console.log('argList:', argList);
             
             if (argList && argList.length > 0) {
                 // Look for .skrbl file in arguments
                 for (let arg of argList) {
-                    console.log('Checking arg:', arg);
                     if (arg.endsWith('.skrbl')) {
                         this.filename = arg;
-                        console.log('Found .skrbl file:', this.filename);
                         break;
                     }
                 }

@@ -31,7 +31,6 @@ class DrawingController extends Controller {
         // Input handling state
         this.draggedPoint = null;
         this.selectedShape = null;
-        this.lastDrawnShape = null; // Track the most recently drawn shape
         
         // Rubber-band selection state
         this.rubberBandStart = null;
@@ -148,6 +147,15 @@ class DrawingController extends Controller {
         return false;
     }
 
+    doRightClick(mouseInfo, view, id, part) {
+        // Handle right clicks on the drawing surface
+        // Right-click finishes multi-point shapes without adding an extra point
+        if (view === this.backgroundView) {
+            return this.handleMouseRightClick(mouseInfo);
+        }
+        return false;
+    }
+
     doKeyUp(keyUpInfo, view, id, part) {
         return this.handleKeyUp(keyUpInfo);
     }
@@ -235,19 +243,7 @@ class DrawingController extends Controller {
                 if (finishedShape && this.toolManager.hasMinimumSize()) {
                     this.saveUndoState('add shape');
                     this.drawing.addShape(finishedShape);
-                    this.lastDrawnShape = finishedShape;
-                    
-                    // If shift is held, stay in drawing mode. Otherwise, select and switch to SELECT
-                    if (event.shift) {
-                        // Don't select, stay in current tool
-                        this.selectShape(null);
-                    } else {
-                        // Select the shape and switch to SELECT mode
-                        this.selectShape(finishedShape);
-                        this.toolManager.setTool(Tools.TOOLS.SELECT);
-                        this.updateToolSelection(Tools.TOOLS.SELECT);
-                        this.lastDrawnShape = null;
-                    }
+                    this.selectShape(null);
                 }
                 this.toolManager.finishCurrentDrawing();
             }
@@ -283,23 +279,31 @@ class DrawingController extends Controller {
         // For multi-point tools, finish the shape on double-click
         if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
             if (this.toolManager.isCurrentlyDrawing()) {
-                const finishedShape = this.toolManager.finishMultiPointShape();
+                const finishedShape = this.toolManager.finishMultiPointShape(true); // true = isDoubleClick
                 if (finishedShape) {
                     this.saveUndoState('add shape');
                     this.drawing.addShape(finishedShape);
-                    this.lastDrawnShape = finishedShape;
-                    
-                    // If shift is held, stay in drawing mode. Otherwise, select and switch to SELECT
-                    if (event.shift) {
-                        // Don't select, stay in current tool
-                        this.selectShape(null);
-                    } else {
-                        // Select the shape and switch to SELECT mode
-                        this.selectShape(finishedShape);
-                        this.toolManager.setTool(Tools.TOOLS.SELECT);
-                        this.updateToolSelection(Tools.TOOLS.SELECT);
-                        this.lastDrawnShape = null;
-                    }
+                    this.selectShape(null);
+                }
+            }
+            return true;
+        }
+        
+        return false;
+    }
+
+    handleMouseRightClick(event) {
+        const pos = this.getMousePosition(event);
+        const currentTool = this.toolManager.getCurrentTool();
+
+        // For multi-point tools, finish the shape on right-click
+        if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+            if (this.toolManager.isCurrentlyDrawing()) {
+                const finishedShape = this.toolManager.finishMultiPointShape(false); // false = not doubleClick
+                if (finishedShape) {
+                    this.saveUndoState('add shape');
+                    this.drawing.addShape(finishedShape);
+                    this.selectShape(null);
                 }
             }
             return true;
@@ -596,15 +600,7 @@ class DrawingController extends Controller {
     }
 
     handleKeyUp(event) {
-        // When shift is released, if we have a last drawn shape, select it and switch to SELECT mode
-        if (event.keyCode === pdg.keyCode_Shift || event.keyCode === pdg.keyCode_ShiftLeft || event.keyCode === pdg.keyCode_ShiftRight) {
-            if (this.lastDrawnShape) {
-                this.selectShape(this.lastDrawnShape);
-                this.toolManager.setTool(Tools.TOOLS.SELECT);
-                this.updateToolSelection(Tools.TOOLS.SELECT);
-                this.lastDrawnShape = null;
-            }
-        }
+        // No automatic tool switching on key release
         return false;
     }
 
@@ -907,10 +903,19 @@ class DrawingController extends Controller {
                 );
             case 'BezierSpline':
                 const bezierPoints = shapeData.points.map(p => ({ x: p.x + offset, y: p.y + offset }));
-                return new ShapeClasses.BezierSpline(
+                const bezierSpline = new ShapeClasses.BezierSpline(
                     bezierPoints,
                     shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
                 );
+                // Restore control points with offset if available
+                if (shapeData.controlPoints) {
+                    bezierSpline.controlPoints = shapeData.controlPoints.map(p => ({ x: p.x + offset, y: p.y + offset }));
+                }
+                // Restore manually edited control points set
+                if (shapeData.manuallyEditedControls) {
+                    bezierSpline.manuallyEditedControls = new Set(shapeData.manuallyEditedControls);
+                }
+                return bezierSpline;
             default:
                 return null;
         }

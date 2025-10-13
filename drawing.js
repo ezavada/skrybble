@@ -230,9 +230,18 @@ class Drawing {
                 break;
             case 'Polygon':
             case 'Spline':
+                data = {
+                    points: shape.points,
+                    fillColor: shape.fillColor,
+                    strokeColor: shape.strokeColor,
+                    strokeWidth: shape.strokeWidth
+                };
+                break;
             case 'BezierSpline':
                 data = {
                     points: shape.points,
+                    controlPoints: shape.controlPoints,
+                    manuallyEditedControls: shape.manuallyEditedControls ? Array.from(shape.manuallyEditedControls) : [],
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
                     strokeWidth: shape.strokeWidth
@@ -278,10 +287,19 @@ class Drawing {
                     data.fillColor, data.strokeColor, data.strokeWidth
                 );
             case 'BezierSpline':
-                return new ShapeClasses.BezierSpline(
+                const bezierSpline = new ShapeClasses.BezierSpline(
                     data.points,
                     data.fillColor, data.strokeColor, data.strokeWidth
                 );
+                // Restore saved control points if available
+                if (data.controlPoints) {
+                    bezierSpline.controlPoints = data.controlPoints;
+                }
+                // Restore manually edited control points set
+                if (data.manuallyEditedControls) {
+                    bezierSpline.manuallyEditedControls = new Set(data.manuallyEditedControls);
+                }
+                return bezierSpline;
             default:
                 return null;
         }

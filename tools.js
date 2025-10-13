@@ -81,15 +81,15 @@ class Tools {
                 this.currentShape = new this.ShapeClasses.Rectangle(x, y, 0, 0, this.fillColor, this.strokeColor, this.strokeWidth);
                 break;
             case TOOLS.SPLINE:
-                this.currentShape = new this.ShapeClasses.Spline([{ x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                // For Cardinal Spline, first click creates both control points and one endpoint at same location
+                // addition point is created when click completes
+                this.currentShape = new this.ShapeClasses.Spline([{ x, y }, { x, y }, { x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
                 this.currentShape.underConstruction = true;
-                this.selected = true;
+                console.log('cardinal spline points:', this.currentShape.points);
                 break;
             case TOOLS.BEZIER:
-                console.log('created bezier spline');
                 this.currentShape = new this.ShapeClasses.BezierSpline([{ x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
                 this.currentShape.underConstruction = true;
-                this.selected = true;
                 break;
             case TOOLS.POLY:
                 this.currentShape = new this.ShapeClasses.Polygon([{ x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
@@ -122,6 +122,15 @@ class Tools {
                 this.currentShape.height = y - this.startPoint.y;
                 break;
             case TOOLS.SPLINE:
+                // Cardinal Spline starts with 3 points (control, 2 endpoints, control)
+                const numPointsSpline = this.currentShape.points.length;
+                if (numPointsSpline >= 2) {
+                    // Update the last (temporary) point and control point
+                    this.currentShape.points[numPointsSpline - 2] = { x, y };
+                    this.currentShape.points[numPointsSpline - 1] = { x, y };
+                }
+                console.log('cardinal spline points:', this.currentShape.points);
+                break;
             case TOOLS.BEZIER:
             case TOOLS.POLY:
                 const numPoints = this.currentShape.points.length;
@@ -156,12 +165,33 @@ class Tools {
         
         switch (this.currentTool) {
             case TOOLS.SPLINE:
+                if (this.currentShape.points) {
+                    // Replace the last (preview) point with the clicked point
+                    // This "confirms" the preview point as a real point
+                    const numPoints = this.currentShape.points.length;
+                    if (numPoints >= 2) {
+                        this.currentShape.points[numPoints - 2] = point;
+                        this.currentShape.points[numPoints - 1] = point;
+                    }
+                    // Add a new control point at the same location
+                    this.currentShape.points.push({ ...point });
+                    // Regenerate control points
+                    if (this.currentShape.generateControlPoints) {
+                        this.currentShape.controlPoints = this.currentShape.generateControlPoints(true);
+                    }
+                    console.log('ADD POINT ===> cardinal spline points:', this.currentShape.points);
+                }
+                break;
             case TOOLS.BEZIER:
                 if (this.currentShape.points) {
                     // Replace the last (preview) point with the clicked point
                     // This "confirms" the preview point as a real point
                     const numPoints = this.currentShape.points.length;
                     if (numPoints > 0) {
+                        if (this.currentTool === TOOLS.SPLINE) {
+                            // for cardinal spline, make sure the endpoint is the same as the control point
+                            this.currentShape.points[numPoints - 2] = point;
+                        }
                         this.currentShape.points[numPoints - 1] = point;
                     }
                     // Add a new preview point at the same location
@@ -206,7 +236,7 @@ class Tools {
         }
     }
 
-    finishMultiPointShape() {
+    finishMultiPointShape(isDoubleClick = false) {
         if (!this.currentShape) return null;
         
         const shape = this.currentShape;
@@ -216,10 +246,26 @@ class Tools {
         if (this.currentTool === TOOLS.POLY) {
             minPoints = 3;
         }
+        if (this.currentTool === TOOLS.SPLINE) {
+            // For double-click: need initial control, one endpoint, extra from double-click, preview = 4
+            // For right-click: need initial control, one endpoint, preview = 3
+            minPoints = isDoubleClick ? 4 : 3;
+        }
         
         if (shape.points && shape.points.length >= minPoints) {
             // Remove the last preview point (it's just following the mouse)
             shape.points.pop();
+            
+            // For Cardinal Spline, handle final control point
+            if (this.currentTool === TOOLS.SPLINE && shape.points.length >= 2) {
+                if (isDoubleClick) {
+                    // Remove the extra point added by the first click of the double-click
+                    shape.points.pop();
+                }
+                const lastPoint = shape.points[shape.points.length - 1];
+                // Add final control point at same location as last endpoint
+                shape.points.push({ x: lastPoint.x, y: lastPoint.y });
+            }
             
             // Regenerate control points one final time after removing preview
             if (shape.generateControlPoints) {

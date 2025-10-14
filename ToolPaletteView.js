@@ -57,6 +57,12 @@ class ToolPaletteView extends View {
             if (tool === Tools.TOOLS.LINE_COLOR) {
                 toolShortcut = 'N';
             }
+            if (tool === Tools.TOOLS.LINE_WIDTH) {
+                toolShortcut = 'W';
+            }
+            if (tool === Tools.TOOLS.SMOOTHNESS) {
+                toolShortcut = 'U';
+            }
             if (tool == this.activeTool) {
                 port.drawRect(new pdg.Rect(x+1, viewArea.top+1, x + 49, viewArea.top + 49), 
                     new pdg.Attributes().fillColor(new pdg.Color(0.8, 0.8, 0.8, 1.0)));
@@ -159,6 +165,29 @@ class ToolPaletteView extends View {
                         new pdg.Attributes().fillColor(new pdg.Color('black')));
                     port.drawCircle(new pdg.Point(x + 40, viewArea.top + 25), 3, 
                         new pdg.Attributes().fillColor(new pdg.Color('black')));
+                    break;
+                case Tools.TOOLS.LINE_WIDTH:
+                    // Draw stacked horizontal lines at different thicknesses
+                    port.drawLine(new pdg.Point(x + 15, viewArea.top + 15), new pdg.Point(x + 35, viewArea.top + 15), 
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(0.5));
+                    port.drawLine(new pdg.Point(x + 15, viewArea.top + 20), new pdg.Point(x + 35, viewArea.top + 20), 
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(1.5));
+                    port.drawLine(new pdg.Point(x + 15, viewArea.top + 27), new pdg.Point(x + 35, viewArea.top + 27), 
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(3.0));
+                    port.drawLine(new pdg.Point(x + 15, viewArea.top + 36), new pdg.Point(x + 35, viewArea.top + 36), 
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(5.0));
+                    break;
+                case Tools.TOOLS.SMOOTHNESS:
+                    // Draw a wavy/irregular line to represent smoothness
+                    const wavyPoints = [];
+                    for (let wx = 0; wx <= 20; wx += 2) {
+                        const wy = Math.sin(wx * 0.8) * 3;
+                        wavyPoints.push(new pdg.Point(x + 15 + wx, viewArea.top + 25 + wy));
+                    }
+                    for (let wp = 0; wp < wavyPoints.length - 1; wp++) {
+                        port.drawLine(wavyPoints[wp], wavyPoints[wp + 1], 
+                            new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
+                    }
                     break;
                 case Tools.TOOLS.HELP:
                     // Draw a question mark

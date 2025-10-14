@@ -60,15 +60,6 @@
 - ✓ if possible, position the color picker so it doesn't cover the currently selected item. If not possible, continue to center it on the screen.
 - ✓ new items are not being created with the default color
 
-## thickness control ##
-- need a line thickness control that goes from hairline (0.25) to 5px
-- sets line thickness of selected items
-- undoable
-
-## freehand smoothing operator ##
-- remove points a certain distance from each other in a freehand spline depending on smoothing level
-- undoable
-
 ## bugs ## ✓ COMPLETED
 - ✓ tweak position of color display
 - ✓ clicking outside color picker should not change selection, but should set current color to color of object hit
@@ -78,4 +69,26 @@
 ## bugs ## ✓ COMPLETED
 - ✓ <esc> should close help
 - ✓ after opening the color picker, <esc> stops working
+
+## line width control ## ✓ COMPLETED
+- ✓ line width control that goes from hairline (0.25) to 5px (options: 0.25, 1.0, 2.0, 3.5, 5.0)
+- ✓ sets line width of selected items
+- ✓ popup panel under toolbar with 5 clickable horizontal lines at different widths
+- ✓ keyboard shortcut: W
+- ✓ undoable
+
+## freehand smoothing ## ✓ COMPLETED
+- ✓ remove points a certain distance from each other in a freehand spline depending on smoothing level
+- ✓ if no points within that distance, try the next level
+- ✓ distances: 2 .. 3 .. 5 ... 8 .. 13
+- ✓ smoothing automatically applied during freehand creation using default smoothing level
+- ✓ if no freehand item selected, it sets the default smoothing for new freehand operations
+- ✓ popup panel under toolbar with 5 example irregular lines at different smoothness levels
+- ✓ keyboard shortcut: U
+- ✓ undoable
+
+## group/ungroup ##
+- grouping should add all the elements to a pdg.Drawing
+- ungrouping should pull the elements out of the pdg.Drawing and treat them as Skrybble shapes
+- undoable
 

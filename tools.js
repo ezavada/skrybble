@@ -14,6 +14,8 @@ const TOOLS = {
     IMAGE: 'image',
     FILL_COLOR: 'fillcolor',
     LINE_COLOR: 'linecolor',
+    LINE_WIDTH: 'linewidth',
+    SMOOTHNESS: 'smoothness',
     HELP: 'help'
 };
 
@@ -31,6 +33,8 @@ const TOOL_SHORTCUTS = {
     'F': TOOLS.FREEHAND,
     'M': TOOLS.FILL_COLOR,
     'N': TOOLS.LINE_COLOR,
+    'W': TOOLS.LINE_WIDTH,
+    'U': TOOLS.SMOOTHNESS,
     'H': TOOLS.HELP
 };
 
@@ -44,6 +48,7 @@ class Tools {
         this.fillColor = 'white';
         this.strokeColor = 'black';
         this.strokeWidth = 1;
+        this.smoothnessLevel = 2; // Default smoothness level (0-4, maps to distances [2, 3, 5, 8, 13])
         
         // Drawing state
         this.isDrawing = false;
@@ -69,6 +74,50 @@ class Tools {
 
     setStrokeWidth(width) {
         this.strokeWidth = width;
+    }
+
+    setSmoothnessLevel(level) {
+        // Level is 0-4, representing distances [2, 3, 5, 8, 13]
+        this.smoothnessLevel = Math.max(0, Math.min(4, level));
+    }
+
+    getSmoothnessDistance() {
+        const distances = [2, 3, 5, 8, 13];
+        return distances[this.smoothnessLevel];
+    }
+
+    applySmoothingToPoints(points, smoothnessLevel = null) {
+        // Use provided level or default
+        const level = smoothnessLevel !== null ? smoothnessLevel : this.smoothnessLevel;
+        const distances = [2, 3, 5, 8, 13];
+        const targetDistance = distances[level];
+        
+        if (points.length <= 2) return points;
+        
+        const smoothedPoints = [points[0]]; // Always keep first point
+        
+        for (let i = 1; i < points.length - 1; i++) {
+            const lastKept = smoothedPoints[smoothedPoints.length - 1];
+            const current = points[i];
+            const dx = current.x - lastKept.x;
+            const dy = current.y - lastKept.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Keep point if it's at least targetDistance away from last kept point
+            if (distance >= targetDistance) {
+                smoothedPoints.push(current);
+            }
+        }
+        
+        // Always keep last point
+        smoothedPoints.push(points[points.length - 1]);
+        
+        // If we removed too many points (only 2 left), try a lower threshold
+        if (smoothedPoints.length <= 2 && level > 0) {
+            return this.applySmoothingToPoints(points, level - 1);
+        }
+        
+        return smoothedPoints;
     }
 
     startDrawing(x, y) {
@@ -180,10 +229,12 @@ class Tools {
                     if (distance >= 2) {
                         this.freehandPoints.push({ x, y });
                         
-                        // Update the spline with all collected points
+                        // Update the spline with smoothed points
                         // For Cardinal spline, we need control points at start and end
                         if (this.freehandPoints.length >= 2) {
-                            const points = [...this.freehandPoints];
+                            // Apply smoothing to collected points
+                            const smoothedPoints = this.applySmoothingToPoints(this.freehandPoints);
+                            const points = [...smoothedPoints];
                             // Add control point at beginning
                             points.unshift({ ...points[0] });
                             // Add control point at end

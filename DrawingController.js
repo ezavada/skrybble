@@ -14,6 +14,8 @@ const Drawing = require('./index').Drawing;
 const DrawingSurfaceView = require('./DrawingSurfaceView.js');
 const ToolPaletteView = require('./ToolPaletteView.js');
 const ColorPickerController = require('./ColorPickerController.js');
+const LineWidthController = require('./LineWidthController.js');
+const SmoothnessController = require('./SmoothnessController.js');
 
 const fs = require('fs');
 
@@ -72,6 +74,14 @@ class DrawingController extends Controller {
         this.recentColors = []; // Track recently used colors
         this.maxRecentColors = 10;
         
+        // Line width picker state
+        this.lineWidthController = null;
+        this.lineWidthPreviousTool = null;
+        
+        // Smoothness picker state
+        this.smoothnessController = null;
+        this.smoothnessPreviousTool = null;
+        
         // Save confirmation message
         this.saveMessage = null;
         this.saveMessageTimer = null;
@@ -100,37 +110,17 @@ class DrawingController extends Controller {
     // ============================ Event Handling Overrides ============================
 
     doMouseDown(mouseInfo, view, id, part) {
+        // Don't handle toolbar in MouseDown - let it generate clicks instead
         if (view === this.toolPaletteView) {
-            // Block toolbar clicks when color picker is open
-            if (this.colorPickerController) {
-                return true;
-            }
-            
-            // Handle tool selection from tool palette
-            // Part numbers correspond to tool indices (1-based)
-            if (part > 0) {
-                const toolNames = Object.values(Tools.TOOLS);
-                const selectedTool = toolNames[part - 1];
-                if (selectedTool) {
-                    // Special handling for HELP tool - just toggle help, don't switch tools
-                    if (selectedTool === Tools.TOOLS.HELP) {
-                        this.toggleHelp();
-                        return true;
-                    }
-                    // Special handling for color picker tools
-                    if (selectedTool === Tools.TOOLS.FILL_COLOR || selectedTool === Tools.TOOLS.LINE_COLOR) {
-                        this.openColorPicker(selectedTool);
-                        return true;
-                    }
-                    this.toolManager.setTool(selectedTool);
-                    this.updateToolSelection(selectedTool);
-                    return true;
-                }
-            }
             return false;
         }
         
         if (view === this.backgroundView) {
+            // If any picker is open, don't handle drawing area clicks
+            if (this.lineWidthController || this.smoothnessController) {
+                return false;
+            }
+            
             // If color picker is open, check if clicking on a shape to sample its color
             if (this.colorPickerController) {
                 const pos = this.getMousePosition(mouseInfo);
@@ -200,8 +190,62 @@ class DrawingController extends Controller {
     }
 
     doLeftClick(mouseInfo, view, id, part) {
+        // Handle toolbar clicks
+        if (view === this.toolPaletteView) {
+            // Block toolbar clicks when any picker is open
+            if (this.colorPickerController || this.lineWidthController || this.smoothnessController) {
+                return true;
+            }
+            
+            // Handle tool selection from tool palette
+            // Part numbers correspond to tool indices (1-based)
+            if (part > 0) {
+                const toolNames = Object.values(Tools.TOOLS);
+                const selectedTool = toolNames[part - 1];
+                if (selectedTool) {
+                    // Special handling for HELP tool - just toggle help, don't switch tools
+                    if (selectedTool === Tools.TOOLS.HELP) {
+                        this.toggleHelp();
+                        return true;
+                    }
+                    // Special handling for color picker tools
+                    if (selectedTool === Tools.TOOLS.FILL_COLOR || selectedTool === Tools.TOOLS.LINE_COLOR) {
+                        this.openColorPicker(selectedTool);
+                        return true;
+                    }
+                    // Special handling for line width tool
+                    if (selectedTool === Tools.TOOLS.LINE_WIDTH) {
+                        this.openLineWidthPicker(part);
+                        return true;
+                    }
+                    // Special handling for smoothness tool
+                    if (selectedTool === Tools.TOOLS.SMOOTHNESS) {
+                        this.openSmoothnessPicker(part);
+                        return true;
+                    }
+                    
+                    // If another tool is selected while a picker is open, cancel the picker
+                    if (this.lineWidthController) {
+                        this.lineWidthController.cancel();
+                    }
+                    if (this.smoothnessController) {
+                        this.smoothnessController.cancel();
+                    }
+                    
+                    this.toolManager.setTool(selectedTool);
+                    this.updateToolSelection(selectedTool);
+                    return true;
+                }
+            }
+            return false;
+        }
+        
         // Handle single clicks on the drawing surface
         if (view === this.backgroundView) {
+            // Don't handle background clicks when pickers are open
+            if (this.lineWidthController || this.smoothnessController) {
+                return false;
+            }
             return this.handleMouseClick(mouseInfo);
         }
         return false;
@@ -238,6 +282,18 @@ class DrawingController extends Controller {
             const handled = this.colorPickerController.doKeyPress(keyPressInfo, view, id, part);
             console.log('DrawingController.doKeyPress - color picker handled:', handled, 'colorPickerController after:', !!this.colorPickerController);
             // Color picker handles ESC and ENTER, so return handled value
+            return handled;
+        }
+        
+        // If line width picker is open, let it handle keys first
+        if (this.lineWidthController) {
+            const handled = this.lineWidthController.doKeyPress(keyPressInfo, view, id, part);
+            return handled;
+        }
+        
+        // If smoothness picker is open, let it handle keys first
+        if (this.smoothnessController) {
+            const handled = this.smoothnessController.doKeyPress(keyPressInfo, view, id, part);
             return handled;
         }
         
@@ -1065,6 +1121,30 @@ class DrawingController extends Controller {
                 this.openColorPicker(tool);
                 return true;
             }
+            // Check for line width tool shortcut
+            if (tool === Tools.TOOLS.LINE_WIDTH) {
+                // Find the toolbar part index for line width tool
+                const toolNames = Object.values(Tools.TOOLS);
+                const toolIndex = toolNames.indexOf(Tools.TOOLS.LINE_WIDTH) + 1;
+                this.openLineWidthPicker(toolIndex);
+                return true;
+            }
+            // Check for smoothness tool shortcut
+            if (tool === Tools.TOOLS.SMOOTHNESS) {
+                // Find the toolbar part index for smoothness tool
+                const toolNames = Object.values(Tools.TOOLS);
+                const toolIndex = toolNames.indexOf(Tools.TOOLS.SMOOTHNESS) + 1;
+                this.openSmoothnessPicker(toolIndex);
+                return true;
+            }
+            
+            // If another tool is selected while a picker is open, cancel the picker
+            if (this.lineWidthController) {
+                this.lineWidthController.cancel();
+            }
+            if (this.smoothnessController) {
+                this.smoothnessController.cancel();
+            }
             
             this.toolManager.setTool(tool);
             this.updateToolSelection(tool);
@@ -1283,6 +1363,182 @@ class DrawingController extends Controller {
 
     getRecentColors() {
         return this.recentColors;
+    }
+
+    // ============================ Line Width Picker ============================
+
+    openLineWidthPicker(toolPart) {
+        console.log('DrawingController.openLineWidthPicker - toolPart:', toolPart);
+        
+        // Don't open if already open
+        if (this.lineWidthController) {
+            console.log('DrawingController.openLineWidthPicker - already open, returning');
+            return;
+        }
+        
+        // Save current tool to restore later
+        this.lineWidthPreviousTool = this.toolManager.getCurrentTool();
+        console.log('DrawingController.openLineWidthPicker - previous tool:', this.lineWidthPreviousTool);
+        
+        // Update toolbar to show line width as selected
+        this.updateToolSelection(Tools.TOOLS.LINE_WIDTH);
+        
+        // Get selected shapes (if any)
+        const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+        console.log('DrawingController.openLineWidthPicker - selectedShapes:', selectedShapes.length);
+        let initialWidth;
+        
+        if (selectedShapes.length > 0) {
+            // Use the stroke width of the first selected shape
+            initialWidth = selectedShapes[0].strokeWidth;
+        } else {
+            // No shape selected - use default stroke width
+            initialWidth = this.toolManager.strokeWidth;
+        }
+        
+        // Calculate toolbar position for popup
+        const toolSlotX = (toolPart - 1) * 50;
+        console.log('DrawingController.openLineWidthPicker - toolSlotX:', toolSlotX);
+        
+        // Save state for undo
+        this.lineWidthInitialState = {
+            shapes: selectedShapes.map(s => ({ shape: s, width: s.strokeWidth })),
+            initialWidth: initialWidth,
+            defaultWidth: this.toolManager.strokeWidth
+        };
+        
+        console.log('DrawingController.openLineWidthPicker - creating controller');
+        
+        // Create line width controller
+        this.lineWidthController = new LineWidthController(
+            this,
+            initialWidth,
+            selectedShapes,
+            (finalWidth) => this.onLineWidthPickerAccept(finalWidth),
+            () => this.onLineWidthPickerCancel(),
+            toolSlotX
+        );
+        
+        console.log('DrawingController.openLineWidthPicker - controller created:', !!this.lineWidthController);
+    }
+
+    onLineWidthPickerAccept(finalWidth) {
+        console.log('DrawingController.onLineWidthPickerAccept - finalWidth:', finalWidth);
+        console.log('DrawingController.onLineWidthPickerAccept - initialState shapes:', this.lineWidthInitialState?.shapes.length);
+        
+        // Save undo state if shapes were modified
+        if (this.lineWidthInitialState && this.lineWidthInitialState.shapes.length > 0) {
+            console.log('DrawingController.onLineWidthPickerAccept - saving undo state');
+            // Verify the shapes actually have the new width
+            for (const shapeState of this.lineWidthInitialState.shapes) {
+                console.log('DrawingController.onLineWidthPickerAccept - shape width is now:', shapeState.shape.strokeWidth);
+            }
+            this.saveUndoState('change line width');
+        } else {
+            // No shapes selected - update default width
+            console.log('DrawingController.onLineWidthPickerAccept - updating default width');
+            this.toolManager.setStrokeWidth(finalWidth);
+        }
+        
+        this.lineWidthInitialState = null;
+        
+        // Restore previous tool
+        if (this.lineWidthPreviousTool) {
+            this.toolManager.setTool(this.lineWidthPreviousTool);
+            this.updateToolSelection(this.lineWidthPreviousTool);
+            this.lineWidthPreviousTool = null;
+        }
+    }
+
+    onLineWidthPickerCancel() {
+        console.log('DrawingController.onLineWidthPickerCancel called');
+        // Width is already restored by the controller
+        this.lineWidthInitialState = null;
+        
+        // Restore previous tool
+        if (this.lineWidthPreviousTool) {
+            console.log('DrawingController.onLineWidthPickerCancel - restoring tool:', this.lineWidthPreviousTool);
+            this.toolManager.setTool(this.lineWidthPreviousTool);
+            this.updateToolSelection(this.lineWidthPreviousTool);
+            this.lineWidthPreviousTool = null;
+        }
+    }
+
+    // ============================ Smoothness Picker ============================
+
+    openSmoothnessPicker(toolPart) {
+        // Don't open if already open
+        if (this.smoothnessController) {
+            return;
+        }
+        
+        // Save current tool to restore later
+        this.smoothnessPreviousTool = this.toolManager.getCurrentTool();
+        
+        // Update toolbar to show smoothness as selected
+        this.updateToolSelection(Tools.TOOLS.SMOOTHNESS);
+        
+        // Get selected shapes (only freehand splines)
+        const allSelectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+        const selectedFreehandShapes = allSelectedShapes.filter(shape => 
+            shape.constructor.name === 'Spline' && shape.freehand
+        );
+        
+        let initialLevel = this.toolManager.smoothnessLevel;
+        
+        // Calculate toolbar position for popup
+        const toolSlotX = (toolPart - 1) * 50;
+        
+        // Save state for undo
+        this.smoothnessInitialState = {
+            shapes: selectedFreehandShapes.map(s => ({ 
+                shape: s, 
+                points: s.points ? s.points.map(p => ({ ...p })) : []
+            })),
+            initialLevel: initialLevel,
+            defaultLevel: this.toolManager.smoothnessLevel
+        };
+        
+        // Create smoothness controller
+        this.smoothnessController = new SmoothnessController(
+            this,
+            initialLevel,
+            selectedFreehandShapes,
+            (finalLevel) => this.onSmoothnessPickerAccept(finalLevel),
+            () => this.onSmoothnessPickerCancel(),
+            toolSlotX
+        );
+    }
+
+    onSmoothnessPickerAccept(finalLevel) {
+        // Save undo state if shapes were modified
+        if (this.smoothnessInitialState && this.smoothnessInitialState.shapes.length > 0) {
+            this.saveUndoState('change smoothness');
+        } else {
+            // No shapes selected - update default smoothness level
+            this.toolManager.setSmoothnessLevel(finalLevel);
+        }
+        
+        this.smoothnessInitialState = null;
+        
+        // Restore previous tool
+        if (this.smoothnessPreviousTool) {
+            this.toolManager.setTool(this.smoothnessPreviousTool);
+            this.updateToolSelection(this.smoothnessPreviousTool);
+            this.smoothnessPreviousTool = null;
+        }
+    }
+
+    onSmoothnessPickerCancel() {
+        // Points are already restored by the controller
+        this.smoothnessInitialState = null;
+        
+        // Restore previous tool
+        if (this.smoothnessPreviousTool) {
+            this.toolManager.setTool(this.smoothnessPreviousTool);
+            this.updateToolSelection(this.smoothnessPreviousTool);
+            this.smoothnessPreviousTool = null;
+        }
     }
 
     // ============================ Clipboard Operations ============================

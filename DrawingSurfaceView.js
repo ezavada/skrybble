@@ -105,6 +105,8 @@ class DrawingSurfaceView extends View {
             { key: 'Q', description: 'Quad tool' },
             { key: 'P', description: 'Polygon tool' },
             { key: 'I', description: 'Image tool' },
+            { key: 'M', description: 'Fill Color Picker' },
+            { key: 'N', description: 'Line Color Picker' },
             { key: 'H', description: 'Help (this screen)' },
             { key: '', description: '' },
             { key: 'TAB', description: 'Select next shape' },

@@ -13,6 +13,7 @@ const Drawing = require('./index').Drawing;
 
 const DrawingSurfaceView = require('./DrawingSurfaceView.js');
 const ToolPaletteView = require('./ToolPaletteView.js');
+const ColorPickerController = require('./ColorPickerController.js');
 
 const fs = require('fs');
 
@@ -65,6 +66,11 @@ class DrawingController extends Controller {
         
         // Help display state
         this.showHelp = false;
+        
+        // Color picker state
+        this.colorPickerController = null;
+        this.recentColors = []; // Track recently used colors
+        this.maxRecentColors = 10;
     }
     
     setupViews() {
@@ -100,6 +106,11 @@ class DrawingController extends Controller {
                     // Special handling for HELP tool - just toggle help, don't switch tools
                     if (selectedTool === Tools.TOOLS.HELP) {
                         this.toggleHelp();
+                        return true;
+                    }
+                    // Special handling for color picker tools
+                    if (selectedTool === Tools.TOOLS.FILL_COLOR || selectedTool === Tools.TOOLS.LINE_COLOR) {
+                        this.openColorPicker(selectedTool);
                         return true;
                     }
                     this.toolManager.setTool(selectedTool);
@@ -176,6 +187,13 @@ class DrawingController extends Controller {
     }
 
     doKeyPress(keyPressInfo, view, id, part) {
+        // If color picker is open, let it handle keys first
+        if (this.colorPickerController) {
+            const handled = this.colorPickerController.doKeyPress(keyPressInfo, view, id, part);
+            if (handled) {
+                return true;
+            }
+        }
         return this.handleKeyPress(keyPressInfo);
     }
 
@@ -972,6 +990,12 @@ class DrawingController extends Controller {
                 return true;
             }
             
+            // Special handling for color picker tools
+            if (tool === Tools.TOOLS.FILL_COLOR || tool === Tools.TOOLS.LINE_COLOR) {
+                this.openColorPicker(tool);
+                return true;
+            }
+            
             this.toolManager.setTool(tool);
             this.updateToolSelection(tool);
             return true;
@@ -1087,6 +1111,84 @@ class DrawingController extends Controller {
 
     getShowHelp() {
         return this.showHelp;
+    }
+
+    openColorPicker(toolType) {
+        // Get selected shape (if any)
+        const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+        let targetShape = null;
+        let initialColor;
+        const colorType = toolType === Tools.TOOLS.FILL_COLOR ? 'fill' : 'stroke';
+        
+        if (selectedShapes.length > 0) {
+            // Use the first selected shape
+            targetShape = selectedShapes[0];
+            initialColor = colorType === 'fill' ? targetShape.fillColor : targetShape.strokeColor;
+        } else {
+            // No shape selected - use default colors
+            initialColor = colorType === 'fill' ? this.toolManager.fillColor : this.toolManager.strokeColor;
+        }
+        
+        // Save state for undo before opening color picker
+        this.colorPickerInitialState = {
+            shape: targetShape,
+            colorType: colorType,
+            initialColor: initialColor
+        };
+        
+        // Create color picker controller
+        this.colorPickerController = new ColorPickerController(
+            this,
+            initialColor,
+            colorType,
+            targetShape,
+            (finalColor) => this.onColorPickerAccept(finalColor),
+            () => this.onColorPickerCancel(),
+            this.recentColors
+        );
+    }
+
+    closeColorPicker() {
+        // Just clear the reference - the controller calls destroy() on itself
+        this.colorPickerController = null;
+    }
+
+    onColorPickerAccept(finalColor) {
+        // Only save undo state if a shape was modified
+        if (this.colorPickerInitialState && this.colorPickerInitialState.shape) {
+            this.saveUndoState('change color');
+        }
+        
+        // Add to recent colors
+        this.addRecentColor(finalColor);
+        
+        // Color is already applied to the shape or default colors, just close the picker
+        this.colorPickerInitialState = null;
+    }
+
+    onColorPickerCancel() {
+        // Undo state is handled by the ColorPickerController (restores initial color)
+        this.colorPickerInitialState = null;
+    }
+
+    addRecentColor(colorStr) {
+        // Remove if already exists
+        const index = this.recentColors.indexOf(colorStr);
+        if (index > -1) {
+            this.recentColors.splice(index, 1);
+        }
+        
+        // Add to front
+        this.recentColors.unshift(colorStr);
+        
+        // Limit to max
+        if (this.recentColors.length > this.maxRecentColors) {
+            this.recentColors = this.recentColors.slice(0, this.maxRecentColors);
+        }
+    }
+
+    getRecentColors() {
+        return this.recentColors;
     }
 
     // ============================ Clipboard Operations ============================
@@ -1362,6 +1464,11 @@ class DrawingController extends Controller {
                 }
             }
             
+            // Load recent colors if available
+            if (data.recentColors) {
+                this.recentColors = data.recentColors;
+            }
+            
             this.currentFilename = filename;
             console.log('Loaded file:', filename);
             return true;
@@ -1389,7 +1496,8 @@ class DrawingController extends Controller {
                         type: serialized.type,
                         data: serialized
                     };
-                })
+                }),
+                recentColors: this.recentColors
             };
             
             const jsonData = JSON.stringify(data, null, 2);

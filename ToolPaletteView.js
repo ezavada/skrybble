@@ -51,6 +51,12 @@ class ToolPaletteView extends View {
             if (tool === Tools.TOOLS.HELP) {
                 toolShortcut = 'h';
             }
+            if (tool === Tools.TOOLS.FILL_COLOR) {
+                toolShortcut = 'm';
+            }
+            if (tool === Tools.TOOLS.LINE_COLOR) {
+                toolShortcut = 'n';
+            }
             if (tool == this.activeTool) {
                 port.drawRect(new pdg.Rect(x+1, viewArea.top+1, x + 49, viewArea.top + 49), 
                     new pdg.Attributes().fillColor(new pdg.Color(0.8, 0.8, 0.8, 1.0)));
@@ -125,6 +131,30 @@ class ToolPaletteView extends View {
                     freehandSpline.addPoint(new pdg.Point(x + 30, viewArea.top + 15));
                     freehandSpline.addPoint(new pdg.Point(x + 38, viewArea.top + 30));
                     port.drawSpline(freehandSpline, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
+                    break;
+                case Tools.TOOLS.FILL_COLOR:
+                    // Draw a filled square icon with current fill color
+                    const fillRect = new pdg.Rect(x + 12, viewArea.top + 12, x + 38, viewArea.top + 38);
+                    // Get color from selected shape if available, otherwise use default
+                    let currentFillColor = this.controller.getToolManager().fillColor || 'white';
+                    const selectedShapes = this.controller.getDrawing().getShapes().filter(s => s.selected);
+                    if (selectedShapes.length > 0 && selectedShapes[0].fillColor) {
+                        currentFillColor = selectedShapes[0].fillColor;
+                    }
+                    port.drawRect(fillRect, new pdg.Attributes().fillColor(new pdg.Color(currentFillColor)));
+                    port.drawRect(fillRect, new pdg.Attributes().lineColor(toolColor).lineThickness(2));
+                    break;
+                case Tools.TOOLS.LINE_COLOR:
+                    // Draw a line with current stroke color
+                    let currentStrokeColor = this.controller.getToolManager().strokeColor || 'black';
+                    const selectedShapesForStroke = this.controller.getDrawing().getShapes().filter(s => s.selected);
+                    if (selectedShapesForStroke.length > 0 && selectedShapesForStroke[0].strokeColor) {
+                        currentStrokeColor = selectedShapesForStroke[0].strokeColor;
+                    }
+                    port.drawLine(new pdg.Point(x + 10, viewArea.top + 25), new pdg.Point(x + 40, viewArea.top + 25), 
+                        new pdg.Attributes().lineColor(new pdg.Color(currentStrokeColor)).lineThickness(3));
+                    port.drawCircle(new pdg.Point(x + 25, viewArea.top + 25), 5, 
+                        new pdg.Attributes().fillColor(new pdg.Color('white')).lineColor(toolColor).lineThickness(2));
                     break;
                 case Tools.TOOLS.HELP:
                     // Draw a question mark

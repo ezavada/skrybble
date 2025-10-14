@@ -12,6 +12,8 @@ const TOOLS = {
     POLY: 'poly',
     IMAGE: 'image',
     FREEHAND: 'freehand',
+    FILL_COLOR: 'fillcolor',
+    LINE_COLOR: 'linecolor',
     HELP: 'help'
 };
 
@@ -27,6 +29,8 @@ const TOOL_SHORTCUTS = {
     'P': TOOLS.POLY,
     'I': TOOLS.IMAGE,
     'F': TOOLS.FREEHAND,
+    'M': TOOLS.FILL_COLOR,
+    'N': TOOLS.LINE_COLOR,
     'H': TOOLS.HELP
 };
 

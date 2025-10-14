@@ -101,6 +101,11 @@ class DrawingController extends Controller {
 
     doMouseDown(mouseInfo, view, id, part) {
         if (view === this.toolPaletteView) {
+            // Block toolbar clicks when color picker is open
+            if (this.colorPickerController) {
+                return true;
+            }
+            
             // Handle tool selection from tool palette
             // Part numbers correspond to tool indices (1-based)
             if (part > 0) {
@@ -126,6 +131,39 @@ class DrawingController extends Controller {
         }
         
         if (view === this.backgroundView) {
+            // If color picker is open, check if clicking on a shape to sample its color
+            if (this.colorPickerController) {
+                const pos = this.getMousePosition(mouseInfo);
+                const shapes = this.drawing.getShapes();
+                
+                // Find shape at click position (don't change selection)
+                for (let i = shapes.length - 1; i >= 0; i--) {
+                    if (shapes[i].contains(pos.x, pos.y)) {
+                        // Sample this shape's color
+                        const colorType = this.colorPickerController.colorType;
+                        const shapeColor = colorType === 'fill' ? shapes[i].fillColor : shapes[i].strokeColor;
+                        
+                        // Apply to color picker without changing selection
+                        if (shapeColor && this.colorPickerController.parseColor) {
+                            const parsedColor = this.colorPickerController.parseColor(shapeColor);
+                            this.colorPickerController.currentColor = parsedColor;
+                            
+                            // Update sliders
+                            if (this.colorPickerController.redSlider) {
+                                this.colorPickerController.redSlider.setValue(parsedColor.r);
+                                this.colorPickerController.greenSlider.setValue(parsedColor.g);
+                                this.colorPickerController.blueSlider.setValue(parsedColor.b);
+                                this.colorPickerController.alphaSlider.setValue(parsedColor.a);
+                            }
+                            
+                            this.colorPickerController.updateColor();
+                        }
+                        return true; // Handled, don't change selection
+                    }
+                }
+                return true; // Clicked outside shapes, do nothing
+            }
+            
             const currentTool = this.toolManager.getCurrentTool();
             // For multi-point tools, don't fully handle mouseDown - let it generate clicks
             if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) {
@@ -191,13 +229,28 @@ class DrawingController extends Controller {
     }
 
     doKeyPress(keyPressInfo, view, id, part) {
+        const unicode = keyPressInfo && keyPressInfo.unicode;
+        console.log('DrawingController.doKeyPress, unicode:', unicode, 'colorPickerController:', !!this.colorPickerController, 'showHelp:', this.showHelp);
+        
         // If color picker is open, let it handle keys first
         if (this.colorPickerController) {
+            console.log('DrawingController.doKeyPress - passing to color picker');
             const handled = this.colorPickerController.doKeyPress(keyPressInfo, view, id, part);
-            if (handled) {
+            console.log('DrawingController.doKeyPress - color picker handled:', handled, 'colorPickerController after:', !!this.colorPickerController);
+            // Color picker handles ESC and ENTER, so return handled value
+            return handled;
+        }
+        
+        // If help is showing, ESC should close it
+        if (this.showHelp) {
+            if (unicode === 27) { // ESC key
+                console.log('DrawingController.doKeyPress - closing help');
+                this.toggleHelp();
                 return true;
             }
         }
+        
+        console.log('DrawingController.doKeyPress - passing to handleKeyPress');
         return this.handleKeyPress(keyPressInfo);
     }
 
@@ -1150,6 +1203,11 @@ class DrawingController extends Controller {
     }
 
     openColorPicker(toolType) {
+        // Don't open if color picker is already open
+        if (this.colorPickerController) {
+            return;
+        }
+        
         // Get selected shape (if any)
         const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
         let targetShape = null;

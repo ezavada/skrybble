@@ -152,14 +152,13 @@ class ToolPaletteView extends View {
                     if (selectedShapesForStroke.length > 0 && selectedShapesForStroke[0].strokeColor) {
                         currentStrokeColor = selectedShapesForStroke[0].strokeColor;
                     }
-                    port.drawRect(new pdg.Rect(x + 10, viewArea.top + 23, x + 40, viewArea.top + 27), 
-                        new pdg.Attributes().fillColor(new pdg.Color(currentStrokeColor)).lineColor(toolColor)
-                        .lineThickness(1).lineOpacity(0.5).lineStyle(pdg.lineStyle_Solid));
-                    // Draw control points on both ends
-                    port.drawCircle(new pdg.Point(x + 10, viewArea.top + 24.5), 3, 
-                        new pdg.Attributes().fillColor(new pdg.Color('red')));
-                    port.drawCircle(new pdg.Point(x + 40, viewArea.top + 24.5), 3, 
-                        new pdg.Attributes().fillColor(new pdg.Color('red')));
+                    port.drawLine(new pdg.Point(x + 10, viewArea.top + 25), new pdg.Point(x + 40, viewArea.top + 25), 
+                        new pdg.Attributes().lineColor(new pdg.Color(currentStrokeColor)).lineThickness(3));
+                    // Draw small black dots on both ends
+                    port.drawCircle(new pdg.Point(x + 10, viewArea.top + 25), 3, 
+                        new pdg.Attributes().fillColor(new pdg.Color('black')));
+                    port.drawCircle(new pdg.Point(x + 40, viewArea.top + 25), 3, 
+                        new pdg.Attributes().fillColor(new pdg.Color('black')));
                     break;
                 case Tools.TOOLS.HELP:
                     // Draw a question mark

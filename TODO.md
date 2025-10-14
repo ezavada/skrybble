@@ -50,11 +50,12 @@
 - ✓ start angle from straight north at 0 radians
 - ✓ white hairline around all control points for visibility
 
-## color picker ##
+## color picker ## ✓ COMPLETED
 - ✓ move current color swatch and hex to be right aligned with color numbers
 - ✓ make current color swatch 1.5x larger
 - ✓ move hex underneath current color swatch and remove "Hex:" from it
 - ✓ move recent colors palette up about 4px to be tighter to "Recent Colors:" label
+- ✓ clicking outside color picker should not change selection, but should set current color to color of object hit
 - ✓ checkerboard underneath alpha slider and under current color swatch
 - ✓ if possible, position the color picker so it doesn't cover the currently selected item. If not possible, continue to center it on the screen.
 - ✓ new items are not being created with the default color
@@ -68,11 +69,13 @@
 - remove points a certain distance from each other in a freehand spline depending on smoothing level
 - undoable
 
-## bugs ##
-- after opening the color picker, <esc> stops working
-- <esc> should close help
-- tweak position of color display
-- clicking outside color picker should not change selection, but should set current color to color of object hit
-- can open color picker when already open
-- should not handle any clicks in toolbar when color picker open
+## bugs ## ✓ COMPLETED
+- ✓ tweak position of color display
+- ✓ clicking outside color picker should not change selection, but should set current color to color of object hit
+- ✓ can open color picker when already open
+- ✓ should not handle any clicks in toolbar when color picker open
+
+## bugs ## ✓ COMPLETED
+- ✓ <esc> should close help
+- ✓ after opening the color picker, <esc> stops working
 

@@ -333,21 +333,33 @@ class ColorPickerController extends Controller {
     }
 
     doKeyPress(keyPressInfo, view, id, part) {
+        // If we've been destroyed or closed, don't handle any keys
+        const parent = this.parentController || this.parent;
+        if (!parent || parent.colorPickerController !== this) {
+            console.log('ColorPickerController.doKeyPress - already closed, ignoring');
+            return false;
+        }
+        
         const unicode = keyPressInfo && keyPressInfo.unicode;
         let key = '';
         if (unicode) {
             key = String.fromCharCode(unicode);
         }
 
+        console.log('ColorPickerController.doKeyPress, unicode:', unicode, 'key:', key);
+
         if (key === '\r' || key === '\n' || unicode === 13) {
             // Enter key - accept changes
+            console.log('ColorPickerController.doKeyPress - accepting');
             this.accept();
             return true;
         } else if (key === '\u001b' || unicode === 27) {
             // Escape key - cancel changes
+            console.log('ColorPickerController.doKeyPress - cancelling');
             this.cancel();
             return true;
         }
+        console.log('ColorPickerController.doKeyPress - not handled, returning false');
         return false;
     }
 
@@ -397,14 +409,19 @@ class ColorPickerController extends Controller {
     }
 
     close() {
-        // Clean up by calling destroy() which removes all views and unregisters events
-        this.destroy();
+        console.log('ColorPickerController.close() - about to destroy');
         
-        // Notify parent to clear its reference to this controller
+        // Notify parent to clear its reference to this controller FIRST
         const parent = this.parentController || this.parent;
         if (parent && parent.colorPickerController === this) {
+            console.log('ColorPickerController.close() - clearing parent reference');
             parent.colorPickerController = null;
         }
+        
+        // Clean up by calling destroy() which removes all views and unregisters events
+        console.log('ColorPickerController.close() - calling destroy');
+        this.destroy();
+        console.log('ColorPickerController.close() - destroy complete');
     }
 
     getCurrentColor() {

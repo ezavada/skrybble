@@ -71,6 +71,10 @@ class DrawingController extends Controller {
         this.colorPickerController = null;
         this.recentColors = []; // Track recently used colors
         this.maxRecentColors = 10;
+        
+        // Save confirmation message
+        this.saveMessage = null;
+        this.saveMessageTimer = null;
     }
     
     setupViews() {
@@ -124,7 +128,7 @@ class DrawingController extends Controller {
         if (view === this.backgroundView) {
             const currentTool = this.toolManager.getCurrentTool();
             // For multi-point tools, don't fully handle mouseDown - let it generate clicks
-            if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+            if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) {
                 this.handleMouseDown(mouseInfo);
                 return false; // Allow click events to be generated
             }
@@ -139,7 +143,7 @@ class DrawingController extends Controller {
         if (view === this.backgroundView) {
             const currentTool = this.toolManager.getCurrentTool();
             // For multi-point tools, don't fully handle mouseUp - let it generate clicks
-            if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+            if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) {
                 this.handleMouseUp(mouseInfo);
                 return false; // Allow click events to be generated
             }
@@ -215,7 +219,7 @@ class DrawingController extends Controller {
 
         if (currentTool === Tools.TOOLS.SELECT) {
             this.handleSelectMode(pos.x, pos.y, event);
-        } else if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+        } else if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) {
             // For multi-point tools, start drawing but wait for clicks to add points
             if (!this.toolManager.isCurrentlyDrawing()) {
                 // Deselect any previously selected shape
@@ -317,11 +321,22 @@ class DrawingController extends Controller {
 
         console.log('handleMouseClick: tool=', currentTool, 'isDrawing=', this.toolManager.isCurrentlyDrawing());
 
-        // For multi-point tools (spline, poly, bezier), add a point on click
-        if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+        // For multi-point tools (spline, poly, bezier, quad), add a point on click
+        if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) {
             if (this.toolManager.isCurrentlyDrawing()) {
                 console.log('Adding point at', pos.x, pos.y);
                 this.toolManager.addPointToShape(pos.x, pos.y);
+                
+                // For quad tool, auto-finish when 4 points are reached
+                if (currentTool === Tools.TOOLS.QUAD && this.toolManager.isQuadReady()) {
+                    const finishedShape = this.toolManager.finishMultiPointShape(false);
+                    if (finishedShape) {
+                        finishedShape.isQuad = false; // Clear the flag
+                        this.saveUndoState('add shape');
+                        this.drawing.addShape(finishedShape);
+                        this.selectShape(null);
+                    }
+                }
             }
             return true;
         }
@@ -334,10 +349,11 @@ class DrawingController extends Controller {
         const currentTool = this.toolManager.getCurrentTool();
 
         // For multi-point tools, finish the shape on double-click
-        if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+        if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) {
             if (this.toolManager.isCurrentlyDrawing()) {
                 const finishedShape = this.toolManager.finishMultiPointShape(true); // true = isDoubleClick
                 if (finishedShape) {
+                    if (finishedShape.isQuad) finishedShape.isQuad = false; // Clear quad flag
                     this.saveUndoState('add shape');
                     this.drawing.addShape(finishedShape);
                     this.selectShape(null);
@@ -354,10 +370,11 @@ class DrawingController extends Controller {
         const currentTool = this.toolManager.getCurrentTool();
 
         // For multi-point tools, finish the shape on right-click
-        if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) {
+        if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) {
             if (this.toolManager.isCurrentlyDrawing()) {
                 const finishedShape = this.toolManager.finishMultiPointShape(false); // false = not doubleClick
                 if (finishedShape) {
+                    if (finishedShape.isQuad) finishedShape.isQuad = false; // Clear quad flag
                     this.saveUndoState('add shape');
                     this.drawing.addShape(finishedShape);
                     this.selectShape(null);
@@ -1012,22 +1029,41 @@ class DrawingController extends Controller {
                 return true;
             case '\u007f': // Delete key
             case '\b': // Backspace key
-                // Delete all selected shapes
-                const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
-                if (selectedShapes.length > 0) {
-                    this.saveUndoState('delete');
-                    for (let shape of selectedShapes) {
-                        this.drawing.removeShape(shape);
+                const currentToolForDelete = this.toolManager.getCurrentTool();
+                // For multi-point tools while drawing, remove last point
+                if ((currentToolForDelete === Tools.TOOLS.SPLINE || currentToolForDelete === Tools.TOOLS.BEZIER || 
+                     currentToolForDelete === Tools.TOOLS.POLY || currentToolForDelete === Tools.TOOLS.QUAD) 
+                    && this.toolManager.isCurrentlyDrawing()) {
+                    this.toolManager.removeLastPoint();
+                } else {
+                    // Delete all selected shapes when not drawing
+                    const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+                    if (selectedShapes.length > 0) {
+                        this.saveUndoState('delete');
+                        for (let shape of selectedShapes) {
+                            this.drawing.removeShape(shape);
+                        }
+                        this.selectedShape = null;
                     }
-                    this.selectedShape = null;
                 }
                 return true;
             case '\u001b': // Escape key
                 const currentTool = this.toolManager.getCurrentTool();
-                // For multi-point tools, remove last point instead of canceling
-                if ((currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY) 
+                // For multi-point tools while drawing, finish in current state and switch to SELECT
+                if ((currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || 
+                     currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) 
                     && this.toolManager.isCurrentlyDrawing()) {
-                    this.toolManager.removeLastPoint();
+                    // Finish the shape in its current state
+                    const finishedShape = this.toolManager.finishMultiPointShape(false);
+                    if (finishedShape) {
+                        if (finishedShape.isQuad) finishedShape.isQuad = false;
+                        this.saveUndoState('add shape');
+                        this.drawing.addShape(finishedShape);
+                    }
+                    this.toolManager.finishCurrentDrawing();
+                    this.selectShape(null);
+                    this.toolManager.setTool(Tools.TOOLS.SELECT);
+                    this.updateToolSelection(Tools.TOOLS.SELECT);
                 } else {
                     // For other tools or when not drawing, finish and switch to SELECT
                     this.toolManager.finishCurrentDrawing();
@@ -1503,11 +1539,35 @@ class DrawingController extends Controller {
             const jsonData = JSON.stringify(data, null, 2);
             fs.writeFileSync(this.currentFilename, jsonData, 'utf8');
             console.log('Saved file:', this.currentFilename);
+            
+            // Show save confirmation message
+            this.showSaveMessage(`Saved to ${this.currentFilename}`);
+            
             return true;
         } catch (error) {
             console.error('Failed to save file:', error);
+            this.showSaveMessage(`Failed to save: ${error.message}`);
             return false;
         }
+    }
+    
+    showSaveMessage(message) {
+        this.saveMessage = message;
+        
+        // Clear any existing timer
+        if (this.saveMessageTimer) {
+            clearTimeout(this.saveMessageTimer);
+        }
+        
+        // Clear message after 2 seconds
+        this.saveMessageTimer = setTimeout(() => {
+            this.saveMessage = null;
+            this.saveMessageTimer = null;
+        }, 2000);
+    }
+    
+    getSaveMessage() {
+        return this.saveMessage;
     }
 }
 

@@ -20,3 +20,45 @@
 - ✓ esc cancels the color change, enter accepts
 - ✓ accepted color changes are undoable/redoable
 
+## quad tool ## ✓ COMPLETED
+- ✓ implement the quad tool, which draws a 4 point polygon and automatically finishes when the 4th point is chosen
+
+## line color tool ## ✓ COMPLETED
+- ✓ the line color tool should show small black dots on either end, not a big white dot in the center
+
+## freehand tool ## ✓ COMPLETED
+- ✓ the freehand tool icon in the toolbar should look like a pencil
+- ✓ the freehand tool should be right after the line tool in the toolbar, before the spline tool.
+
+## multiclick shapes ## ✓ COMPLETED
+- ✓ use <delete> key rather than <esc> to go back one point
+- ✓ if cardinal spline is at two point (control + endpoint), delete completely erases the shape
+- ✓ <esc> stops the drawing completely in the current state and goes into select mode
+
+## saving ## ✓ COMPLETED
+- ✓ if save succeeded, briefly display "Saved to {filename}" in the center of the screen
+
+## toolbar ##
+- need anti-aliasing for the spines, circles, and ovals
+- need a line thickness control that goes from hairline (0.25) to 5px
+
+## key controls ##
+- <esc> not recognized at all other than closing the color picker
+- <delete> needs to delete the current cardinal spline if hit when there are 4 points, not 3
+
+## freehand smoothing operator ##
+- remove points a certain distance from each other in a freehand spline depending on smoothing level
+- undoable
+
+## control points ##
+- hairline for angle
+- start angle from straight north at 0 radians
+- white hairline around all control points for visibility
+
+## color picker ##
+- move hex to be right aligned with color numbers
+- make slider labels right aligned
+- move 
+- move recent colors palette up about 4px to be tighter to "Recent Colors:" label
+- move title down about 8px to be closer to centered between top fo window and the sliders
+- 

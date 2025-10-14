@@ -3,6 +3,7 @@
 const TOOLS = {
     SELECT: 'select',
     LINE: 'line',
+    FREEHAND: 'freehand',
     SPLINE: 'spline',
     BEZIER: 'bezier',
     CIRCLE: 'circle',
@@ -11,7 +12,6 @@ const TOOLS = {
     QUAD: 'quad',
     POLY: 'poly',
     IMAGE: 'image',
-    FREEHAND: 'freehand',
     FILL_COLOR: 'fillcolor',
     LINE_COLOR: 'linecolor',
     HELP: 'help'
@@ -103,6 +103,11 @@ class Tools {
                 this.currentShape = new this.ShapeClasses.Polygon([{ x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
                 this.currentShape.underConstruction = true;
                 break;
+            case TOOLS.QUAD:
+                this.currentShape = new this.ShapeClasses.Polygon([{ x, y }], this.fillColor, this.strokeColor, this.strokeWidth);
+                this.currentShape.underConstruction = true;
+                this.currentShape.isQuad = true; // Mark as quad for auto-finish after 4 points
+                break;
             case TOOLS.FREEHAND:
                 // Start collecting points for freehand drawing
                 this.freehandPoints = [{ x, y }];
@@ -147,6 +152,7 @@ class Tools {
                 break;
             case TOOLS.BEZIER:
             case TOOLS.POLY:
+            case TOOLS.QUAD:
                 const numPoints = this.currentShape.points.length;
                 if (numPoints > 0) {
                     // Update or add a temporary preview point
@@ -250,6 +256,16 @@ class Tools {
                     this.currentShape.points.push({ ...point });
                 }
                 break;
+            case TOOLS.QUAD:
+                if (this.currentShape.points) {
+                    // Same logic as polygons
+                    const numPoints = this.currentShape.points.length;
+                    if (numPoints > 0) {
+                        this.currentShape.points[numPoints - 1] = point;
+                    }
+                    this.currentShape.points.push({ ...point });
+                }
+                break;
         }
     }
 
@@ -260,6 +276,7 @@ class Tools {
             case TOOLS.SPLINE:
             case TOOLS.BEZIER:
             case TOOLS.POLY:
+            case TOOLS.QUAD:
                 if (this.currentShape.points && this.currentShape.points.length > 2) {
                     this.currentShape.points.pop();
                     // For splines, regenerate control points
@@ -283,6 +300,9 @@ class Tools {
         let minPoints = 2;
         if (this.currentTool === TOOLS.POLY) {
             minPoints = 3;
+        }
+        if (this.currentTool === TOOLS.QUAD) {
+            minPoints = 4; // Quad needs exactly 4 points
         }
         if (this.currentTool === TOOLS.SPLINE) {
             // For double-click: need initial control, one endpoint, extra from double-click, preview = 4
@@ -359,6 +379,16 @@ class Tools {
             default:
                 return true;
         }
+    }
+    
+    isQuadReady() {
+        // Check if quad has 4 points (excluding the preview point)
+        if (!this.currentShape || !this.currentShape.isQuad) {
+            return false;
+        }
+        // Points array has: point1, point2, point3, point4, preview
+        // So when length is 5, we have 4 actual points + 1 preview = ready to finish
+        return this.currentShape.points && this.currentShape.points.length >= 5;
     }
 }
 

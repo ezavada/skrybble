@@ -74,6 +74,11 @@ class DrawingSurfaceView extends View {
         if (this.controller.getShowHelp()) {
             this.drawHelpOverlay(port, area);
         }
+        
+        // Draw save confirmation message
+        if (this.controller.getSaveMessage && this.controller.getSaveMessage()) {
+            this.drawSaveMessage(port, area);
+        }
     }
 
     drawHelpOverlay(port, area) {
@@ -94,15 +99,15 @@ class DrawingSurfaceView extends View {
         
         // Define keyboard shortcuts to display
         const shortcuts = [
-            { key: 'ESC', description: 'Select tool / Cancel' },
+            { key: 'ESC', description: 'Select tool / Finish drawing' },
             { key: 'L', description: 'Line tool' },
+            { key: 'F', description: 'Freehand tool' },
             { key: 'S', description: 'Cardinal Spline tool' },
             { key: 'B', description: 'Bezier Spline tool' },
-            { key: 'F', description: 'Freehand tool' },
             { key: 'C', description: 'Circle tool' },
             { key: 'O', description: 'Oval tool' },
             { key: 'R', description: 'Rectangle tool' },
-            { key: 'Q', description: 'Quad tool' },
+            { key: 'Q', description: 'Quad tool (4-point)' },
             { key: 'P', description: 'Polygon tool' },
             { key: 'I', description: 'Image tool' },
             { key: 'M', description: 'Fill Color Picker' },
@@ -111,7 +116,7 @@ class DrawingSurfaceView extends View {
             { key: '', description: '' },
             { key: 'TAB', description: 'Select next shape' },
             { key: 'SHIFT+TAB', description: 'Select previous shape' },
-            { key: 'DELETE/BKSP', description: 'Delete selected shapes' },
+            { key: 'DELETE/BKSP', description: 'Delete / Remove last point' },
             { key: 'ARROWS', description: 'Move selected shapes (10px)' },
             { key: 'SHIFT+ARROWS', description: 'Move selected shapes (1px)' },
             { key: '', description: '' },
@@ -168,6 +173,42 @@ class DrawingSurfaceView extends View {
             .textStyle(pdg.textStyle_Centered)
             .fillColor(new pdg.Color(1.0, 1.0, 0.6));
         port.drawText('Press H to close', new pdg.Point(centerX, footerY), footerAttrs);
+    }
+
+    drawSaveMessage(port, area) {
+        const message = this.controller.getSaveMessage();
+        if (!message) return;
+        
+        const centerX = area.left + area.width() / 2;
+        const centerY = area.top + area.height() / 2;
+        
+        // Draw semi-transparent background box
+        const textWidth = port.getTextWidth(message, 18);
+        const padding = 20;
+        const boxWidth = textWidth + padding * 2;
+        const boxHeight = 60;
+        const boxRect = new pdg.Rect(
+            centerX - boxWidth / 2,
+            centerY - boxHeight / 2,
+            centerX + boxWidth / 2,
+            centerY + boxHeight / 2
+        );
+        
+        const bgAttrs = new pdg.Attributes()
+            .fillColor(new pdg.Color(0.2, 0.6, 0.2, 0.9));
+        port.drawRoundedRect(boxRect, 10, bgAttrs);
+        
+        const borderAttrs = new pdg.Attributes()
+            .lineColor(new pdg.Color(0.1, 0.4, 0.1, 1.0))
+            .lineThickness(2);
+        port.drawRoundedRect(boxRect, 10, borderAttrs);
+        
+        // Draw message text
+        const textAttrs = new pdg.Attributes()
+            .textSize(18)
+            .textStyle(pdg.textStyle_Centered)
+            .fillColor(new pdg.Color('white'));
+        port.drawText(message, new pdg.Point(centerX, centerY + 5), textAttrs);
     }
 }
 

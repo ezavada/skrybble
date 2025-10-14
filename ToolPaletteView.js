@@ -49,13 +49,13 @@ class ToolPaletteView extends View {
             const tool = Tools.TOOLS[whichTool];
             let toolShortcut = tool.toUpperCase()[0];
             if (tool === Tools.TOOLS.HELP) {
-                toolShortcut = 'h';
+                toolShortcut = 'H';
             }
             if (tool === Tools.TOOLS.FILL_COLOR) {
-                toolShortcut = 'm';
+                toolShortcut = 'M';
             }
             if (tool === Tools.TOOLS.LINE_COLOR) {
-                toolShortcut = 'n';
+                toolShortcut = 'N';
             }
             if (tool == this.activeTool) {
                 port.drawRect(new pdg.Rect(x+1, viewArea.top+1, x + 49, viewArea.top + 49), 
@@ -69,7 +69,11 @@ class ToolPaletteView extends View {
                     break;
                 case Tools.TOOLS.LINE:
                     port.drawLine(new pdg.Point(x + 10, viewArea.top + 35), new pdg.Point(x + 40, viewArea.top + 10), 
-                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.75));
+                    port.drawLine(new pdg.Point(x + 9.5, viewArea.top + 35), new pdg.Point(x + 39.5, viewArea.top + 10), 
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.25));
+                    port.drawLine(new pdg.Point(x + 10.5, viewArea.top + 35), new pdg.Point(x + 40.5, viewArea.top + 10), 
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.25));
                     break;
                 case Tools.TOOLS.CIRCLE:
                     port.drawCircle(new pdg.Point(x + 25, viewArea.top + 25), 15, 
@@ -92,14 +96,16 @@ class ToolPaletteView extends View {
                     const spline = new pdg.Spline(pdg.spline_Hermite);
                     spline.addSegment(p1, p2, v1, v2);
                     port.drawSpline(spline, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
-                    port.drawCircle(new pdg.Point(x + 12, viewArea.top + 10), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
-                    port.drawCircle(new pdg.Point(x + 40, viewArea.top + 35), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
+                    port.drawCircle(new pdg.Point(x + 12, viewArea.top + 10), 2, new pdg.Attributes().fillColor(new pdg.Color('red')));
+                    port.drawCircle(new pdg.Point(x + 40, viewArea.top + 35), 2, new pdg.Attributes().fillColor(new pdg.Color('red')));
                     if (tool == Tools.TOOLS.SPLINE) {
-                        port.drawCircle(new pdg.Point(x + 28, viewArea.top + 14), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
-                        port.drawCircle(new pdg.Point(x + 16, viewArea.top + 29), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
+                        // draw additional points on spline
+                        port.drawCircle(new pdg.Point(x + 28, viewArea.top + 14), 2, new pdg.Attributes().fillColor(new pdg.Color('red')));
+                        port.drawCircle(new pdg.Point(x + 16, viewArea.top + 29), 2, new pdg.Attributes().fillColor(new pdg.Color('red')));
                     } else if (tool == Tools.TOOLS.BEZIER) {
-                        port.drawCircle(new pdg.Point(x + 38, viewArea.top + 10), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
-                        port.drawCircle(new pdg.Point(x + 8, viewArea.top + 33), 2, new pdg.Attributes().fillColor(new pdg.Color('black')));
+                        // draw bezier control points
+                        port.drawCircle(new pdg.Point(x + 38, viewArea.top + 10), 2, new pdg.Attributes().fillColor(new pdg.Color('green')));
+                        port.drawCircle(new pdg.Point(x + 8, viewArea.top + 33), 2, new pdg.Attributes().fillColor(new pdg.Color('green')));
                     }
                     break;
                 case Tools.TOOLS.POLY:
@@ -123,14 +129,9 @@ class ToolPaletteView extends View {
                     port.drawQuad(quad, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
                     break;
                 case Tools.TOOLS.FREEHAND:
-                    // Draw a freehand-looking wavy line
-                    const freehandSpline = new pdg.Spline(pdg.spline_Cardinal);
-                    freehandSpline.addPoint(new pdg.Point(x + 10, viewArea.top + 28));
-                    freehandSpline.addPoint(new pdg.Point(x + 15, viewArea.top + 12));
-                    freehandSpline.addPoint(new pdg.Point(x + 22, viewArea.top + 25));
-                    freehandSpline.addPoint(new pdg.Point(x + 30, viewArea.top + 15));
-                    freehandSpline.addPoint(new pdg.Point(x + 38, viewArea.top + 30));
-                    port.drawSpline(freehandSpline, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
+                    // Draw a question mark
+                    port.drawText('✎', new pdg.Point(x + 38, viewArea.top + 35), 
+                        new pdg.Attributes().textSize(32).textStyle(pdg.textStyle_Centered).fillColor(toolColor));
                     break;
                 case Tools.TOOLS.FILL_COLOR:
                     // Draw a filled square icon with current fill color
@@ -141,20 +142,24 @@ class ToolPaletteView extends View {
                     if (selectedShapes.length > 0 && selectedShapes[0].fillColor) {
                         currentFillColor = selectedShapes[0].fillColor;
                     }
-                    port.drawRect(fillRect, new pdg.Attributes().fillColor(new pdg.Color(currentFillColor)));
-                    port.drawRect(fillRect, new pdg.Attributes().lineColor(toolColor).lineThickness(2));
+                    port.drawRect(fillRect, new pdg.Attributes().fillColor(new pdg.Color(currentFillColor))
+                        .lineColor(toolColor).lineThickness(1).lineOpacity(0.5).lineStyle(pdg.lineStyle_Solid));
                     break;
                 case Tools.TOOLS.LINE_COLOR:
-                    // Draw a line with current stroke color
+                    // Draw a line with current stroke color and black dots on ends
                     let currentStrokeColor = this.controller.getToolManager().strokeColor || 'black';
                     const selectedShapesForStroke = this.controller.getDrawing().getShapes().filter(s => s.selected);
                     if (selectedShapesForStroke.length > 0 && selectedShapesForStroke[0].strokeColor) {
                         currentStrokeColor = selectedShapesForStroke[0].strokeColor;
                     }
-                    port.drawLine(new pdg.Point(x + 10, viewArea.top + 25), new pdg.Point(x + 40, viewArea.top + 25), 
-                        new pdg.Attributes().lineColor(new pdg.Color(currentStrokeColor)).lineThickness(3));
-                    port.drawCircle(new pdg.Point(x + 25, viewArea.top + 25), 5, 
-                        new pdg.Attributes().fillColor(new pdg.Color('white')).lineColor(toolColor).lineThickness(2));
+                    port.drawRect(new pdg.Rect(x + 10, viewArea.top + 23, x + 40, viewArea.top + 27), 
+                        new pdg.Attributes().fillColor(new pdg.Color(currentStrokeColor)).lineColor(toolColor)
+                        .lineThickness(1).lineOpacity(0.5).lineStyle(pdg.lineStyle_Solid));
+                    // Draw control points on both ends
+                    port.drawCircle(new pdg.Point(x + 10, viewArea.top + 24.5), 3, 
+                        new pdg.Attributes().fillColor(new pdg.Color('red')));
+                    port.drawCircle(new pdg.Point(x + 40, viewArea.top + 24.5), 3, 
+                        new pdg.Attributes().fillColor(new pdg.Color('red')));
                     break;
                 case Tools.TOOLS.HELP:
                     // Draw a question mark

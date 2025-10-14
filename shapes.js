@@ -63,17 +63,21 @@ class Shape {
         const center = this.getCenterPoint();
         const lineLength = this.getRotationLineLength();
         
-        // Draw blue center point
+        // Draw blue center point with white outline
+        port.drawCircle(new pdg.Point(center.x, center.y), 5, 
+            new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1));
         const centerAttrs = new pdg.Attributes().fillColor(new pdg.Color('blue')).fillOpacity(0.5);
         port.drawCircle(new pdg.Point(center.x, center.y), 4, centerAttrs);
         
-        // Draw blue rotation line
-        const endX = center.x + Math.cos(this.rotation) * lineLength;
-        const endY = center.y + Math.sin(this.rotation) * lineLength;
+        // Draw blue rotation line (hairline with alpha 0.5)
+        // Start angle from straight north (subtract PI/2 so 0 radians = north)
+        const angle = this.rotation - Math.PI / 2;
+        const endX = center.x + Math.cos(angle) * lineLength;
+        const endY = center.y + Math.sin(angle) * lineLength;
         const lineAttrs = new pdg.Attributes()
             .lineColor(new pdg.Color('blue'))
             .lineOpacity(0.5)
-            .lineThickness(2);
+            .lineThickness(1);
         port.drawLine(new pdg.Point(center.x, center.y), new pdg.Point(endX, endY), lineAttrs);
     }
 
@@ -121,8 +125,13 @@ class Line extends Shape {
             p2 = this.rotatePoint(p2.x, p2.y, center.x, center.y, this.rotation);
         }
         
+        // Draw white outline first, then red fill
+        port.drawCircle(new pdg.Point(p1.x, p1.y), 5, 
+            new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1));
         port.drawCircle(new pdg.Point(p1.x, p1.y), 4, 
             new pdg.Attributes().fillColor(new pdg.Color('red')));
+        port.drawCircle(new pdg.Point(p2.x, p2.y), 5, 
+            new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1));
         port.drawCircle(new pdg.Point(p2.x, p2.y), 4, 
             new pdg.Attributes().fillColor(new pdg.Color('red')));
     }
@@ -266,11 +275,19 @@ class Circle extends Shape {
     }
 
     drawEndpoints(port) {
+        const points = [
+            new pdg.Point(this.x, this.y - this.radius),
+            new pdg.Point(this.x + this.radius, this.y),
+            new pdg.Point(this.x, this.y + this.radius),
+            new pdg.Point(this.x - this.radius, this.y)
+        ];
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
-        port.drawCircle(new pdg.Point(this.x, this.y - this.radius), 4, fillAttrs);
-        port.drawCircle(new pdg.Point(this.x + this.radius, this.y), 4, fillAttrs);
-        port.drawCircle(new pdg.Point(this.x, this.y + this.radius), 4, fillAttrs);
-        port.drawCircle(new pdg.Point(this.x - this.radius, this.y), 4, fillAttrs);
+        const outlineAttrs = new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1);
+        
+        for (const point of points) {
+            port.drawCircle(point, 5, outlineAttrs);
+            port.drawCircle(point, 4, fillAttrs);
+        }
     }
 
     contains(x, y) {
@@ -361,15 +378,18 @@ class Rectangle extends Shape {
     drawEndpoints(port) {
         const points = this.getEndpoints();
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        const outlineAttrs = new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1);
         
         if (this.rotation !== 0) {
             const center = this.getCenterPoint();
             points.forEach(point => {
                 const rotated = this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation);
+                port.drawCircle(new pdg.Point(rotated.x, rotated.y), 5, outlineAttrs);
                 port.drawCircle(new pdg.Point(rotated.x, rotated.y), 4, fillAttrs);
             });
         } else {
             points.forEach(point => {
+                port.drawCircle(new pdg.Point(point.x, point.y), 5, outlineAttrs);
                 port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
             });
         }
@@ -518,6 +538,7 @@ class Spline extends Shape {
 
     drawEndpoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        const outlineAttrs = new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1);
         const center = this.getCenterPoint();
         
         // For Cardinal splines, only interior points are on the curve
@@ -527,12 +548,14 @@ class Spline extends Shape {
             if (this.rotation !== 0) {
                 point = this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation);
             }
+            port.drawCircle(new pdg.Point(point.x, point.y), 5, outlineAttrs);
             port.drawCircle(new pdg.Point(point.x, point.y), 4, fillAttrs);
         }
     }
 
     drawControlPoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('green'));
+        const outlineAttrs = new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1);
         const center = this.getCenterPoint();
         
         // First and last points are the control points for Cardinal splines
@@ -541,6 +564,7 @@ class Spline extends Shape {
             if (this.rotation !== 0) {
                 point = this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation);
             }
+            port.drawCircle(new pdg.Point(point.x, point.y), 4, outlineAttrs);
             port.drawCircle(new pdg.Point(point.x, point.y), 3, fillAttrs);
         }
         if (this.points.length > 1) {
@@ -549,6 +573,7 @@ class Spline extends Shape {
             if (this.rotation !== 0) {
                 point = this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation);
             }
+            port.drawCircle(new pdg.Point(point.x, point.y), 4, outlineAttrs);
             port.drawCircle(new pdg.Point(point.x, point.y), 3, fillAttrs);
         }
     }
@@ -858,6 +883,7 @@ class BezierSpline extends Shape {
 
     drawEndpoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        const outlineAttrs = new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1);
         const center = this.getCenterPoint();
         
         this.points.forEach(point => {
@@ -865,12 +891,14 @@ class BezierSpline extends Shape {
             if (this.rotation !== 0) {
                 p = this.rotatePoint(p.x, p.y, center.x, center.y, this.rotation);
             }
+            port.drawCircle(new pdg.Point(p.x, p.y), 5, outlineAttrs);
             port.drawCircle(new pdg.Point(p.x, p.y), 4, fillAttrs);
         });
     }
 
     drawControlPoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('green'));
+        const outlineAttrs = new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1);
         const center = this.getCenterPoint();
         
         this.controlPoints.forEach(point => {
@@ -878,6 +906,7 @@ class BezierSpline extends Shape {
             if (this.rotation !== 0) {
                 p = this.rotatePoint(p.x, p.y, center.x, center.y, this.rotation);
             }
+            port.drawCircle(new pdg.Point(p.x, p.y), 4, outlineAttrs);
             port.drawCircle(new pdg.Point(p.x, p.y), 3, fillAttrs);
         });
     }
@@ -1089,11 +1118,19 @@ class Oval extends Shape {
     }
 
     drawEndpoints(port) {
+        const points = [
+            new pdg.Point(this.x, this.y - this.radiusY),
+            new pdg.Point(this.x + this.radiusX, this.y),
+            new pdg.Point(this.x, this.y + this.radiusY),
+            new pdg.Point(this.x - this.radiusX, this.y)
+        ];
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
-        port.drawCircle(new pdg.Point(this.x, this.y - this.radiusY), 4, fillAttrs);
-        port.drawCircle(new pdg.Point(this.x + this.radiusX, this.y), 4, fillAttrs);
-        port.drawCircle(new pdg.Point(this.x, this.y + this.radiusY), 4, fillAttrs);
-        port.drawCircle(new pdg.Point(this.x - this.radiusX, this.y), 4, fillAttrs);
+        const outlineAttrs = new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1);
+        
+        for (const point of points) {
+            port.drawCircle(point, 5, outlineAttrs);
+            port.drawCircle(point, 4, fillAttrs);
+        }
     }
 
     contains(x, y) {
@@ -1225,6 +1262,7 @@ class Polygon extends Shape {
 
     drawEndpoints(port) {
         const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        const outlineAttrs = new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1);
         const center = this.getCenterPoint();
         
         this.points.forEach(point => {
@@ -1232,6 +1270,7 @@ class Polygon extends Shape {
             if (this.rotation !== 0) {
                 p = this.rotatePoint(p.x, p.y, center.x, center.y, this.rotation);
             }
+            port.drawCircle(new pdg.Point(p.x, p.y), 5, outlineAttrs);
             port.drawCircle(new pdg.Point(p.x, p.y), 4, fillAttrs);
         });
     }

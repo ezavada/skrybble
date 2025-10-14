@@ -274,6 +274,16 @@ class Tools {
         
         switch (this.currentTool) {
             case TOOLS.SPLINE:
+                // For cardinal spline: [control, endpoint1, ..., endpointN, control]
+                // At 4 points (control, endpoint, endpoint/preview, control), delete entirely
+                // At 5+ points, remove last endpoint
+                if (this.currentShape.points && this.currentShape.points.length <= 4) {
+                    // Delete the entire shape
+                    this.finishCurrentDrawing();
+                } else if (this.currentShape.points && this.currentShape.points.length > 4) {
+                    this.currentShape.points.pop();
+                }
+                break;
             case TOOLS.BEZIER:
             case TOOLS.POLY:
             case TOOLS.QUAD:

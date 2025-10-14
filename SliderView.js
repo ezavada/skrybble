@@ -59,7 +59,12 @@ class SliderView extends View {
         const sliderRect = new pdg.Rect(sliderLeft, sliderTop, sliderRight, sliderBottom);
         const cornerRadius = (sliderBottom - sliderTop) / 2;
         
-        // First draw the gradient using PDG's built-in gradient support
+        // For alpha slider, draw checkerboard background first
+        if (this.label === 'Alpha') {
+            this.drawCheckerboard(port, sliderRect, cornerRadius);
+        }
+        
+        // Then draw the gradient using PDG's built-in gradient support
         const gradientAttrs = new pdg.Attributes()
             .fillGradient(
                 new pdg.Point(sliderLeft, sliderTop),
@@ -131,13 +136,39 @@ class SliderView extends View {
     mouseToValue(mouseX) {
         const viewArea = this.getViewArea();
         const sliderLeft = viewArea.left + 60;
-        const sliderRight = viewArea.right - 30;
+        const sliderRight = viewArea.right - 60;
         
         const relativeX = mouseX - sliderLeft;
         const sliderWidth = sliderRight - sliderLeft;
         const value = relativeX / sliderWidth;
         
         return Math.max(0, Math.min(1, value));
+    }
+
+    drawCheckerboard(port, rect, cornerRadius) {
+        // Draw checkerboard pattern for transparency visualization
+        const squareSize = 4;
+        const lightGray = new pdg.Color(0.9, 0.9, 0.9);
+        const darkGray = new pdg.Color(0.75, 0.75, 0.75);
+        
+        // Draw checkerboard
+        for (let x = rect.left; x < rect.right; x += squareSize) {
+            for (let y = rect.top; y < rect.bottom; y += squareSize) {
+                const col = Math.floor((x - rect.left) / squareSize);
+                const row = Math.floor((y - rect.top) / squareSize);
+                const isLight = (col + row) % 2 === 0;
+                
+                const squareRect = new pdg.Rect(
+                    Math.max(x, rect.left),
+                    Math.max(y, rect.top),
+                    Math.min(x + squareSize, rect.right),
+                    Math.min(y + squareSize, rect.bottom)
+                );
+                
+                const attrs = new pdg.Attributes().fillColor(isLight ? lightGray : darkGray);
+                port.drawRect(squareRect, attrs);
+            }
+        }
     }
 }
 

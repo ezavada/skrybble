@@ -108,8 +108,32 @@ class ColorPickerController extends Controller {
         // Create a centered popup (larger to accommodate recent colors)
         const popupWidth = 400;
         const popupHeight = 320;
-        const popupLeft = drawingArea.left + (drawingArea.width() - popupWidth) / 2;
-        const popupTop = drawingArea.top + (drawingArea.height() - popupHeight) / 2;
+        
+        // Try to position popup to not cover selected shape
+        let popupLeft = drawingArea.left + (drawingArea.width() - popupWidth) / 2;
+        let popupTop = drawingArea.top + (drawingArea.height() - popupHeight) / 2;
+        
+        if (ColorPickerController._tempTargetShape) {
+            const shape = ColorPickerController._tempTargetShape;
+            // Get shape's approximate center and bounding box
+            const center = shape.getCenterPoint ? shape.getCenterPoint() : { x: shape.x, y: shape.y };
+            
+            // Try to position popup away from shape
+            // If shape is in left half, put popup on right; if in right half, put on left
+            const drawingCenterX = drawingArea.left + drawingArea.width() / 2;
+            
+            if (center.x < drawingCenterX) {
+                // Shape on left, try to put popup on right
+                popupLeft = Math.min(drawingArea.right - popupWidth - 20, drawingCenterX + 50);
+            } else {
+                // Shape on right, try to put popup on left
+                popupLeft = Math.max(drawingArea.left + 20, drawingCenterX - popupWidth - 50);
+            }
+            
+            // Keep popup within bounds
+            popupLeft = Math.max(drawingArea.left + 10, Math.min(popupLeft, drawingArea.right - popupWidth - 10));
+            popupTop = Math.max(drawingArea.top + 60, Math.min(popupTop, drawingArea.bottom - popupHeight - 10));
+        }
         
         this.popupRect = new pdg.Rect(popupLeft, popupTop, popupLeft + popupWidth, popupTop + popupHeight);
         
@@ -435,24 +459,20 @@ class ColorPickerView extends require('./index').View {
         const titleText = this.controller.targetShape ? `${colorTypeText} Color Picker` : `Default ${colorTypeText} Color`;
         port.drawText(titleText, new pdg.Point(titleX, titleY), titleAttrs);
         
-        // Draw hex value below the Alpha slider
+        // Draw current color swatch and hex - right aligned with slider numbers
         const startY = viewArea.top + 50;
         const sliderSpacing = 35;
-        const hexValue = this.controller.getColorHex ? this.controller.getColorHex() : '#000000';
-        const hexAttrs = new pdg.Attributes()
-            .textSize(14)
-            .textStyle(pdg.textStyle_Centered)
-            .fillColor(new pdg.Color('black'));
-        const hexY = startY + sliderSpacing * 4;
-        port.drawText(`Hex: ${hexValue}`, new pdg.Point(titleX, hexY), hexAttrs);
-        
-        // Draw color preview box next to hex value
-        const previewSize = 25;
-        const previewX = titleX + 80;
-        const previewY = hexY - 10;
-        const previewRect = new pdg.Rect(previewX, previewY, previewX + previewSize, previewY + previewSize);
+        const previewSize = 38;
+        const previewX = viewArea.right - 38; // Right-aligned with slider numbers
+        const previewY = startY + sliderSpacing * 4;
+        const previewRect = new pdg.Rect(previewX - previewSize, previewY, previewX, previewY + previewSize);
         
         const currentColor = this.controller.getCurrentColor ? this.controller.getCurrentColor() : { r: 0, g: 0, b: 0, a: 1 };
+        
+        // Draw checkerboard pattern under swatch (for transparency visibility)
+        this.drawCheckerboard(port, previewRect);
+        
+        // Draw color preview
         const previewAttrs = new pdg.Attributes()
             .fillColor(new pdg.Color(currentColor.r, currentColor.g, currentColor.b, currentColor.a));
         port.drawRect(previewRect, previewAttrs);
@@ -462,18 +482,28 @@ class ColorPickerView extends require('./index').View {
             .lineThickness(1);
         port.drawRect(previewRect, previewBorderAttrs);
         
-        // Draw recent colors
+        // Draw hex value below swatch
+        const hexValue = this.controller.getColorHex ? this.controller.getColorHex() : '#000000';
+        const hexAttrs = new pdg.Attributes()
+            .textSize(14)
+            .textStyle(pdg.textStyle_Centered)
+            .fillColor(new pdg.Color('black'));
+        const hexX = previewX - previewSize / 2;
+        const hexY = previewY + previewSize + 14;
+        port.drawText(hexValue, new pdg.Point(hexX, hexY), hexAttrs);
+        
+        // Draw recent colors (moved up 4px to be tighter to label)
         if (this.controller.recentColors && this.controller.recentColors.length > 0) {
             const recentAttrs = new pdg.Attributes()
-                .textSize(12)
+                .textSize(14)
                 .textStyle(pdg.textStyle_Plain)
                 .fillColor(new pdg.Color('black'));
-            port.drawText('Recent Colors:', new pdg.Point(viewArea.left + 20, viewArea.bottom - 95), recentAttrs);
+            port.drawText('Recent Colors:', new pdg.Point(viewArea.left + 20, viewArea.bottom - 85), recentAttrs);
             
             const swatchSize = 25;
             const swatchSpacing = 5;
             const startX = viewArea.left + 20;
-            const startY = viewArea.bottom - 80;
+            const startY = viewArea.bottom - 76; // Moved up 4px
             
             for (let i = 0; i < this.controller.recentColors.length && i < 10; i++) {
                 const color = this.controller.recentColors[i];
@@ -500,6 +530,31 @@ class ColorPickerView extends require('./index').View {
             .textStyle(pdg.textStyle_Centered)
             .fillColor(new pdg.Color(0.4, 0.4, 0.4, 1.0));
         port.drawText('Enter to accept, Esc to cancel', new pdg.Point(titleX, viewArea.bottom - 15), instructAttrs);
+    }
+
+    drawCheckerboard(port, rect) {
+        // Draw checkerboard pattern for transparency visualization
+        const squareSize = 5;
+        const lightGray = new pdg.Color(0.85, 0.85, 0.85);
+        const darkGray = new pdg.Color(0.7, 0.7, 0.7);
+        
+        for (let x = rect.left; x < rect.right; x += squareSize) {
+            for (let y = rect.top; y < rect.bottom; y += squareSize) {
+                const col = Math.floor((x - rect.left) / squareSize);
+                const row = Math.floor((y - rect.top) / squareSize);
+                const isLight = (col + row) % 2 === 0;
+                
+                const squareRect = new pdg.Rect(
+                    Math.max(x, rect.left),
+                    Math.max(y, rect.top),
+                    Math.min(x + squareSize, rect.right),
+                    Math.min(y + squareSize, rect.bottom)
+                );
+                
+                const attrs = new pdg.Attributes().fillColor(isLight ? lightGray : darkGray);
+                port.drawRect(squareRect, attrs);
+            }
+        }
     }
 }
 

@@ -423,10 +423,10 @@ class ColorPickerView extends require('./index').View {
         
         // Draw title
         const titleAttrs = new pdg.Attributes()
-            .textSize(18)
+            .textSize(20)
             .textStyle(pdg.textStyle_Centered)
             .fillColor(new pdg.Color('black'));
-        const titleY = viewArea.top + 25;
+        const titleY = viewArea.top + 34;
         const titleX = viewArea.left + viewArea.width() / 2;
         
         // Show different title if setting default colors vs shape colors

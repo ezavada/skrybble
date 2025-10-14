@@ -43,15 +43,15 @@ class SliderView extends View {
         
         // Draw label on left
         const labelAttrs = new pdg.Attributes()
-            .textSize(12)
-            .textStyle(pdg.textStyle_Plain)
+            .textSize(14)
+            .textStyle(pdg.textStyle_RightJustified)
             .fillColor(new pdg.Color('black'));
-        port.drawText(this.label, new pdg.Point(viewArea.left, viewArea.top + 15), labelAttrs);
+        port.drawText(this.label, new pdg.Point(viewArea.left + 50, viewArea.top + 20), labelAttrs);
         
         // Slider bar area (starts after label, ends before value)
         const sliderLeft = viewArea.left + 60;
         const sliderRight = viewArea.right - 60;
-        const sliderTop = viewArea.top + 5;
+        const sliderTop = viewArea.top + 6;
         const sliderBottom = viewArea.bottom - 5;
         const sliderHeight = sliderBottom - sliderTop;
         
@@ -96,10 +96,10 @@ class SliderView extends View {
         // Draw value on right side
         const valueText = this.value.toFixed(2);
         const valueAttrs = new pdg.Attributes()
-            .textSize(12)
-            .textStyle(pdg.textStyle_Plain)
+            .textSize(14)
+            .textStyle(pdg.textStyle_RightJustified)
             .fillColor(new pdg.Color('black'));
-        port.drawText(valueText, new pdg.Point(sliderRight + 10, viewArea.top + 15), valueAttrs);
+        port.drawText(valueText, new pdg.Point(sliderRight + 42, viewArea.top + 20), valueAttrs);
     }
 
     interpolateColor(color1, color2, t) {

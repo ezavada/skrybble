@@ -1,94 +1,105 @@
-### TODO ###
+# Skrybble status
 
-## freehand tool ## ✓ COMPLETED
-- ✓ add a freehand tool that just collects points more than 2px apart as the user moves and holds down the mouse, creating a Cardinal Spline out of them
-- ✓ unlike normal Cardinal Spline creation, you should not draw control points or endpoints while the shape is under construction
+Last reviewed: 2026-08-19
 
-## help tool ## ✓ COMPLETED
-- ✓ add a help tool to the far right of the tool palette that when clicked, shows the keyboard shortcuts
+## Remaining work
 
-## color picker ## ✓ COMPLETED
-- ✓ An RGB color picker that has separate horizontal red, green, blue, and opacity slider with a number from 0.0 to 1.0 to the left of each slider
-- ✓ Each slider should be a rounded rectangle, filled with a gradient representing the range of colors from change that one component of the current color
-- ✓ the slider control point should be a circle filled with the currect color, and framed with a white frame or black frame depending on the contrast with the fill.
-- ✓ the hex value of the color should be shown
-- ✓ there should also be a selection of most recently used colors. Save those in drawing file, too.
-- ✓ be sure to implement a separate slider controller and view
-- ✓ the selector popup should have its own controller and view
-- ✓ there must be two tools, a fill color picker and a line color picker, that each will popup up a color picker
-- ✓ each tool must start with the initial color of the selected item, and apply the color to the selected item as it changes
-- ✓ esc cancels the color change, enter accepts
-- ✓ accepted color changes are undoable/redoable
+### Image tool
 
-## quad tool ## ✓ COMPLETED
-- ✓ implement the quad tool, which draws a 4 point polygon and automatically finishes when the 4th point is chosen
+- [ ] Implement the currently placeholder image tool.
 
-## line color tool ## ✓ COMPLETED
-- ✓ the line color tool should show small black dots on either end, not a big white dot in the center
+### Group and ungroup
 
-## freehand tool ## ✓ COMPLETED
-- ✓ the freehand tool icon in the toolbar should look like a pencil
-- ✓ the freehand tool should be right after the line tool in the toolbar, before the spline tool.
+- [ ] Group selected elements by adding them to a `pdg.Drawing`.
+- [ ] Ungroup elements by removing them from the `pdg.Drawing` and restoring them as Skrybble shapes.
+- [ ] Make grouping and ungrouping undoable and redoable.
 
-## multiclick shapes ## ✓ COMPLETED
-- ✓ use <delete> key rather than <esc> to go back one point
-- ✓ if cardinal spline is at two point (control + endpoint), delete completely erases the shape
-- ✓ <esc> stops the drawing completely in the current state and goes into select mode
+## Completed
 
-## saving ## ✓ COMPLETED
-- ✓ if save succeeded, briefly display "Saved to {filename}" in the center of the screen
+### Framework compatibility
 
-## toolbar ##
-- need anti-aliasing for the spines, circles, and ovals, just like we did for lines
+- [x] Adopt the current `Application` lifecycle using `setupGraphics()` and `setupControllers()`.
+- [x] Create controllers after `pdg.run()` so their draw and input handlers remain registered.
+- [x] Preserve command-line `.skrbl` loading with the new lifecycle.
+- [x] Forward view-resizing bindings and use the current `grow_Horz` binding name.
+- [x] Initialize PDG window ports from the native content size actually granted by the OS, keeping drawing and mouse coordinates aligned.
+- [x] Restore visible toolbar rendering when the OS constrains the requested window height.
 
-## key controls ## ✓ COMPLETED
-- ✓ <esc> isn't being recognized at all other than closing the color picker
-- ✓ <delete> during cardinal spline construction needs to delete the current spline if hit when there are 4 points, not 3
+### Toolbar rendering
 
-## control points ## ✓ COMPLETED
-- ✓ hairline for angle (thickness 1, alpha 0.5)
-- ✓ start angle from straight north at 0 radians
-- ✓ white hairline around all control points for visibility
+- [x] Anti-alias the spline, Bezier, circle, and oval toolbar icons using the same layered-stroke treatment as the line icon.
 
-## color picker ## ✓ COMPLETED
-- ✓ move current color swatch and hex to be right aligned with color numbers
-- ✓ make current color swatch 1.5x larger
-- ✓ move hex underneath current color swatch and remove "Hex:" from it
-- ✓ move recent colors palette up about 4px to be tighter to "Recent Colors:" label
-- ✓ clicking outside color picker should not change selection, but should set current color to color of object hit
-- ✓ checkerboard underneath alpha slider and under current color swatch
-- ✓ if possible, position the color picker so it doesn't cover the currently selected item. If not possible, continue to center it on the screen.
-- ✓ new items are not being created with the default color
+### Freehand tool
 
-## bugs ## ✓ COMPLETED
-- ✓ tweak position of color display
-- ✓ clicking outside color picker should not change selection, but should set current color to color of object hit
-- ✓ can open color picker when already open
-- ✓ should not handle any clicks in toolbar when color picker open
+- [x] Add a freehand tool that collects points more than 2 px apart while dragging and creates a Cardinal Spline from them.
+- [x] Hide control points and endpoints while a freehand shape is under construction.
+- [x] Use a pencil icon in the toolbar.
+- [x] Position the freehand tool after the line tool and before the spline tool.
 
-## bugs ## ✓ COMPLETED
-- ✓ <esc> should close help
-- ✓ after opening the color picker, <esc> stops working
+### Freehand smoothing
 
-## line width control ## ✓ COMPLETED
-- ✓ line width control that goes from hairline (0.25) to 5px (options: 0.25, 1.0, 2.0, 3.5, 5.0)
-- ✓ sets line width of selected items
-- ✓ popup panel under toolbar with 5 clickable horizontal lines at different widths
-- ✓ keyboard shortcut: W
-- ✓ undoable
+- [x] Remove nearby points from a freehand spline according to its smoothing level.
+- [x] Fall back to the next smoothing level when a level removes too many points.
+- [x] Use smoothing distances of 2, 3, 5, 8, and 13 px.
+- [x] Apply the default smoothing level during freehand creation.
+- [x] Change the default smoothing when no freehand item is selected.
+- [x] Provide a toolbar popup with five example lines at different smoothing levels.
+- [x] Assign the `U` keyboard shortcut.
+- [x] Make smoothing changes undoable and redoable.
 
-## freehand smoothing ## ✓ COMPLETED
-- ✓ remove points a certain distance from each other in a freehand spline depending on smoothing level
-- ✓ if no points within that distance, try the next level
-- ✓ distances: 2 .. 3 .. 5 ... 8 .. 13
-- ✓ smoothing automatically applied during freehand creation using default smoothing level
-- ✓ if no freehand item selected, it sets the default smoothing for new freehand operations
-- ✓ popup panel under toolbar with 5 example irregular lines at different smoothness levels
-- ✓ keyboard shortcut: U
-- ✓ undoable
+### Help tool
 
-## group/ungroup ##
-- grouping should add all the elements to a pdg.Drawing
-- ungrouping should pull the elements out of the pdg.Drawing and treat them as Skrybble shapes
-- undoable
+- [x] Add a help tool at the far right of the toolbar that displays keyboard shortcuts.
+- [x] Close help with Escape.
 
+### Color picker
+
+- [x] Provide red, green, blue, and opacity sliders with values from 0.0 to 1.0.
+- [x] Fill each rounded slider with a gradient for its color component.
+- [x] Draw the slider control point using the current color and a contrast-sensitive black or white frame.
+- [x] Display the hexadecimal color value.
+- [x] Store recently used colors in drawing files.
+- [x] Use separate slider and color-picker controllers and views.
+- [x] Provide separate fill-color and line-color tools.
+- [x] Initialize from the selected shape and apply changes to it interactively.
+- [x] Cancel with Escape and accept with Enter.
+- [x] Make accepted color changes undoable and redoable.
+- [x] Right-align the current-color swatch and hexadecimal value with the component values.
+- [x] Enlarge the current-color swatch and place the hexadecimal value beneath it without a label.
+- [x] Tighten spacing above the recent-colors palette.
+- [x] Draw a checkerboard beneath the alpha slider and current-color swatch.
+- [x] Position the picker away from the selected shape when possible.
+- [x] Sample a shape's color when it is clicked outside the picker without changing selection.
+- [x] Create new shapes using the configured default colors.
+- [x] Prevent duplicate color pickers and block toolbar input while a picker is open.
+- [x] Keep Escape working after opening the color picker.
+
+### Shape creation and editing
+
+- [x] Implement the four-point quad tool and finish automatically after its fourth point.
+- [x] Use Delete to remove the most recent point from a multi-click shape.
+- [x] Delete a minimal Cardinal Spline completely.
+- [x] Finish the current multi-click shape and return to Select with Escape.
+- [x] Draw a 1 px, 50%-alpha rotation hairline.
+- [x] Measure rotation from straight north at zero radians.
+- [x] Draw a white hairline around control points for visibility.
+
+### Line appearance controls
+
+- [x] Show small black endpoint dots in the line-color toolbar icon.
+- [x] Provide line-width options of 0.25, 1.0, 2.0, 3.5, and 5.0 px.
+- [x] Apply line width to selected shapes.
+- [x] Provide a five-option line-width popup below the toolbar.
+- [x] Assign the `W` keyboard shortcut.
+- [x] Make line-width changes undoable and redoable.
+
+### Saving and feedback
+
+- [x] Display `Saved to {filename}` briefly after a successful save.
+
+### Input and popup fixes
+
+- [x] Recognize Escape outside the color picker.
+- [x] Delete a Cardinal Spline under construction at its minimal four-point representation.
+- [x] Prevent outside color-picker clicks from changing selection.
+- [x] Prevent toolbar clicks while the color picker is open.

@@ -83,11 +83,19 @@ class ToolPaletteView extends View {
                     break;
                 case Tools.TOOLS.CIRCLE:
                     port.drawCircle(new pdg.Point(x + 25, viewArea.top + 25), 15, 
-                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.75));
+                    port.drawCircle(new pdg.Point(x + 25, viewArea.top + 25), 14.5,
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.25));
+                    port.drawCircle(new pdg.Point(x + 25, viewArea.top + 25), 15.5,
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.25));
                     break;
                 case Tools.TOOLS.OVAL:
                     port.drawEllipse(new pdg.Point(x + 25, viewArea.top + 25), 18, 12, 
-                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.75));
+                    port.drawEllipse(new pdg.Point(x + 25, viewArea.top + 25), 17.5, 11.5,
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.25));
+                    port.drawEllipse(new pdg.Point(x + 25, viewArea.top + 25), 18.5, 12.5,
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.25));
                     break;
                 case Tools.TOOLS.RECT:
                     const r = new pdg.Rect(x + 10, viewArea.top + 10, x + 40, viewArea.top + 35);
@@ -101,7 +109,16 @@ class ToolPaletteView extends View {
                     const v2 = new pdg.Vector(190, 10);
                     const spline = new pdg.Spline(pdg.spline_Hermite);
                     spline.addSegment(p1, p2, v1, v2);
-                    port.drawSpline(spline, new pdg.Attributes().lineColor(toolColor).lineThickness(2.0));
+                    port.drawSpline(spline,
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.75));
+                    const leftSpline = new pdg.Spline(pdg.spline_Hermite);
+                    leftSpline.addSegment(new pdg.Point(p1.x - 0.5, p1.y), new pdg.Point(p2.x - 0.5, p2.y), v1, v2);
+                    port.drawSpline(leftSpline,
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.25));
+                    const rightSpline = new pdg.Spline(pdg.spline_Hermite);
+                    rightSpline.addSegment(new pdg.Point(p1.x + 0.5, p1.y), new pdg.Point(p2.x + 0.5, p2.y), v1, v2);
+                    port.drawSpline(rightSpline,
+                        new pdg.Attributes().lineColor(toolColor).lineThickness(2.0).lineOpacity(0.25));
                     port.drawCircle(new pdg.Point(x + 12, viewArea.top + 10), 2, new pdg.Attributes().fillColor(new pdg.Color('red')));
                     port.drawCircle(new pdg.Point(x + 40, viewArea.top + 35), 2, new pdg.Attributes().fillColor(new pdg.Color('red')));
                     if (tool == Tools.TOOLS.SPLINE) {

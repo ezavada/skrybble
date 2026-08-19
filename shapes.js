@@ -86,6 +86,64 @@ class Shape {
     }
 }
 
+// Adapts the Port calls used by Skrybble shapes to pdg.Drawing's element API.
+function createDrawingPort(drawing) {
+    return {
+        drawLine: (from, to, attrs) => drawing.addLine(from, to, attrs),
+        drawRect: (rect, attrs) => drawing.addRect(rect, attrs),
+        drawCircle: (center, radius, attrs) => drawing.addEllipse(center, radius, radius, attrs),
+        drawEllipse: (center, radiusX, radiusY, attrs) => drawing.addEllipse(center, radiusX, radiusY, attrs),
+        drawPolygon: (polygon, attrs) => drawing.addPolygon(polygon, attrs),
+        drawSpline: (spline, attrs) => drawing.addSpline(spline, attrs),
+        drawQuad: (quad, attrs) => drawing.addQuad(quad, attrs),
+        drawArc: (arc, attrs) => drawing.addArc(arc, attrs)
+    };
+}
+
+function includePoint(bounds, point) {
+    if (!point) return bounds;
+    if (!bounds) {
+        return { left: point.x, top: point.y, right: point.x, bottom: point.y };
+    }
+    bounds.left = Math.min(bounds.left, point.x);
+    bounds.top = Math.min(bounds.top, point.y);
+    bounds.right = Math.max(bounds.right, point.x);
+    bounds.bottom = Math.max(bounds.bottom, point.y);
+    return bounds;
+}
+
+function getShapeBounds(shape) {
+    if (shape instanceof Group) return shape.getBounds();
+
+    let bounds = null;
+    const center = shape.getCenterPoint();
+    const rotation = shape.rotation || 0;
+    const addLocalPoint = point => {
+        const worldPoint = rotation === 0
+            ? point
+            : shape.rotatePoint(point.x, point.y, center.x, center.y, rotation);
+        bounds = includePoint(bounds, worldPoint);
+    };
+
+    if (shape.constructor.name === 'Circle') {
+        bounds = includePoint(bounds, { x: shape.x - shape.radius, y: shape.y - shape.radius });
+        bounds = includePoint(bounds, { x: shape.x + shape.radius, y: shape.y + shape.radius });
+    } else if (shape.constructor.name === 'Oval') {
+        const cos = Math.cos(rotation);
+        const sin = Math.sin(rotation);
+        const extentX = Math.sqrt(shape.radiusX * shape.radiusX * cos * cos + shape.radiusY * shape.radiusY * sin * sin);
+        const extentY = Math.sqrt(shape.radiusX * shape.radiusX * sin * sin + shape.radiusY * shape.radiusY * cos * cos);
+        bounds = includePoint(bounds, { x: shape.x - extentX, y: shape.y - extentY });
+        bounds = includePoint(bounds, { x: shape.x + extentX, y: shape.y + extentY });
+    } else {
+        const points = shape.getEndpoints ? shape.getEndpoints() : [];
+        points.forEach(addLocalPoint);
+        if (shape.getControlPoints) shape.getControlPoints().forEach(addLocalPoint);
+    }
+
+    return bounds || { left: center.x, top: center.y, right: center.x, bottom: center.y };
+}
+
 // Line Shape
 class Line extends Shape {
     constructor(x1, y1, x2, y2, strokeColor = 'black', strokeWidth = 1) {
@@ -1453,6 +1511,135 @@ class Polygon extends Shape {
     }
 }
 
+// A first-class shape whose children render through one pdg.Drawing. Keeping
+// the child objects intact makes ungrouping and serialization lossless.
+class Group extends Shape {
+    constructor(children = []) {
+        const first = children[0];
+        super(0, 0, first ? first.fillColor : null,
+            first ? first.strokeColor : 'black', first ? first.strokeWidth : 1);
+        this.children = children;
+        this.children.forEach(child => child.selected = false);
+        this.pdgDrawing = null;
+        this.rebuildDrawing();
+    }
+
+    rebuildDrawing() {
+        if (typeof pdg === 'undefined' || !pdg.createDrawing) return null;
+        const drawing = pdg.createDrawing();
+        this.addChildrenToDrawing(drawing, createDrawingPort(drawing));
+        this.pdgDrawing = drawing;
+        return drawing;
+    }
+
+    addChildrenToDrawing(drawing, drawingPort = createDrawingPort(drawing)) {
+        for (const child of this.children) {
+            if (child instanceof Group) {
+                child.addChildrenToDrawing(drawing, drawingPort);
+            } else {
+                const wasSelected = child.selected;
+                child.selected = false;
+                child.draw(drawingPort);
+                child.selected = wasSelected;
+            }
+        }
+    }
+
+    draw(port) {
+        const drawing = this.pdgDrawing || this.rebuildDrawing();
+        if (drawing) drawing.draw(port);
+        if (this.selected) this.drawSelectionBounds(port);
+    }
+
+    drawSelectionBounds(port) {
+        const bounds = this.getBounds();
+        const attrs = new pdg.Attributes()
+            .lineColor(new pdg.Color('blue'))
+            .lineOpacity(0.65)
+            .lineThickness(1);
+        port.drawRect(new pdg.Rect(bounds.left, bounds.top, bounds.right, bounds.bottom), attrs);
+    }
+
+    contains(x, y) {
+        for (let i = this.children.length - 1; i >= 0; i--) {
+            if (this.children[i].contains(x, y)) return true;
+        }
+        return false;
+    }
+
+    intersectsRect(left, top, right, bottom) {
+        return this.children.some(child =>
+            child.intersectsRect && child.intersectsRect(left, top, right, bottom));
+    }
+
+    getBounds() {
+        let bounds = null;
+        for (const child of this.children) {
+            const childBounds = getShapeBounds(child);
+            bounds = includePoint(bounds, { x: childBounds.left, y: childBounds.top });
+            bounds = includePoint(bounds, { x: childBounds.right, y: childBounds.bottom });
+        }
+        return bounds || { left: 0, top: 0, right: 0, bottom: 0 };
+    }
+
+    getCenterPoint() {
+        const bounds = this.getBounds();
+        return { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 };
+    }
+
+    getEndpoints() { return []; }
+    getControlPoints() { return []; }
+
+    moveBy(dx, dy) {
+        for (const child of this.children) {
+            if (child instanceof Group) {
+                child.moveBy(dx, dy);
+            } else if (child.constructor.name === 'Line') {
+                child.x += dx;
+                child.y += dy;
+                child.x2 += dx;
+                child.y2 += dy;
+            } else if (child.points) {
+                child.points.forEach(point => { point.x += dx; point.y += dy; });
+                if (child.controlPoints) {
+                    child.controlPoints.forEach(point => { point.x += dx; point.y += dy; });
+                }
+            } else {
+                child.x += dx;
+                child.y += dy;
+            }
+        }
+        this.rebuildDrawing();
+    }
+
+    set fillColor(value) {
+        this._fillColor = value;
+        if (this.children) {
+            this.children.forEach(child => child.fillColor = value);
+            this.rebuildDrawing();
+        }
+    }
+    get fillColor() { return this._fillColor; }
+
+    set strokeColor(value) {
+        this._strokeColor = value;
+        if (this.children) {
+            this.children.forEach(child => child.strokeColor = value);
+            this.rebuildDrawing();
+        }
+    }
+    get strokeColor() { return this._strokeColor; }
+
+    set strokeWidth(value) {
+        this._strokeWidth = value;
+        if (this.children) {
+            this.children.forEach(child => child.strokeWidth = value);
+            this.rebuildDrawing();
+        }
+    }
+    get strokeWidth() { return this._strokeWidth; }
+}
+
 module.exports = {
     Shape,
     Line,
@@ -1461,5 +1648,6 @@ module.exports = {
     Spline,
     BezierSpline,
     Oval,
-    Polygon
+    Polygon,
+    Group
 };

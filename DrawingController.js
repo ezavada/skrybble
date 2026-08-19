@@ -504,7 +504,7 @@ class DrawingController extends Controller {
         for (let shape of shapes) {
             // Check rotation center point FIRST (highest priority)
             // Skip circles - they can't be rotated (rotation-invariant)
-            if (shape.selected && shape.constructor.name !== 'Circle') {
+            if (shape.selected && shape.constructor.name !== 'Circle' && shape.constructor.name !== 'Group') {
                 const center = shape.getCenterPoint();
                 if (Math.abs(x - center.x) < 7 && Math.abs(y - center.y) < 7) {
                     // Start rotation
@@ -970,6 +970,13 @@ class DrawingController extends Controller {
                     return true;
                 case 'S': // Save
                     this.saveFile();
+                    return true;
+                case 'G': // Group or ungroup
+                    if (event.shift) {
+                        this.ungroupSelectedShapes();
+                    } else {
+                        this.groupSelectedShapes();
+                    }
                     return true;
             }
         }
@@ -1543,6 +1550,27 @@ class DrawingController extends Controller {
 
     // ============================ Clipboard Operations ============================
 
+    groupSelectedShapes() {
+        const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+        if (selectedShapes.length < 2) return false;
+
+        this.saveUndoState('group');
+        const group = this.drawing.groupShapes(selectedShapes);
+        this.selectedShape = group;
+        return !!group;
+    }
+
+    ungroupSelectedShapes() {
+        const selectedGroups = this.drawing.getShapes().filter(shape =>
+            shape.selected && shape.constructor.name === 'Group');
+        if (selectedGroups.length === 0) return false;
+
+        this.saveUndoState('ungroup');
+        const children = this.drawing.ungroupShapes(selectedGroups);
+        this.selectedShape = children.length === 1 ? children[0] : null;
+        return children.length > 0;
+    }
+
     copySelectedShapes() {
         const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
         if (selectedShapes.length === 0) return;
@@ -1595,64 +1623,9 @@ class DrawingController extends Controller {
     }
 
     deserializeShapeWithOffset(shapeData, offset) {
-        const ShapeClasses = this.drawing.getShapeClasses();
-        const type = shapeData.type;
-        
-        switch (type) {
-            case 'Line':
-                return new ShapeClasses.Line(
-                    shapeData.x + offset, shapeData.y + offset,
-                    shapeData.x2 + offset, shapeData.y2 + offset,
-                    shapeData.strokeColor, shapeData.strokeWidth
-                );
-            case 'Circle':
-                return new ShapeClasses.Circle(
-                    shapeData.x + offset, shapeData.y + offset,
-                    shapeData.radius,
-                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
-                );
-            case 'Oval':
-                return new ShapeClasses.Oval(
-                    shapeData.x + offset, shapeData.y + offset,
-                    shapeData.radiusX, shapeData.radiusY,
-                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
-                );
-            case 'Rectangle':
-                return new ShapeClasses.Rectangle(
-                    shapeData.x + offset, shapeData.y + offset,
-                    shapeData.width, shapeData.height,
-                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
-                );
-            case 'Polygon':
-                const polyPoints = shapeData.points.map(p => ({ x: p.x + offset, y: p.y + offset }));
-                return new ShapeClasses.Polygon(
-                    polyPoints,
-                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
-                );
-            case 'Spline':
-                const splinePoints = shapeData.points.map(p => ({ x: p.x + offset, y: p.y + offset }));
-                return new ShapeClasses.Spline(
-                    splinePoints,
-                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
-                );
-            case 'BezierSpline':
-                const bezierPoints = shapeData.points.map(p => ({ x: p.x + offset, y: p.y + offset }));
-                const bezierSpline = new ShapeClasses.BezierSpline(
-                    bezierPoints,
-                    shapeData.fillColor, shapeData.strokeColor, shapeData.strokeWidth
-                );
-                // Restore control points with offset if available
-                if (shapeData.controlPoints) {
-                    bezierSpline.controlPoints = shapeData.controlPoints.map(p => ({ x: p.x + offset, y: p.y + offset }));
-                }
-                // Restore manually edited control points set
-                if (shapeData.manuallyEditedControls) {
-                    bezierSpline.manuallyEditedControls = new Set(shapeData.manuallyEditedControls);
-                }
-                return bezierSpline;
-            default:
-                return null;
-        }
+        const shape = this.drawing.deserializeShape(shapeData.type, shapeData);
+        if (shape) this.drawing.moveShape(shape, offset, offset);
+        return shape;
     }
 
     // ============================ Undo Operations ============================

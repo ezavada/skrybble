@@ -8,13 +8,15 @@ Last reviewed: 2026-08-19
 
 - [ ] Implement the currently placeholder image tool.
 
+## Completed
+
 ### Group and ungroup
 
-- [ ] Group selected elements by adding them to a `pdg.Drawing`.
-- [ ] Ungroup elements by removing them from the `pdg.Drawing` and restoring them as Skrybble shapes.
-- [ ] Make grouping and ungrouping undoable and redoable.
-
-## Completed
+- [x] Group selected elements into a first-class Skrybble group rendered through a `pdg.Drawing`.
+- [x] Ungroup elements and restore the child Skrybble shapes in drawing order.
+- [x] Support nested groups, selection, movement, styling, clipboard operations, and file persistence.
+- [x] Make grouping and ungrouping undoable and redoable.
+- [x] Assign `Cmd/Ctrl+G` and `Cmd/Ctrl+Shift+G` shortcuts.
 
 ### Framework compatibility
 

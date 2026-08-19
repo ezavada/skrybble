@@ -125,6 +125,8 @@ class DrawingSurfaceView extends View {
             { key: 'CMD/CTRL+C', description: 'Copy selected shapes' },
             { key: 'CMD/CTRL+X', description: 'Cut selected shapes' },
             { key: 'CMD/CTRL+V', description: 'Paste shapes' },
+            { key: 'CMD/CTRL+G', description: 'Group selected shapes' },
+            { key: 'CMD/CTRL+SHIFT+G', description: 'Ungroup selected groups' },
             { key: 'CMD/CTRL+Z', description: 'Undo' },
             { key: 'CMD/CTRL+SHIFT+Z', description: 'Redo' },
             { key: 'CMD/CTRL+S', description: 'Save drawing' },

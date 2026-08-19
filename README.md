@@ -105,6 +105,8 @@ node main.js drawing.skrbl
 - `Delete` / `Backspace` - Delete selected shapes (or remove last point while drawing multi-point shapes)
 - Arrow keys - Move selected shapes 10px
 - `Shift` + Arrow keys - Move selected shapes 1px
+- `Cmd/Ctrl+G` - Group selected shapes
+- `Cmd/Ctrl+Shift+G` - Ungroup selected groups
 
 #### Draw Order
 - `+` or `=` - Move selected shapes forward one level
@@ -116,6 +118,7 @@ node main.js drawing.skrbl
 - `Cmd/Ctrl+C` - Copy
 - `Cmd/Ctrl+X` - Cut
 - `Cmd/Ctrl+V` - Paste
+- Grouped shapes can be copied, cut, pasted, reordered, moved, saved, and restored as a unit
 
 #### File Operations
 - `Cmd/Ctrl+S` - Save

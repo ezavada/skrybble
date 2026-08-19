@@ -13,6 +13,11 @@ class Drawing {
         this.shapes.push(shape);
     }
 
+    insertShape(index, shape) {
+        const safeIndex = Math.max(0, Math.min(index, this.shapes.length));
+        this.shapes.splice(safeIndex, 0, shape);
+    }
+
     removeShape(shape) {
         const index = this.shapes.indexOf(shape);
         if (index > -1) {
@@ -75,6 +80,9 @@ class Drawing {
         if (!shape) return;
 
         switch (shape.constructor.name) {
+            case 'Group':
+                shape.moveBy(dx, dy);
+                break;
             case 'Line':
                 shape.x += dx;
                 shape.y += dy;
@@ -108,6 +116,46 @@ class Drawing {
                 }
                 break;
         }
+    }
+
+    groupShapes(shapes) {
+        const selected = this.shapes.filter(shape => shapes.includes(shape));
+        if (selected.length < 2) return null;
+
+        const selectedSet = new Set(selected);
+        const frontmostIndex = Math.max(...selected.map(shape => this.shapes.indexOf(shape)));
+        const insertionIndex = this.shapes
+            .slice(0, frontmostIndex + 1)
+            .filter(shape => !selectedSet.has(shape)).length;
+
+        this.shapes = this.shapes.filter(shape => !selectedSet.has(shape));
+        const group = new ShapeClasses.Group(selected);
+        group.selected = true;
+        this.insertShape(insertionIndex, group);
+        this.selectedShape = group;
+        return group;
+    }
+
+    ungroupShapes(groups) {
+        const groupSet = new Set(groups.filter(shape => shape instanceof ShapeClasses.Group));
+        if (groupSet.size === 0) return [];
+
+        const ungrouped = [];
+        const replacement = [];
+        for (const shape of this.shapes) {
+            if (!groupSet.has(shape)) {
+                replacement.push(shape);
+                continue;
+            }
+            for (const child of shape.children) {
+                child.selected = true;
+                replacement.push(child);
+                ungrouped.push(child);
+            }
+        }
+        this.shapes = replacement;
+        this.selectedShape = ungrouped.length === 1 ? ungrouped[0] : null;
+        return ungrouped;
     }
 
     // Draw order manipulation methods
@@ -276,7 +324,7 @@ class Drawing {
             case 'Polygon':
             case 'Spline':
                 data = {
-                    points: shape.points,
+                    points: shape.points.map(point => ({ x: point.x, y: point.y })),
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
                     strokeWidth: shape.strokeWidth,
@@ -285,13 +333,18 @@ class Drawing {
                 break;
             case 'BezierSpline':
                 data = {
-                    points: shape.points,
-                    controlPoints: shape.controlPoints,
+                    points: shape.points.map(point => ({ x: point.x, y: point.y })),
+                    controlPoints: shape.controlPoints.map(point => ({ x: point.x, y: point.y })),
                     manuallyEditedControls: shape.manuallyEditedControls ? Array.from(shape.manuallyEditedControls) : [],
                     fillColor: shape.fillColor,
                     strokeColor: shape.strokeColor,
                     strokeWidth: shape.strokeWidth,
                     rotation: shape.rotation || 0
+                };
+                break;
+            case 'Group':
+                data = {
+                    children: shape.children.map(child => this.serializeShape(child))
                 };
                 break;
             default:
@@ -354,6 +407,10 @@ class Drawing {
                 if (data.manuallyEditedControls) {
                     shape.manuallyEditedControls = new Set(data.manuallyEditedControls);
                 }
+                break;
+            case 'Group':
+                shape = new ShapeClasses.Group((data.children || []).map(childData =>
+                    this.deserializeShape(childData.type, childData)).filter(Boolean));
                 break;
             default:
                 return null;

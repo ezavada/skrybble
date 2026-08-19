@@ -101,7 +101,7 @@ class DrawingController extends Controller {
         // Create tool palette at the top (but drawn after the drawing surface)
         const paletteRect = new pdg.Rect(drawingArea);
         paletteRect.setHeight(paletteHeight);
-        this.toolPaletteView = new ToolPaletteView(this, paletteRect, ViewBinding.grow_Horiz + ViewBinding.bind_Top);
+        this.toolPaletteView = new ToolPaletteView(this, paletteRect, ViewBinding.grow_Horz | ViewBinding.bind_Top);
 
         console.log('DrawingController::setupViews, paletteRect', paletteRect);
         console.log('DrawingController::setupViews, surfaceRect', surfaceRect);

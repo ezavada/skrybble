@@ -15,8 +15,8 @@ const View = require('./index').View;
 // -----------------------------------------------
 
 class DrawingSurfaceView extends View {
-    constructor(controller, rect) {
-        super(controller, rect);
+    constructor(controller, rect, binding = 0) {
+        super(controller, rect, binding);
     }
 
     drawSelf(port, frameNum) {

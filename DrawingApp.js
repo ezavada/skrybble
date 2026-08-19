@@ -8,7 +8,6 @@
 
 // Extract classes from the framework object
 const Application = require('./index').Application;
-const AppStates = require('./index').AppStates;
 const DrawingController = require('./DrawingController.js');
 
 const fs = require('fs');
@@ -27,58 +26,34 @@ const fs = require('fs');
 // -----------------------------------------------
 
 class DrawingApp extends Application {
-    constructor() {
-        super(pdg.evt, pdg.res);
-        
-        this.timerMgr = pdg.tm;
-        this.graphicsMgr = pdg.gfx;
-        this.logMgr = pdg.lm;
-        this.configMgr = pdg.cfg;
-        
+    initialize(args) {
         this.drawingController = null;
         this.filename = null;
-     }
-     
-    initialize(args) {
-        try {
-            // Parse command line arguments for filename
-            const argList = args || [];
-            
-            if (argList && argList.length > 0) {
-                // Look for .skrbl file in arguments
-                for (let arg of argList) {
-                    if (arg.endsWith('.skrbl')) {
-                        this.filename = arg;
-                        break;
-                    }
-                }
-            }
-            
-            // Create graphics port first
-            this.createGraphicsPort();
-            
-            // Set up event handlers
-            this.setupEventHandlers();
-            
-            // Create drawing controller
-            this.createDrawingController();
-            
-            // Load file if specified
-            if (this.filename) {
-                if (fs.existsSync(this.filename)) {
-                    console.log('Loading file:', this.filename);
-                    this.drawingController.loadFile(this.filename);
-                } else {
-                    console.log('File does not exist, will use for save:', this.filename);
-                    this.drawingController.setFilename(this.filename);
-                }
-            }
 
-            // Start the application
-            this.setState(AppStates.state_Running);
-        } catch (error) {
-            console.error('Error initializing DrawingApp:', error);
-            this.setState(AppStates.state_Error);
+        // Parse command line arguments for filename.
+        for (const arg of args || []) {
+            if (arg.endsWith('.skrbl')) {
+                this.filename = arg;
+                break;
+            }
+        }
+    }
+
+    setupGraphics() {
+        this.createGraphicsPort();
+    }
+
+    setupControllers() {
+        this.createDrawingController();
+
+        if (this.filename) {
+            if (fs.existsSync(this.filename)) {
+                console.log('Loading file:', this.filename);
+                this.drawingController.loadFile(this.filename);
+            } else {
+                console.log('File does not exist, will use for save:', this.filename);
+                this.drawingController.setFilename(this.filename);
+            }
         }
     }
     
@@ -101,27 +76,26 @@ class DrawingApp extends Application {
         }
     }
     
-    setupEventHandlers() {
-        // Note: Base Application class handles shutdown event via _registerEventHandlers()
-        // We only need to set up additional handlers specific to this sample app
-    }
-    
     createDrawingController() {
         this.drawingController = new DrawingController(this, this.mainPort);
     }
 
     onShutdown(event) {
-        super.onShutdown(event);
+        const handled = super.onShutdown(event);
         this.cleanup();
+        return handled;
     }
     
     cleanup() {
-        delete this.drawingController;
-        this.drawingController = null;
-        pdg.gfx.closeGraphicsPort(this.mainPort);
-        this.mainPort = null;
-        super.cleanup();  
-        pdg.quit();
+        if (this.drawingController) {
+            this.drawingController.destroy();
+            this.drawingController = null;
+        }
+        if (this.mainPort) {
+            pdg.gfx.closeGraphicsPort(this.mainPort);
+            this.mainPort = null;
+        }
+        super.cleanup();
     }
 }
 

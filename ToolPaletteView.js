@@ -19,8 +19,8 @@ class ToolPaletteView extends View {
 
     static TOOL_PALETTE_VIEW_ID = 50;
     
-    constructor(controller, rect) {
-        super(controller, rect);
+    constructor(controller, rect, binding = 0) {
+        super(controller, rect, binding);
         
         this.activeTool = Tools.TOOLS.SELECT;
         this.setID(ToolPaletteView.TOOL_PALETTE_VIEW_ID);

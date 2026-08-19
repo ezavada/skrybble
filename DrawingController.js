@@ -33,6 +33,9 @@ class DrawingController extends Controller {
         
         // Input handling state
         this.draggedPoint = null;
+        this.draggedShapes = null; // Shapes being repositioned in select mode
+        this.shapeDragLastPosition = null;
+        this.shapeDragUndoSaved = false;
         this.selectedShape = null;
         this.rotatingShape = null; // Track if we're rotating a shape
         this.rotationStartAngle = 0; // Initial angle when rotation started
@@ -371,6 +374,8 @@ class DrawingController extends Controller {
             this.updateRubberBandSelection(pos.x, pos.y);
         } else if (this.draggedPoint) {
             this.updateDraggedPoint(pos.x, pos.y);
+        } else if (this.draggedShapes) {
+            this.updateDraggedShapes(pos.x, pos.y);
         }
         return true;
     }
@@ -418,6 +423,9 @@ class DrawingController extends Controller {
         }
         
         this.draggedPoint = null;
+        this.draggedShapes = null;
+        this.shapeDragLastPosition = null;
+        this.shapeDragUndoSaved = false;
         this.rotatingShape = null;
         this.dragReferencePointIndex = null;
         this.dragReferencePointWorld = null;
@@ -502,9 +510,14 @@ class DrawingController extends Controller {
         // Check if clicking on an endpoint or control point
         const shapes = this.drawing.getShapes();
         for (let shape of shapes) {
+            // Handles only exist interactively while they are visible. An
+            // unselected shape must always be selected and dragged as a whole,
+            // even when the click happens to land on a latent handle position.
+            if (!shape.selected) continue;
+
             // Check rotation center point FIRST (highest priority)
             // Skip circles - they can't be rotated (rotation-invariant)
-            if (shape.selected && shape.constructor.name !== 'Circle' && shape.constructor.name !== 'Group') {
+            if (shape.constructor.name !== 'Circle' && shape.constructor.name !== 'Group') {
                 const center = shape.getCenterPoint();
                 if (Math.abs(x - center.x) < 7 && Math.abs(y - center.y) < 7) {
                     // Start rotation
@@ -614,8 +627,19 @@ class DrawingController extends Controller {
                 // Add to selection
                 clickedShape.selected = true;
             } else {
-                // Normal selection - clear others
-                this.selectShape(clickedShape, false, false);
+                // Preserve an existing multi-selection when beginning a drag
+                // on one of its members. Clicking an unselected shape still
+                // replaces the selection normally.
+                if (!clickedShape.selected) {
+                    this.selectShape(clickedShape, false, false);
+                }
+            }
+
+            if (clickedShape.selected) {
+                this.selectedShape = clickedShape;
+                this.draggedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+                this.shapeDragLastPosition = { x, y };
+                this.shapeDragUndoSaved = false;
             }
         } else {
             // Clicked on background - prepare for rubber-band selection
@@ -804,6 +828,24 @@ class DrawingController extends Controller {
                 }
             }
         }
+    }
+
+    updateDraggedShapes(x, y) {
+        if (!this.draggedShapes || !this.shapeDragLastPosition) return;
+
+        const dx = x - this.shapeDragLastPosition.x;
+        const dy = y - this.shapeDragLastPosition.y;
+        if (dx === 0 && dy === 0) return;
+
+        if (!this.shapeDragUndoSaved) {
+            this.saveUndoState('move');
+            this.shapeDragUndoSaved = true;
+        }
+
+        for (const shape of this.draggedShapes) {
+            this.drawing.moveShape(shape, dx, dy);
+        }
+        this.shapeDragLastPosition = { x, y };
     }
 
     updateShapeEndpoint(shape, index, x, y) {

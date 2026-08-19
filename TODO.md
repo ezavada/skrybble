@@ -78,6 +78,7 @@ Last reviewed: 2026-08-19
 
 ### Shape creation and editing
 
+- [x] Reposition shapes by dragging them in Select mode, including multi-selections and groups.
 - [x] Implement the four-point quad tool and finish automatically after its fourth point.
 - [x] Use Delete to remove the most recent point from a multi-click shape.
 - [x] Delete a minimal Cardinal Spline completely.

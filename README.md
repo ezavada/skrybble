@@ -150,9 +150,10 @@ node main.js drawing.skrbl
 #### Editing Shapes
 1. Select the Select tool (`Esc`)
 2. Click a shape to select it
-3. Drag **red endpoint handles** to reshape
-4. Drag **green control points** (splines only) to adjust curves
-5. Click **blue center point** and drag to rotate
+3. Drag the shape itself to reposition it; all selected shapes move together
+4. Drag **red endpoint handles** to reshape
+5. Drag **green control points** (splines only) to adjust curves
+6. Click **blue center point** and drag to rotate
 
 #### Selection Techniques
 - **Single selection**: Click a shape

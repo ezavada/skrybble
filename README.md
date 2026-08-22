@@ -1,6 +1,9 @@
-# Scrybble - PDG Drawing Application
+# Skrybble - PDG Drawing Application
 
-A full-featured vector drawing application built with the PDG (Pixel Dust Games) JavaScript MVC Framework. Supports multiple shape types, interactive editing, rotation, draw order manipulation, and file persistence.
+A vector drawing application built with the PDG (Pixel Dust Games) JavaScript
+MVC Framework. It supports geometric and freehand drawing, multi-selection,
+grouping, direct manipulation, configurable colors and strokes, smoothing,
+undo/redo, draw-order control, and persistent `.skrbl` documents.
 
 ## Features
 
@@ -18,14 +21,19 @@ A full-featured vector drawing application built with the PDG (Pixel Dust Games)
 - **Image Tool** (`I`) - Placeholder (not yet implemented)
 - **Fill Color Picker** (`M`) - Change fill color of selected shape or default
 - **Line Color Picker** (`N`) - Change stroke color of selected shape or default
+- **Line Width Picker** (`W`) - Apply one of five stroke widths to selected shapes or set the default for new shapes
+- **Smoothness Picker** (`U`) - Re-sample selected freehand splines or set the smoothing level for future freehand strokes
 - **Help Tool** (`H`) - Display keyboard shortcuts
 
 ### Shape Editing
 - **Endpoint Dragging** - Click and drag red endpoint handles to reshape
 - **Control Point Editing** - Drag green control points on splines to adjust curves
-- **Rotation** - Click blue center point and drag to rotate any shape
+- **Direct Dragging** - Drag a selected shape to move it; dragging one member of a multi-selection moves the whole selection
+- **Rotation** - Drag the blue center handle to rotate supported ungrouped shapes (circles are rotation-invariant)
 - **Nudging** - Arrow keys move shapes (10px, or 1px with Shift)
 - **Draw Order** - Reorder shapes with `+`/`-` keys (Ctrl/Cmd + for to front/back)
+- **Stroke Width** - Choose 0.25, 1, 2, 3.5, or 5 pixel strokes, with undo support
+- **Freehand Smoothing** - Choose five point-spacing levels with live preview, accept, cancel, and undo
 
 ### Selection & Manipulation
 - **Click Selection** - Click on a shape to select it
@@ -33,6 +41,7 @@ A full-featured vector drawing application built with the PDG (Pixel Dust Games)
   - `Shift` + drag: Add to selection
   - `Ctrl/Alt/Cmd` + drag: Toggle selection
 - **Tab Navigation** - Tab through shapes in drawing order (Shift+Tab reverses)
+- **Grouping** - Combine two or more selected shapes into a persistent group and ungroup them later
 
 ### Clipboard Operations
 - **Copy** (`Cmd/Ctrl+C`) - Copy selected shapes
@@ -54,19 +63,23 @@ A full-featured vector drawing application built with the PDG (Pixel Dust Games)
 ## File Structure
 
 ```
-anime-faces/
+skrybble/
+├── skrybble                  # Portable macOS launcher
+├── skrybble.ps1/.cmd         # Portable Windows launchers
 ├── main.js                    # Application entry point
 ├── DrawingApp.js             # Main application class
 ├── DrawingController.js      # Primary controller (event handling, state management)
 ├── DrawingSurfaceView.js     # Main drawing canvas view
 ├── ToolPaletteView.js        # Tool palette UI
 ├── ColorPickerController.js  # Color picker popup controller
+├── LineWidthController.js    # Stroke-width popup controller
+├── SmoothnessController.js   # Freehand smoothing popup controller
 ├── SliderView.js             # Slider view for color picker
 ├── drawing.js                # Drawing model (shape storage, serialization)
 ├── shapes.js                 # All shape class implementations
 ├── tools.js                  # Tool management and drawing state
-├── index.js                  # PDG framework exports
-└── facegen.js                # Face generation (placeholder/unused)
+├── index.js                  # Application and vendored MVC exports
+└── vendor/pdg-mvc-app/       # Complete pinned public PDG MVC framework
 ```
 
 ## Usage
@@ -106,6 +119,8 @@ SHA-256 before use. Set `PDG_CACHE_DIR` to share that cache between clones, or
 - `I` - Image tool
 - `M` - Fill Color Picker
 - `N` - Line Color Picker
+- `W` - Line Width Picker
+- `U` - Freehand Smoothness Picker
 - `H` - Help (shows all shortcuts)
 
 #### Editing & Navigation
@@ -128,6 +143,18 @@ SHA-256 before use. Set `PDG_CACHE_DIR` to share that cache between clones, or
 - `Cmd/Ctrl+X` - Cut
 - `Cmd/Ctrl+V` - Paste
 - Grouped shapes can be copied, cut, pasted, reordered, moved, saved, and restored as a unit
+
+#### Grouping
+- `Cmd/Ctrl+G` - Group two or more selected shapes
+- `Cmd/Ctrl+Shift+G` - Ungroup every selected group
+- Groups preserve their children and drawing order when copied or saved
+
+#### Appearance
+- `M` - Set fill color for selected shapes, or the default for new shapes
+- `N` - Set line color for selected shapes, or the default for new shapes
+- `W` - Set line width for selected shapes, or the default for new shapes
+- `U` - Smooth selected freehand splines, or set the default for new freehand strokes
+- In width and smoothness popups, use `Up`/`Down` to preview, `Enter` to accept, or `Esc` to cancel
 
 #### File Operations
 - `Cmd/Ctrl+S` - Save
@@ -163,6 +190,12 @@ SHA-256 before use. Set `PDG_CACHE_DIR` to share that cache between clones, or
 4. Drag **red endpoint handles** to reshape
 5. Drag **green control points** (splines only) to adjust curves
 6. Click **blue center point** and drag to rotate
+
+#### Grouping Shapes
+1. Select at least two shapes using Shift-click or rubber-band selection
+2. Press `Cmd/Ctrl+G` to replace them with one movable group
+3. Copy, paste, reorder, recolor, resize the stroke, or save the group as a unit
+4. Press `Cmd/Ctrl+Shift+G` while the group is selected to restore its children
 
 #### Selection Techniques
 - **Single selection**: Click a shape
@@ -209,6 +242,7 @@ Base `Shape` class extended by:
 - `Polygon` - Multi-point closed shape
 - `Spline` - Cardinal spline with control points
 - `BezierSpline` - Cubic Bezier with auto-generated control points
+- `Group` - Persistent composite containing complete child shapes
 
 Each shape implements:
 - `draw(port)` - Render with optional rotation
@@ -235,6 +269,19 @@ Each shape implements:
   - Press `Enter` to accept, `Esc` to cancel
   - Fully integrated with undo/redo system
 
+### Stroke Width and Freehand Smoothing
+- **Line width popup** - Five visual width choices (`0.25`, `1`, `2`, `3.5`, and `5`)
+- **Selected-shape editing** - Applies a width to every selected shape, including groups
+- **Default width** - With nothing selected, sets the stroke used by subsequently created shapes
+- **Five smoothing levels** - Re-sample freehand spline points using spacing thresholds of 2, 3, 5, 8, or 13 pixels
+- **Non-destructive preview** - Arrow-key previews can be accepted with Enter or reverted with Esc
+- Both operations participate in undo/redo
+
+### Groups
+- Groups are first-class drawing objects with their original child shapes retained
+- Moving, copying, cutting, pasting, draw-order changes, color changes, stroke-width changes, save/load, and undo/redo operate on the group
+- Ungrouping restores the individual children without flattening their geometry
+
 ### File Operations
 - **Save Confirmation** - Brief "Saved to [filename]" message appears on successful save
 - **Recent Colors Persistence** - Recently used colors are saved with the drawing file
@@ -247,13 +294,11 @@ Each shape implements:
 
 ### Known Issues
 - No visual feedback during draw order changes
-- File format version (skrbl-v0.0.1) is not validated on load
+- The loader recognizes the `skrbl-v` prefix but does not yet perform per-version migration or compatibility checks
 
 ### Limitations
 - Maximum 50 undo levels
 - No layer system
-- No grouping of shapes
-- No stroke width control via UI (fixed at 1px)
 - No grid or snap-to-grid
 - No rulers or measurements
 - Image tool not yet implemented
@@ -266,6 +311,13 @@ Each shape implements:
 - **Native Graphics** - PDG provides cross-platform window and drawing
 
 ## Recent Updates
+
+### Latest additions
+- ✅ **Direct Shape Dragging** - Move one shape or an entire multi-selection with the pointer
+- ✅ **Persistent Groups** - Group, ungroup, move, style, copy, reorder, save, and restore composite shapes
+- ✅ **Line Width Tool** - Five selectable stroke widths for existing and future shapes
+- ✅ **Freehand Smoothness Tool** - Five levels with live preview and undo/redo integration
+- ✅ **Toolbar Rendering Polish** - Improved antialiasing for tool icons
 
 ### Version 0.0.2 Features:
 - ✅ **Freehand Drawing Tool** - Draw smooth curves by hand

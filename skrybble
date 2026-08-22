@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tools/pdg-release.env
+source "$ROOT_DIR/tools/pdg-release.env"
+
+if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
+    echo "Skrybble currently has a public PDG launcher for macOS arm64 and Windows x64 only." >&2
+    exit 1
+fi
+
+APP_SCRIPT="$ROOT_DIR/main.js"
+REFRESH=0
+if [[ ${1:-} == "--refresh-pdg" ]]; then
+    REFRESH=1
+    shift
+fi
+if [[ ${1:-} == "--" ]]; then
+    shift
+elif [[ ${1:-} == *.js ]]; then
+    APP_SCRIPT="$1"
+    [[ "$APP_SCRIPT" = /* ]] || APP_SCRIPT="$ROOT_DIR/$APP_SCRIPT"
+    shift
+fi
+
+if [[ -n ${PDG_EXECUTABLE:-} ]]; then
+    exec "$PDG_EXECUTABLE" "$APP_SCRIPT" "$@"
+fi
+
+CACHE_ROOT="${PDG_CACHE_DIR:-$ROOT_DIR/.pdg}"
+INSTALL_DIR="$CACHE_ROOT/$PDG_VERSION/macos-arm64"
+PDG_EXE="$INSTALL_DIR/pdg.app/Contents/MacOS/pdg"
+ASSET_URL="$PDG_REPOSITORY/releases/download/$PDG_TAG/$PDG_MACOS_ARM64_ASSET"
+
+if [[ $REFRESH -eq 1 ]]; then
+    rm -rf "$INSTALL_DIR"
+fi
+
+if [[ ! -x "$PDG_EXE" ]]; then
+    command -v curl >/dev/null || { echo "curl is required to download PDG." >&2; exit 1; }
+    command -v unzip >/dev/null || { echo "unzip is required to install PDG." >&2; exit 1; }
+    mkdir -p "$CACHE_ROOT/$PDG_VERSION"
+    DOWNLOAD_FILE="$(mktemp "$CACHE_ROOT/pdg-download.XXXXXX")"
+    EXTRACT_DIR="$(mktemp -d "$CACHE_ROOT/pdg-extract.XXXXXX")"
+    trap 'rm -f "$DOWNLOAD_FILE"; rm -rf "$EXTRACT_DIR"' EXIT
+    echo "Downloading pinned PDG $PDG_TAG..."
+    curl --fail --location --silent --show-error "$ASSET_URL" --output "$DOWNLOAD_FILE"
+    ACTUAL_SHA="$(shasum -a 256 "$DOWNLOAD_FILE" | awk '{print $1}')"
+    if [[ "$ACTUAL_SHA" != "$PDG_MACOS_ARM64_SHA256" ]]; then
+        echo "PDG checksum mismatch: expected $PDG_MACOS_ARM64_SHA256, got $ACTUAL_SHA" >&2
+        exit 1
+    fi
+    unzip -q "$DOWNLOAD_FILE" -d "$EXTRACT_DIR"
+    rm -rf "$INSTALL_DIR"
+    mv "$EXTRACT_DIR" "$INSTALL_DIR"
+    trap - EXIT
+    rm -f "$DOWNLOAD_FILE"
+fi
+
+exec "$PDG_EXE" "$APP_SCRIPT" "$@"

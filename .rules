@@ -1,8 +1,5 @@
 ## This project uses the JavaScript version of PDG (Pixel Dust Game engine) for rendering and control
-- see ../pdg-devel/docs/javascript/pdg-js.h for an IDL file the expresses the API for PDG
-- see ../pdg-devel/docs/javascript/html/ for more detailed PDG API documentation
+- see https://github.com/ezavada/pdg/tree/v1.0.0/docs/javascript for the public PDG API documentation
 - see ../galactica-4/src/js/ for an example of a well implemented simple PDG application
-- see ../pdg-devel/test/ui_tests/ for examples of tested graphics functionality
-- see ../pdg-devel/test/spec/ for examples of tested general functionality
-- to run the app, use `./pdg`
-
+- see https://github.com/ezavada/pdg/tree/v1.0.0/test for tested graphics and general examples
+- to run the app, use `./skrybble`

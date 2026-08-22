@@ -6,7 +6,9 @@
 // (c) 2025, Ed Zavada
 // -----------------------------------------------
 
-const framework = require('../pdg-devel/src/js/mvc-app/index.js');
+// Load the complete MVC framework through the public PDG entry point.
+// See vendor/README.md for provenance and update instructions.
+const framework = require('./vendor/pdg-mvc-app/index.js');
 
 const Tools = require('./tools.js');
 const Drawing = require('./drawing.js');

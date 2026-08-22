@@ -74,12 +74,21 @@ anime-faces/
 ### Running the Application
 
 ```bash
-# Start with a new drawing
-node main.js
+# macOS (Apple silicon): downloads and verifies PDG v1.0.0 on first run
+./skrybble
 
 # Load an existing file
-node main.js drawing.skrbl
+./skrybble -- drawing.skrbl
+
+# Windows PowerShell
+.\skrybble.ps1
+.\skrybble.ps1 -- drawing.skrbl
 ```
+
+The launchers cache the exact public PDG release under `.pdg/` and verify its
+SHA-256 before use. Set `PDG_CACHE_DIR` to share that cache between clones, or
+`PDG_EXECUTABLE` to test with an already installed runtime. Pass
+`--refresh-pdg` (or `-RefreshPdg` in PowerShell) to replace the cached copy.
 
 ### Keyboard Shortcuts
 
@@ -251,8 +260,9 @@ Each shape implements:
 
 ## Dependencies
 
-- **PDG Framework** - Pixel Dust Games JavaScript MVC framework
-- **Node.js** - For filesystem operations and module system
+- **PDG v1.0.0** - Pinned public runtime; downloaded by the portable launcher
+- **PDG MVC Framework** - Required public-tag sources are vendored with license and provenance
+- **Node.js APIs** - Supplied by the PDG runtime for filesystem operations and modules
 - **Native Graphics** - PDG provides cross-platform window and drawing
 
 ## Recent Updates

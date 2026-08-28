@@ -1,5 +1,10 @@
 // Base Shape class and all shape implementations
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+
 // Base Shape class
 class Shape {
     constructor(x, y, fillColor = 'white', strokeColor = 'black', strokeWidth = 1) {
@@ -96,7 +101,8 @@ function createDrawingPort(drawing) {
         drawPolygon: (polygon, attrs) => drawing.addPolygon(polygon, attrs),
         drawSpline: (spline, attrs) => drawing.addSpline(spline, attrs),
         drawQuad: (quad, attrs) => drawing.addQuad(quad, attrs),
-        drawArc: (arc, attrs) => drawing.addArc(arc, attrs)
+        drawArc: (arc, attrs) => drawing.addArc(arc, attrs),
+        drawImage: (image, rect, attrs) => drawing.addImage(rect, image, attrs)
     };
 }
 
@@ -1511,6 +1517,154 @@ class Polygon extends Shape {
     }
 }
 
+class Image extends Shape {
+    constructor(x, y, width, height, imageData, imageExtension = '.png', sourceName = '') {
+        super(x, y, null, null, 0);
+        this.imageData = imageData;
+        this.imageExtension = Image.normalizeExtension(imageExtension);
+        this.sourceName = sourceName;
+        this.image = null;
+        this.loadError = null;
+        this.loadImage();
+
+        this.width = width === undefined || width === null
+            ? (this.image ? this.image.getWidth() : 100)
+            : width;
+        this.height = height === undefined || height === null
+            ? (this.image ? this.image.getHeight() : 100)
+            : height;
+    }
+
+    static normalizeExtension(extension) {
+        const normalized = String(extension || '.png').toLowerCase();
+        return /^\.(png|jpe?g|gif|bmp)$/.test(normalized) ? normalized : '.img';
+    }
+
+    static fromFile(filename, x = 0, y = 0) {
+        const data = fs.readFileSync(filename).toString('base64');
+        return new Image(x, y, null, null, data, path.extname(filename), path.basename(filename));
+    }
+
+    getMaterializedPath() {
+        if (!this.imageData) return null;
+        const digest = crypto.createHash('sha256').update(this.imageData).digest('hex');
+        const directory = path.join(os.tmpdir(), 'skrybble-images');
+        const filename = path.join(directory, `${digest}${this.imageExtension}`);
+        if (!fs.existsSync(filename)) {
+            fs.mkdirSync(directory, { recursive: true });
+            fs.writeFileSync(filename, Buffer.from(this.imageData, 'base64'));
+        }
+        return filename;
+    }
+
+    loadImage() {
+        if (typeof pdg === 'undefined' || !pdg.Image) return;
+        try {
+            const filename = this.getMaterializedPath();
+            if (!filename) throw new Error('Image data is missing');
+            this.image = new pdg.Image(filename);
+            if (this.image.getWidth() <= 0 || this.image.getHeight() <= 0) {
+                throw new Error('Unsupported or invalid image data');
+            }
+            this.loadError = null;
+        } catch (error) {
+            this.image = null;
+            this.loadError = error.message;
+        }
+    }
+
+    getNormalizedBounds() {
+        return {
+            left: Math.min(this.x, this.x + this.width),
+            top: Math.min(this.y, this.y + this.height),
+            right: Math.max(this.x, this.x + this.width),
+            bottom: Math.max(this.y, this.y + this.height)
+        };
+    }
+
+    draw(port) {
+        const bounds = this.getNormalizedBounds();
+        const rect = new pdg.Rect(bounds.left, bounds.top, bounds.right, bounds.bottom);
+        const center = this.getCenterPoint();
+        const attrs = new pdg.Attributes().fitType(pdg.fit_Fill);
+        if (this.rotation) {
+            attrs.rotation(this.rotation, new pdg.Point(center.x, center.y));
+        }
+
+        if (this.image) {
+            port.drawImage(this.image, rect, attrs);
+        } else {
+            const errorAttrs = new pdg.Attributes()
+                .lineColor(new pdg.Color('red'))
+                .lineThickness(2);
+            port.drawRect(rect, errorAttrs);
+            port.drawLine(new pdg.Point(bounds.left, bounds.top),
+                new pdg.Point(bounds.right, bounds.bottom), errorAttrs);
+            port.drawLine(new pdg.Point(bounds.right, bounds.top),
+                new pdg.Point(bounds.left, bounds.bottom), errorAttrs);
+        }
+
+        if (this.selected) {
+            this.drawEndpoints(port);
+            this.drawRotationControl(port);
+        }
+    }
+
+    drawEndpoints(port) {
+        const center = this.getCenterPoint();
+        const fillAttrs = new pdg.Attributes().fillColor(new pdg.Color('red'));
+        const outlineAttrs = new pdg.Attributes().lineColor(new pdg.Color('white')).lineThickness(1);
+        for (let point of this.getEndpoints()) {
+            if (this.rotation) {
+                point = this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation);
+            }
+            const pdgPoint = new pdg.Point(point.x, point.y);
+            port.drawCircle(pdgPoint, 5, outlineAttrs);
+            port.drawCircle(pdgPoint, 4, fillAttrs);
+        }
+    }
+
+    contains(x, y) {
+        const center = this.getCenterPoint();
+        let point = { x, y };
+        if (this.rotation) {
+            point = this.rotatePoint(x, y, center.x, center.y, -this.rotation);
+        }
+        const bounds = this.getNormalizedBounds();
+        return point.x >= bounds.left && point.x <= bounds.right &&
+            point.y >= bounds.top && point.y <= bounds.bottom;
+    }
+
+    getEndpoints() {
+        return [
+            { x: this.x, y: this.y },
+            { x: this.x + this.width, y: this.y },
+            { x: this.x + this.width, y: this.y + this.height },
+            { x: this.x, y: this.y + this.height }
+        ];
+    }
+
+    getCenterPoint() {
+        return { x: this.x + this.width / 2, y: this.y + this.height / 2 };
+    }
+
+    getRotationLineLength() {
+        return Math.min(Math.min(Math.abs(this.width), Math.abs(this.height)) * 0.4, 40);
+    }
+
+    intersectsRect(left, top, right, bottom) {
+        const center = this.getCenterPoint();
+        const corners = this.getEndpoints().map(point => this.rotation
+            ? this.rotatePoint(point.x, point.y, center.x, center.y, this.rotation)
+            : point);
+        const imageLeft = Math.min(...corners.map(point => point.x));
+        const imageTop = Math.min(...corners.map(point => point.y));
+        const imageRight = Math.max(...corners.map(point => point.x));
+        const imageBottom = Math.max(...corners.map(point => point.y));
+        return imageLeft <= right && imageRight >= left && imageTop <= bottom && imageBottom >= top;
+    }
+}
+
 // A first-class shape whose children render through one pdg.Drawing. Keeping
 // the child objects intact makes ungrouping and serialization lossless.
 class Group extends Shape {
@@ -1649,5 +1803,6 @@ module.exports = {
     BezierSpline,
     Oval,
     Polygon,
+    Image,
     Group
 };

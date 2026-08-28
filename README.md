@@ -18,7 +18,7 @@ undo/redo, draw-order control, and persistent `.skrbl` documents.
 - **Rectangle Tool** (`R`) - Draw rectangles
 - **Quad Tool** (`Q`) - Create 4-point polygons (auto-finishes after 4th point)
 - **Polygon Tool** (`P`) - Create multi-point closed polygons
-- **Image Tool** (`I`) - Placeholder (not yet implemented)
+- **Image Tool** (`I`) - Import an image or place another `.skrbl` drawing as a group
 - **Fill Color Picker** (`M`) - Change fill color of selected shape or default
 - **Line Color Picker** (`N`) - Change stroke color of selected shape or default
 - **Line Width Picker** (`W`) - Apply one of five stroke widths to selected shapes or set the default for new shapes
@@ -55,10 +55,11 @@ undo/redo, draw-order control, and persistent `.skrbl` documents.
 - Smart accumulation for nudges and draw order changes
 
 ### File Management
+- **Open** (`Cmd/Ctrl+O`) - Choose and load a `.skrbl` drawing
 - **Save** (`Cmd/Ctrl+S`) - Save drawing to .skrbl file
 - **Load** - Specify filename on command line to load on startup
 - Auto-generates timestamped filename if none specified
-- JSON-based file format preserves all shape properties including rotation
+- JSON-based file format preserves all shape properties and stores each unique embedded image once
 
 ## File Structure
 
@@ -157,6 +158,7 @@ SHA-256 before use. Set `PDG_CACHE_DIR` to share that cache between clones, or
 - In width and smoothness popups, use `Up`/`Down` to preview, `Enter` to accept, or `Esc` to cancel
 
 #### File Operations
+- `Cmd/Ctrl+O` - Open a `.skrbl` drawing
 - `Cmd/Ctrl+S` - Save
 - `Cmd/Ctrl+Z` - Undo
 - `Cmd/Ctrl+Shift+Z` - Redo
@@ -182,6 +184,13 @@ SHA-256 before use. Set `PDG_CACHE_DIR` to share that cache between clones, or
 2. Click and drag to draw
 3. Release mouse to finish
 4. Shape automatically converts to an editable Cardinal Spline
+
+#### Importing Images and Drawings
+1. Select the Image tool (`I`) and choose an image or `.skrbl` drawing in the platform file dialog
+2. For an image, click the canvas to use its intrinsic dimensions or drag to choose its bounds
+3. A `.skrbl` drawing is imported as one group centered at the mouse position
+4. Use the Select tool to move, resize, rotate, reorder, group, copy, or delete imported content
+5. Image bytes are embedded when the drawing is saved, so the original files are no longer required
 
 #### Editing Shapes
 1. Select the Select tool (`Esc`)
@@ -283,25 +292,22 @@ Each shape implements:
 - Ungrouping restores the individual children without flattening their geometry
 
 ### File Operations
+- **Open Drawing** - Native platform chooser for `.skrbl` documents, with subsequent saves returning to the opened file
 - **Save Confirmation** - Brief "Saved to [filename]" message appears on successful save
 - **Recent Colors Persistence** - Recently used colors are saved with the drawing file
 - Auto-generated timestamped filenames
 
-## Known Limitations & Unimplemented Features
-
-### Not Implemented
-- **Image Tool** - Shows in palette but not functional
+## Known Limitations
 
 ### Known Issues
 - No visual feedback during draw order changes
-- The loader recognizes the `skrbl-v` prefix but does not yet perform per-version migration or compatibility checks
+- The loader accepts the current file format only; automatic migration is not provided
 
 ### Limitations
 - Maximum 50 undo levels
 - No layer system
 - No grid or snap-to-grid
 - No rulers or measurements
-- Image tool not yet implemented
 
 ## Dependencies
 
@@ -327,6 +333,7 @@ Each shape implements:
 - ✅ **Improved Multi-Point Editing** - Delete key removes last point, Esc finishes drawing
 - ✅ **Save Confirmation** - Visual feedback when files are saved
 - ✅ **Toolbar Color Display** - Shows current/selected shape colors
+- ✅ **Embedded Images** - Place, transform, group, copy, and save raster images without external file dependencies
 
 See `TODO.md` for completed and planned features.
 
@@ -336,7 +343,15 @@ Files are saved with `.skrbl` extension in JSON format:
 
 ```json
 {
-  "fileFormat": "skrbl-v0.0.1",
+  "fileFormat": "skrbl-v0.0.3",
+  "imageData": [
+    {
+      "id": 1,
+      "sourceName": "example.png",
+      "imageExtension": ".png",
+      "data": "iVBORw0KGgo..."
+    }
+  ],
   "shapes": [
     {
       "type": "Line",
@@ -346,6 +361,16 @@ Files are saved with `.skrbl` extension in JSON format:
         "strokeColor": "#000000",
         "strokeWidth": 1,
         "rotation": 0
+      }
+    },
+    {
+      "type": "Image",
+      "data": {
+        "type": "Image",
+        "x": 240, "y": 100,
+        "width": 320, "height": 200,
+        "rotation": 0,
+        "imageId": 1
       }
     }
     // ... more shapes
@@ -359,7 +384,7 @@ Files are saved with `.skrbl` extension in JSON format:
 }
 ```
 
-All shape properties including rotation and colors are preserved on save/load.
+All shape properties including rotation and colors are preserved on save/load. Each unique image is stored once in the top-level `imageData` table; image shapes reference it by numeric `imageId`. This keeps documents portable without repeating encoded bytes for duplicate placements.
 
 ---
 

@@ -56,6 +56,8 @@ class Tools {
         this.startPoint = null;
         this.lastPoint = null;
         this.freehandPoints = []; // Track points for freehand drawing
+        this.imageSource = null;
+        this.importedGroupFactory = null;
     }
 
     setTool(tool) {
@@ -79,6 +81,16 @@ class Tools {
     setSmoothnessLevel(level) {
         // Level is 0-4, representing distances [2, 3, 5, 8, 13]
         this.smoothnessLevel = Math.max(0, Math.min(4, level));
+    }
+
+    setImageSource(imageSource) {
+        this.imageSource = imageSource;
+        this.importedGroupFactory = null;
+    }
+
+    setImportedGroupFactory(factory) {
+        this.importedGroupFactory = factory;
+        this.imageSource = null;
     }
 
     getSmoothnessDistance() {
@@ -138,6 +150,24 @@ class Tools {
             case TOOLS.RECT:
                 this.currentShape = new this.ShapeClasses.Rectangle(x, y, 0, 0, this.fillColor, this.strokeColor, this.strokeWidth);
                 break;
+            case TOOLS.IMAGE:
+                if (this.importedGroupFactory) {
+                    this.currentShape = this.importedGroupFactory();
+                    const center = this.currentShape.getCenterPoint();
+                    this.currentShape.moveBy(x - center.x, y - center.y);
+                    break;
+                }
+                if (!this.imageSource) {
+                    this.finishCurrentDrawing();
+                    break;
+                }
+                this.currentShape = new this.ShapeClasses.Image(
+                    x, y, null, null,
+                    this.imageSource.imageData,
+                    this.imageSource.imageExtension,
+                    this.imageSource.sourceName
+                );
+                break;
             case TOOLS.SPLINE:
                 // For Cardinal Spline, first click creates both control points and one endpoint at same location
                 // addition point is created when click completes
@@ -189,6 +219,17 @@ class Tools {
             case TOOLS.RECT:
                 this.currentShape.width = x - this.startPoint.x;
                 this.currentShape.height = y - this.startPoint.y;
+                break;
+            case TOOLS.IMAGE:
+                if (this.currentShape.constructor.name === 'Group') {
+                    const center = this.currentShape.getCenterPoint();
+                    this.currentShape.moveBy(x - center.x, y - center.y);
+                    break;
+                }
+                if (Math.abs(x - this.startPoint.x) >= 3 || Math.abs(y - this.startPoint.y) >= 3) {
+                    this.currentShape.width = x - this.startPoint.x;
+                    this.currentShape.height = y - this.startPoint.y;
+                }
                 break;
             case TOOLS.SPLINE:
                 // Cardinal Spline starts with 3 points (control, 2 endpoints, control)
@@ -436,6 +477,13 @@ class Tools {
             case TOOLS.RECT:
                 return Math.abs(this.currentShape.width) >= MIN_SIZE || 
                        Math.abs(this.currentShape.height) >= MIN_SIZE;
+
+            case TOOLS.IMAGE:
+                if (this.currentShape.constructor.name === 'Group') {
+                    return this.currentShape.children.length > 0;
+                }
+                return !!this.currentShape.image && Math.abs(this.currentShape.width) >= MIN_SIZE &&
+                    Math.abs(this.currentShape.height) >= MIN_SIZE;
             
             default:
                 return true;

@@ -98,6 +98,7 @@ class Drawing {
                 shape.y += dy;
                 break;
             case 'Rectangle':
+            case 'Image':
                 shape.x += dx;
                 shape.y += dy;
                 break;
@@ -278,7 +279,37 @@ class Drawing {
         }
     }
 
-    serializeShape(shape) {
+    createImageRegistry() {
+        return {
+            nextId: 1,
+            idByData: new Map(),
+            entries: []
+        };
+    }
+
+    deserializeDocument(data) {
+        if (!data || data.fileFormat !== 'skrbl-v0.0.3' ||
+            !Array.isArray(data.imageData) || !Array.isArray(data.shapes)) {
+            throw new Error('Unsupported or invalid file format');
+        }
+
+        const imageDataById = new Map();
+        for (const imageData of data.imageData) {
+            if (!Number.isInteger(imageData.id) || imageDataById.has(imageData.id) ||
+                typeof imageData.data !== 'string') {
+                throw new Error('Invalid imageData entry');
+            }
+            imageDataById.set(imageData.id, imageData);
+        }
+
+        return data.shapes.map(shapeInfo => {
+            const shape = this.deserializeShape(shapeInfo.type, shapeInfo.data, imageDataById);
+            if (!shape) throw new Error(`Unknown shape type ${shapeInfo.type}`);
+            return shape;
+        });
+    }
+
+    serializeShape(shape, imageRegistry = null) {
         const typeName = shape.constructor.name;
         let data;
         
@@ -321,6 +352,33 @@ class Drawing {
                     rotation: shape.rotation || 0
                 };
                 break;
+            case 'Image':
+                data = {
+                    x: shape.x, y: shape.y,
+                    width: shape.width, height: shape.height,
+                    rotation: shape.rotation || 0
+                };
+                if (imageRegistry) {
+                    let imageId = imageRegistry.idByData.get(shape.imageData);
+                    if (imageId === undefined) {
+                        imageId = imageRegistry.nextId++;
+                        imageRegistry.idByData.set(shape.imageData, imageId);
+                        imageRegistry.entries.push({
+                            id: imageId,
+                            sourceName: shape.sourceName,
+                            imageExtension: shape.imageExtension,
+                            data: shape.imageData
+                        });
+                    }
+                    data.imageId = imageId;
+                } else {
+                    // Undo/redo and the in-memory clipboard use self-contained
+                    // snapshots rather than the normalized document format.
+                    data.imageData = shape.imageData;
+                    data.imageExtension = shape.imageExtension;
+                    data.sourceName = shape.sourceName;
+                }
+                break;
             case 'Polygon':
             case 'Spline':
                 data = {
@@ -344,7 +402,7 @@ class Drawing {
                 break;
             case 'Group':
                 data = {
-                    children: shape.children.map(child => this.serializeShape(child))
+                    children: shape.children.map(child => this.serializeShape(child, imageRegistry))
                 };
                 break;
             default:
@@ -354,7 +412,7 @@ class Drawing {
         return { type: typeName, ...data };
     }
 
-    deserializeShape(type, data) {
+    deserializeShape(type, data, imageDataById = null) {
         let shape = null;
         
         switch (type) {
@@ -380,6 +438,22 @@ class Drawing {
                 shape = new ShapeClasses.Rectangle(
                     data.x, data.y, data.width, data.height,
                     data.fillColor, data.strokeColor, data.strokeWidth
+                );
+                break;
+            case 'Image':
+                const imageData = imageDataById
+                    ? imageDataById.get(data.imageId)
+                    : {
+                        data: data.imageData,
+                        imageExtension: data.imageExtension,
+                        sourceName: data.sourceName
+                    };
+                if (!imageData) {
+                    throw new Error(`Image shape references missing imageData id ${data.imageId}`);
+                }
+                shape = new ShapeClasses.Image(
+                    data.x, data.y, data.width, data.height,
+                    imageData.data, imageData.imageExtension, imageData.sourceName
                 );
                 break;
             case 'Polygon':
@@ -410,7 +484,7 @@ class Drawing {
                 break;
             case 'Group':
                 shape = new ShapeClasses.Group((data.children || []).map(childData =>
-                    this.deserializeShape(childData.type, childData)).filter(Boolean));
+                    this.deserializeShape(childData.type, childData, imageDataById)).filter(Boolean));
                 break;
             default:
                 return null;

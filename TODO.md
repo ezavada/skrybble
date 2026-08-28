@@ -1,14 +1,21 @@
 # Skrybble status
 
-Last reviewed: 2026-08-19
+Last reviewed: 2026-08-28
 
 ## Remaining work
 
-### Image tool
-
-- [ ] Implement the currently placeholder image tool.
+No features are currently tracked as unimplemented.
 
 ## Completed
+
+### Image tool
+
+- [x] Open the native platform image chooser from the toolbar or `I` shortcut.
+- [x] Place images at intrinsic size with a click or size them by dragging.
+- [x] Support selection, movement, corner resizing, rotation, grouping, draw order, clipboard operations, undo, and redo.
+- [x] Embed image bytes in `.skrbl` files so drawings do not depend on the original files.
+- [x] Store each unique image once in a document-level image table and reference it by numeric ID.
+- [x] Import `.skrbl` drawings through the Image tool as groups centered at the placement point.
 
 ### Group and ungroup
 
@@ -98,6 +105,7 @@ Last reviewed: 2026-08-19
 
 ### Saving and feedback
 
+- [x] Open `.skrbl` drawings with `Cmd/Ctrl+O` and a platform file chooser.
 - [x] Display `Saved to {filename}` briefly after a successful save.
 
 ### Input and popup fixes

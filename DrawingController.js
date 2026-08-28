@@ -16,8 +16,11 @@ const ToolPaletteView = require('./ToolPaletteView.js');
 const ColorPickerController = require('./ColorPickerController.js');
 const LineWidthController = require('./LineWidthController.js');
 const SmoothnessController = require('./SmoothnessController.js');
+const chooseImageFile = require('./image-file-picker.js');
+const chooseDrawingFile = require('./drawing-file-picker.js');
 
 const fs = require('fs');
+const path = require('path');
 
 // -----------------------------------------------
 // Drawing Controller class
@@ -226,6 +229,10 @@ class DrawingController extends Controller {
                         this.openSmoothnessPicker(part);
                         return true;
                     }
+                    if (selectedTool === Tools.TOOLS.IMAGE) {
+                        this.activateImageTool();
+                        return true;
+                    }
                     
                     // If another tool is selected while a picker is open, cancel the picker
                     if (this.lineWidthController) {
@@ -395,7 +402,8 @@ class DrawingController extends Controller {
         } else if (this.toolManager.isCurrentlyDrawing()) {
             // For single-action tools (line, circle, oval, rect, freehand), finish on mouse up
             if (currentTool === Tools.TOOLS.LINE || currentTool === Tools.TOOLS.CIRCLE || 
-                currentTool === Tools.TOOLS.OVAL || currentTool === Tools.TOOLS.RECT) {
+                currentTool === Tools.TOOLS.OVAL || currentTool === Tools.TOOLS.RECT ||
+                currentTool === Tools.TOOLS.IMAGE) {
                 const finishedShape = this.toolManager.getCurrentShape();
                 
                 // Check if the shape is valid (mouse moved more than minimum distance)
@@ -893,6 +901,9 @@ class DrawingController extends Controller {
             case 'Rectangle':
                 this.updateRectangleCorner(shape, index, x, y);
                 break;
+            case 'Image':
+                this.updateRectangleCorner(shape, index, x, y);
+                break;
             case 'Polygon':
                 shape.points[index].x = x;
                 shape.points[index].y = y;
@@ -1012,6 +1023,9 @@ class DrawingController extends Controller {
                     return true;
                 case 'S': // Save
                     this.saveFile();
+                    return true;
+                case 'O': // Open
+                    this.openDrawingFile();
                     return true;
                 case 'G': // Group or ungroup
                     if (event.shift) {
@@ -1186,6 +1200,10 @@ class DrawingController extends Controller {
                 this.openSmoothnessPicker(toolIndex);
                 return true;
             }
+            if (tool === Tools.TOOLS.IMAGE) {
+                this.activateImageTool();
+                return true;
+            }
             
             // If another tool is selected while a picker is open, cancel the picker
             if (this.lineWidthController) {
@@ -1321,6 +1339,57 @@ class DrawingController extends Controller {
 
     getDrawing() {
         return this.drawing;
+    }
+
+    activateImageTool(filename = null) {
+        const selectedFilename = filename || chooseImageFile();
+        if (!selectedFilename) return false;
+
+        if (path.extname(selectedFilename).toLowerCase() === '.skrbl') {
+            try {
+                const documentData = JSON.parse(fs.readFileSync(selectedFilename, 'utf8'));
+                const importedShapes = this.drawing.deserializeDocument(documentData);
+                if (importedShapes.length === 0) {
+                    throw new Error('drawing contains no shapes');
+                }
+
+                const ShapeClasses = this.drawing.getShapeClasses();
+                const groupSnapshot = this.drawing.serializeShape(
+                    new ShapeClasses.Group(importedShapes));
+                this.toolManager.setImportedGroupFactory(() =>
+                    this.drawing.deserializeShape(groupSnapshot.type, groupSnapshot));
+                this.toolManager.setTool(Tools.TOOLS.IMAGE);
+                this.updateToolSelection(Tools.TOOLS.IMAGE);
+                this.showSaveMessage(`Drawing ready: ${path.basename(selectedFilename)}`);
+                return true;
+            } catch (error) {
+                console.error('Failed to import drawing:', error);
+                this.showSaveMessage(`Failed to import drawing: ${error.message}`);
+                return false;
+            }
+        }
+
+        try {
+            const ShapeClasses = this.drawing.getShapeClasses();
+            const imageData = fs.readFileSync(selectedFilename).toString('base64');
+            const imageExtension = path.extname(selectedFilename);
+            const sourceName = path.basename(selectedFilename);
+            const probe = new ShapeClasses.Image(
+                0, 0, null, null, imageData, imageExtension, sourceName);
+            if (!probe.image || probe.image.getWidth() <= 0 || probe.image.getHeight() <= 0) {
+                throw new Error(probe.loadError || 'unsupported or invalid image');
+            }
+
+            this.toolManager.setImageSource({ imageData, imageExtension, sourceName });
+            this.toolManager.setTool(Tools.TOOLS.IMAGE);
+            this.updateToolSelection(Tools.TOOLS.IMAGE);
+            this.showSaveMessage(`Image ready: ${sourceName}`);
+            return true;
+        } catch (error) {
+            console.error('Failed to load image:', error);
+            this.showSaveMessage(`Failed to load image: ${error.message}`);
+            return false;
+        }
     }
 
     toggleHelp() {
@@ -1805,29 +1874,42 @@ class DrawingController extends Controller {
         this.currentFilename = filename;
     }
 
+    openDrawingFile(filename = null) {
+        const selectedFilename = filename || chooseDrawingFile();
+        if (!selectedFilename) return false;
+
+        if (path.extname(selectedFilename).toLowerCase() !== '.skrbl') {
+            this.showSaveMessage('Open failed: choose a .skrbl file');
+            return false;
+        }
+
+        if (!this.loadFile(selectedFilename)) {
+            this.showSaveMessage('Open failed: invalid or unsupported drawing');
+            return false;
+        }
+
+        this.undoStack = [];
+        this.redoStack = [];
+        this.clipboard = null;
+        this.pasteCount = 0;
+        this.selectedShape = null;
+        this.toolManager.finishCurrentDrawing();
+        this.toolManager.setTool(Tools.TOOLS.SELECT);
+        this.updateToolSelection(Tools.TOOLS.SELECT);
+        this.showSaveMessage(`Opened ${path.basename(selectedFilename)}`);
+        return true;
+    }
+
     loadFile(filename) {
         try {
             const fileData = fs.readFileSync(filename, 'utf8');
             const data = JSON.parse(fileData);
-            
-            // Verify file format
-            if (!data.fileFormat || !data.fileFormat.startsWith('skrbl-v')) {
-                console.error('Invalid file format');
-                return false;
-            }
-            
-            // Clear current drawing
+            const loadedShapes = this.drawing.deserializeDocument(data);
+
+            // Only replace the current drawing after the entire document has
+            // been validated and materialized successfully.
             this.drawing.clearShapes();
-            
-            // Load shapes
-            if (data.shapes) {
-                for (let shapeInfo of data.shapes) {
-                    const shape = this.drawing.deserializeShape(shapeInfo.type, shapeInfo.data);
-                    if (shape) {
-                        this.drawing.addShape(shape);
-                    }
-                }
-            }
+            loadedShapes.forEach(shape => this.drawing.addShape(shape));
             
             // Load recent colors if available
             if (data.recentColors) {
@@ -1853,15 +1935,18 @@ class DrawingController extends Controller {
         }
         
         try {
+            const imageRegistry = this.drawing.createImageRegistry();
+            const shapes = this.drawing.getShapes().map(shape => {
+                const serialized = this.drawing.serializeShape(shape, imageRegistry);
+                return {
+                    type: serialized.type,
+                    data: serialized
+                };
+            });
             const data = {
-                fileFormat: 'skrbl-v0.0.1',
-                shapes: this.drawing.getShapes().map(shape => {
-                    const serialized = this.drawing.serializeShape(shape);
-                    return {
-                        type: serialized.type,
-                        data: serialized
-                    };
-                }),
+                fileFormat: 'skrbl-v0.0.3',
+                imageData: imageRegistry.entries,
+                shapes,
                 recentColors: this.recentColors
             };
             

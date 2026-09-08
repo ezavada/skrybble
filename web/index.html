@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skrybble</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #20252b; }
+    #pdg-canvas { display: block; width: 100%; height: 100%; outline: none; }
+    #status {
+      position: fixed; inset: 0; display: grid; place-items: center;
+      color: #f5f7fa; font: 15px system-ui, sans-serif; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="pdg-canvas" width="1200" height="900" tabindex="0"></canvas>
+  <div id="status">Loading Skrybble…</div>
+  <script>
+    window.Module = { canvas: document.getElementById('pdg-canvas') };
+  </script>
+  <script src="skrybble-web.js"></script>
+</body>
+</html>

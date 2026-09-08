@@ -15,8 +15,9 @@ function main() {
         // Pass process.argv from this context to ensure arguments are passed correctly
         const app = new DrawingApp(process.argv);
     } catch (error) {
-        console.error('Failed to start DrawingApp:', error);
+        console.error('Failed to start DrawingApp:', error && error.stack ? error.stack : error);
         pdg.quit();
+        if (typeof globalThis !== 'undefined' && globalThis.skrybbleWeb) throw error;
     }
 }
 

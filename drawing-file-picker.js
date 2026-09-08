@@ -12,6 +12,13 @@ function run(command, args) {
 }
 
 function chooseDrawingFile() {
+    if (typeof globalThis !== 'undefined' && globalThis.skrybbleWeb) {
+        return globalThis.skrybbleWeb.chooseFile({
+            accept: '.skrbl,application/json',
+            prompt: 'Open a Skrybble drawing'
+        });
+    }
+
     if (process.platform === 'darwin') {
         return run('/usr/bin/osascript', [
             '-e',

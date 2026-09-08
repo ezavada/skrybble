@@ -13,6 +13,13 @@ function run(command, args) {
 }
 
 function chooseImageFile() {
+    if (typeof globalThis !== 'undefined' && globalThis.skrybbleWeb) {
+        return globalThis.skrybbleWeb.chooseFile({
+            accept: '.png,.jpg,.jpeg,.gif,.bmp,.skrbl,image/*',
+            prompt: 'Choose an image or Skrybble drawing'
+        });
+    }
+
     if (process.platform === 'darwin') {
         return run('/usr/bin/osascript', [
             '-e',

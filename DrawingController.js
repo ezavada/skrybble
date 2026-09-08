@@ -1343,6 +1343,15 @@ class DrawingController extends Controller {
 
     activateImageTool(filename = null) {
         const selectedFilename = filename || chooseImageFile();
+        if (selectedFilename && typeof selectedFilename.then === 'function') {
+            selectedFilename.then(selected => {
+                if (selected) this.activateImageTool(selected);
+            }).catch(error => {
+                console.error('Failed to choose image:', error);
+                this.showSaveMessage(`Failed to choose image: ${error.message}`);
+            });
+            return true;
+        }
         if (!selectedFilename) return false;
 
         if (path.extname(selectedFilename).toLowerCase() === '.skrbl') {
@@ -1876,6 +1885,15 @@ class DrawingController extends Controller {
 
     openDrawingFile(filename = null) {
         const selectedFilename = filename || chooseDrawingFile();
+        if (selectedFilename && typeof selectedFilename.then === 'function') {
+            selectedFilename.then(selected => {
+                if (selected) this.openDrawingFile(selected);
+            }).catch(error => {
+                console.error('Failed to choose drawing:', error);
+                this.showSaveMessage(`Open failed: ${error.message}`);
+            });
+            return true;
+        }
         if (!selectedFilename) return false;
 
         if (path.extname(selectedFilename).toLowerCase() !== '.skrbl') {
@@ -1953,6 +1971,11 @@ class DrawingController extends Controller {
             const jsonData = JSON.stringify(data, null, 2);
             fs.writeFileSync(this.currentFilename, jsonData, 'utf8');
             console.log('Saved file:', this.currentFilename);
+
+            if (typeof globalThis !== 'undefined' && globalThis.skrybbleWeb) {
+                globalThis.skrybbleWeb.downloadFile(
+                    this.currentFilename, jsonData, 'application/json');
+            }
             
             // Show save confirmation message
             this.showSaveMessage(`Saved to ${this.currentFilename}`);

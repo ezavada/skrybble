@@ -99,6 +99,24 @@ skrybble/
 .\skrybble.ps1 -- drawing.skrbl
 ```
 
+### Web build
+
+The web build downloads the pinned PDG `v1.0.0` Emscripten/Wasm32 release on
+first use, verifies its SHA-256, and caches it under `.pdg/`:
+
+```bash
+./tools/build-web.sh
+python3 -m http.server --directory dist 8080
+```
+
+Then open `http://localhost:8080`. Set `PDG_WASM_DIR` to use artifacts from a
+local PDG Emscripten build, `PDG_CACHE_DIR` to share the release cache between
+clones, or `SKRYBBLE_WEB_OUTPUT` to change the output directory. Pass
+`--refresh-pdg` to download and reverify the pinned release again. The generated
+site is static and contains Skrybble, `libpdg.js`, `libpdg.wasm`, and PDG's
+license bundle. Browser Open/Image operations use the system file picker; Save
+downloads a `.skrbl` file.
+
 The launchers cache the exact public PDG release under `.pdg/` and verify its
 SHA-256 before use. Set `PDG_CACHE_DIR` to share that cache between clones, or
 `PDG_EXECUTABLE` to test with an already installed runtime. Pass

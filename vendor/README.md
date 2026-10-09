@@ -1,8 +1,8 @@
 # Vendored PDG MVC framework
 
 `pdg-mvc-app/` is the complete, unmodified `src/js/mvc-app` directory from the
-public [PDG](https://github.com/ezavada/pdg) `v1.1.1` tag, commit
-`5f39134abea2dbc768387db0ca7f838d274dee38`.
+public [PDG](https://github.com/ezavada/pdg) `v1.2.0` tag, commit
+`9d93b4070bd9df44984ec79c5286d3d420234a7c`.
 
 `pdg-defs.js` is the matching `src/js/pdg-defs.js` file from that commit. It is
 included because the upstream MVC `Button.js` and `Checkbox.js` modules load

@@ -100,6 +100,13 @@ class View extends pdg.AnimatedAttributes {
      * @param {number} frameNum - Frame number
      */
     draw(port, frameNum) {
+        const cameraEnabled = typeof port.getCameraDrawingEnabled === 'function' ? port.getCameraDrawingEnabled() : null;
+        if (cameraEnabled !== null) port.setCameraDrawingEnabled(false);
+        try { this._drawScreenSpace(port, frameNum); }
+        finally { if (cameraEnabled !== null) port.setCameraDrawingEnabled(cameraEnabled); }
+    }
+
+    _drawScreenSpace(port, frameNum) {
         if (!this.isVisible()) return;
         const frame = this.getVisibleFrame();
         if (frame.empty() || !this.getWidth() || !this.getHeight()) return;

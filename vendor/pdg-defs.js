@@ -208,7 +208,6 @@ exports.action_AnimationStart = 44;
 exports.action_PreAnimateLayer = 45;
 exports.action_PostAnimateLayer = 46;
 exports.action_AnimationComplete = 47;
-exports.action_ZoomComplete = 48;
 exports.facing_North = 0;
 exports.facing_East = 64;
 exports.facing_South = 128;
@@ -268,3 +267,5 @@ exports.colliderSource_Frame = 1;
 exports.colliderSource_Animation = 2;
 exports.frameCollider_Bounds = 0;
 exports.frameCollider_AlphaMask = 1;
+
+exports.eventType_ZoomComplete = 28;

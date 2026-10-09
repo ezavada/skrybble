@@ -77,7 +77,8 @@ class ListBox extends View {
         const viewArea = this.getViewArea();
         
         // Make the main list area clickable
-        this.addClickablePart(viewArea, ListBoxClickIDs.VIEW_ID_SELECTION_START);
+        this.removeClickablePart(ListBoxClickIDs.VIEW_ID_SELECTION_START);
+        this.addClickablePart(new pdg.Rect(0, 0, viewArea.width(), viewArea.height()), ListBoxClickIDs.VIEW_ID_SELECTION_START);
         
         // Add scrollbar if needed
         if (this.needsScrollbar()) {
@@ -96,14 +97,23 @@ class ListBox extends View {
     /**
      * Create scrollbar
      */
+    viewAreaChanged(previous) {
+        super.viewAreaChanged(previous);
+        if (this.scrollbar) {
+            const area = this.getViewArea();
+            this.scrollbar.setViewArea(new pdg.Rect(area.right-16, area.top, area.right, area.bottom));
+        }
+    }
+
     createScrollbar() {
+        if (this.scrollbar) return;
         const viewArea = this.getViewArea();
         const scrollbarWidth = 16;
         const scrollbarRect = new pdg.Rect(
             viewArea.right - scrollbarWidth, 
             viewArea.top, 
-            scrollbarWidth, 
-            viewArea.height()
+            viewArea.right,
+            viewArea.bottom
         );
         
         this.scrollbar = new Scrollbar(
@@ -112,10 +122,11 @@ class ListBox extends View {
             ScrollbarOrientation.VERTICAL,
             this.windowTopLineIndex,
             this.visibleTextLines,
-            this.listText.length
+            Math.max(0, this.listText.length - this.visibleTextLines)
         );
         
         // Add scrollbar as observer
+        this.scrollbar.setParentView(this);
         this.scrollbar.addObserver(this);
         
         // Add scrollbar to controller
@@ -134,9 +145,10 @@ class ListBox extends View {
         
         this.listText.push(line);
         
-        // Update scrollbar if it exists
+        // Create the child when content first outgrows the viewport.
+        if (this.needsScrollbar()) this.createScrollbar();
         if (this.scrollbar) {
-            this.scrollbar.setMaxRange(this.listText.length - this.visibleTextLines);
+            this.scrollbar.setMaxRange(Math.max(0, this.listText.length - this.visibleTextLines));
         }
     }
 
@@ -158,24 +170,24 @@ class ListBox extends View {
     /**
      * Draw the list box
      */
+    doScrollWheel(wheel) {
+        return this.isEnabled() && this.scrollbar ? this.scrollbar.doScrollWheel(wheel) : false;
+    }
+
     drawSelf(port, frameNum) {
         const viewArea = this.getViewArea();
         
         // Draw background
         var backgroundAttrs = new pdg.Attributes().fillColor(this.bkColor);
-        port.drawRect(viewArea, backgroundAttrs);
+        port.drawRect(viewArea, this.getDrawingAttributes(backgroundAttrs));
         
         // Draw border
         var borderAttrs = new pdg.Attributes().lineColor(new pdg.Color(0.5, 0.5, 0.5, 1.0)).lineThickness(1);
-        port.drawRect(viewArea, borderAttrs);
+        port.drawRect(viewArea, this.getDrawingAttributes(borderAttrs));
         
         // Draw list items
         this.drawListItems();
         
-        // Draw scrollbar if needed
-        if (this.scrollbar) {
-            this.scrollbar.draw(port, frameNum);
-        }
     }
 
     /**
@@ -198,17 +210,17 @@ class ListBox extends View {
             const itemRect = new pdg.Rect(
                 viewArea.left + 2,
                 viewArea.top + i * lineHeight,
-                viewArea.width() - scrollbarWidth - 4,
-                lineHeight
+                viewArea.right - scrollbarWidth - 2,
+                viewArea.top + (i + 1) * lineHeight
             );
             
             // Draw item background
             if (lineIndex === this.selectedIndex) {
                 var selectedAttrs = new pdg.Attributes().fillColor(this.htColor);
-                port.drawRect(itemRect, selectedAttrs);
+                port.drawRect(itemRect, this.getDrawingAttributes(selectedAttrs));
             } else {
                 var defaultAttrs = new pdg.Attributes().fillColor(new pdg.Color(1.0, 1.0, 1.0, 1.0));
-                port.drawRect(itemRect, defaultAttrs);
+                port.drawRect(itemRect, this.getDrawingAttributes(defaultAttrs));
             }
             
             // Draw item text
@@ -217,16 +229,12 @@ class ListBox extends View {
                 itemRect.top + lineHeight / 2 + 6
             );
             
-            port.drawText(line.text, textPoint, 12, pdg.textStyle_Plain, line.fgcolor);
+            port.drawText(line.text, textPoint, this.getDrawingAttributes(new pdg.Attributes().textSize(12).textStyle(pdg.textStyle_Plain).fillColor(line.fgcolor), true));
             
             // Draw item separator
             if (i < this.visibleTextLines - 1) {
                 const separatorY = itemRect.bottom - 1;
-                port.drawLine(
-                    new pdg.Point(itemRect.left, separatorY),
-                    new pdg.Point(itemRect.right, separatorY),
-                    new pdg.Color(0.8, 0.8, 0.8, 1.0), 1
-                );
+                port.drawLine(new pdg.Point(itemRect.left, separatorY), new pdg.Point(itemRect.right, separatorY), this.getDrawingAttributes(new pdg.Attributes().lineColor(new pdg.Color(0.8, 0.8, 0.8, 1.0)).lineThickness(1), true));
             }
         }
     }
@@ -296,14 +304,14 @@ class ListBox extends View {
         const scrollbarWidth = this.scrollbar ? 16 : 0;
         
         // Check if point is in the list area
-        if (point.x < viewArea.left + 2 || 
-            point.x > viewArea.right - scrollbarWidth - 2 ||
-            point.y < viewArea.top || 
-            point.y > viewArea.bottom) {
+        if (point.x < 2 ||
+            point.x >= viewArea.width() - scrollbarWidth - 2 ||
+            point.y < 0 ||
+            point.y >= viewArea.height()) {
             return -1;
         }
         
-        const relativeY = point.y - viewArea.top;
+        const relativeY = point.y;
         const lineIndex = Math.floor(relativeY / lineHeight);
         const actualIndex = this.windowTopLineIndex + lineIndex;
         
@@ -555,9 +563,11 @@ class ListBox extends View {
      * Cleanup when list box is destroyed
      */
     destroy() {
+        super.destroy();
         // Remove scrollbar observer
         if (this.scrollbar) {
             this.scrollbar.removeObserver(this);
+            this.scrollbar.destroy();
             this.scrollbar = null;
         }
         

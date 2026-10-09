@@ -173,12 +173,17 @@ class ControlAttributes {
         return this;
     }
 
-    draw(port, area, state) {
+    draw(port, area, state, appearance = null) {
         const selected = this.state(state);
         const normal = this.state(ControlState.Normal);
-        const visual = this._drawableState(selected) ? selected
+        let visual = this._drawableState(selected) ? selected
             : (selected !== normal && this._drawableState(normal) ? normal : null);
         if (!visual) return;
+        if (appearance) {
+            const composed = Object.assign(new ControlStateAttributes(), visual);
+            composed.drawAttributes((visual.hasDrawing ? visual.drawing : new pdg.Attributes()).withAppearance(appearance));
+            visual = composed;
+        }
 
         if (visual.hasDrawRoutine && visual.drawRoutine) {
             visual.drawRoutine(port, area, visual);
@@ -189,7 +194,9 @@ class ControlAttributes {
                 visual.hasDrawing ? visual.drawing : new pdg.Attributes()
             );
         } else if (visual.hasDrawing) {
-            port.drawRect(area, visual.drawing);
+            // A centered stroke must stay inside the control viewport.
+            const inset = visual.drawing.getLineStyle() !== pdg.lineStyle_None ? visual.drawing.getLineThickness()/2 : 0;
+            port.drawRect(new pdg.Rect(area).shrink(inset), visual.drawing);
         }
     }
 

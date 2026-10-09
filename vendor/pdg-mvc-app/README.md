@@ -2,6 +2,12 @@
 
 This directory contains a JavaScript port of the PDG C++ Application Framework. The framework provides a complete UI system with views, controllers, and UI components that mirror the functionality of the original C++ implementation.
 
+**API Stability: 2 — Evolving.** The public views, controls, application and
+appearance classes are implemented and supported, but their contract is still
+settling. Compatibility is preserved where practical; breaking changes are
+documented in release notes. This rating also applies to their C++ counterparts.
+See the [engine stability policy](../../../docs/javascript/dox/index.dox).
+
 ## Overview
 
 The JavaScript Application Framework includes:
@@ -18,7 +24,7 @@ The JavaScript Application Framework includes:
 ## File Structure
 
 ```
-src/js/app/
+src/js/mvc-app/
 ├── Observer.js          # Observer pattern implementation
 ├── Application.js       # Application base class
 ├── View.js             # View base class with input handling
@@ -80,6 +86,154 @@ class MyApplication extends Application {
 ```
 
 ### View
+
+`View` now extends `pdg.AnimatedAttributes`, as does every visual control derived from it.
+The matching C++ base is `View : AnimatedAttributes`. Controllers, observers, and
+`ControlAttributes` theme objects are not Animated. MVC views never own a PhysicsBody or expose
+`.physics`.
+
+The Animated location is the center of the unrotated view rectangle; width and
+height are its layout dimensions. Movement, easing and growth update drawing and
+clickable areas. Durations and `animate(deltaSeconds)` use floating-point seconds.
+The top-level controller advances views and child controllers once per PortDraw,
+before rendering. Hidden views continue animating; a controller which neither
+draws nor runs while inactive pauses its views. Do not manually advance a view
+that is already managed by a controller.
+
+`view.animate(deltaSeconds)` accepts finite nonnegative elapsed seconds and
+returns whether animation values changed. For an unmanaged View, call it once
+per update. `controller.animateViews(deltaSeconds)` advances each current View
+once, then its child controllers; it returns no value. Views removed during an
+update are skipped, and Views added during that update start on the next step.
+
+Subclasses can override `viewAreaChanged(previous)` to rebuild custom layout
+after movement or resizing. `previous` is the old unrotated rectangle in Port
+coordinates; `getViewArea()` already returns the new rectangle. Call the base
+implementation first to preserve proportional resizing of clickable regions:
+
+```javascript
+viewAreaChanged(previous) {
+    super.viewAreaChanged(previous);
+    this.updateLayout(); // Your subclass's layout routine.
+}
+```
+
+The C++ hook has the same contract: override
+`void viewAreaChanged(const pdg::Rect& previous)` and call
+`View::viewAreaChanged(previous)` before custom layout.
+
+```javascript
+button.moveBy(80, 0, 0.5, pdg.easeInOutQuad);
+button.resizeTo(180, 48, 0.25, pdg.easeInOutQuad);
+```
+
+`getViewArea()` and `viewArea` return rectangle values in JavaScript. To edit a
+rectangle, modify a copy and call `setViewArea(rect)`. C++ callers likewise use
+`setViewArea()` instead of the removed mutable `getModifiableViewAreaRect()`.
+C++ port-resize flags are grouped in `View::Bind`: `Top`, `Bottom`, `Left`,
+`Right`, `GrowHorz`, `GrowVert`, and `Grow`. Combine edges with `|`, for example
+`View::Bind::Top | View::Bind::Right`. The all-edge flag is `View::Bind::Grow`
+in C++ and `ViewBinding.grow` in JavaScript. Call `view.grow(...)` directly
+to multiply the current width and height, optionally over a duration in seconds.
+
+Appearance tracks such as `view.changeFillOpacity(0.2, 0.5)` run on the same
+controller clock. For custom drawing, pass the View as Attributes and use a
+centered unit rectangle (`new pdg.Rect(-0.5, -0.5, 0.5, 0.5)`): the matrix maps it
+to the view area. Drawings still copy this sample. Controls use their current ControlAttributes state as the base, then apply only
+appearance channels explicitly set or scheduled on the View. Unset channels keep
+the theme, including hovered/pressed/disabled states. Explicit default values
+(such as `roundedCorners(0)` or `textSize(12)`) also override the theme. Labels
+keep the theme foreground color and inherit the View's text/font, fill opacity,
+and blend settings. Text-size storage in JavaScript controls uses the inherited attribute
+instead of hiding its methods with a numeric instance property.
+
+Focused checks (run from the repository root):
+
+```sh
+./test/demo --automated mvc
+./test/unit mvc_animation mvc-app
+ctest --test-dir build/darwin/arm64/pdg -R '^pdg-view-animation$' --output-on-failure
+```
+
+The gallery check opens a window, animates a real button using PortDraw, verifies
+the resulting layout/clickable area and animated appearance, then closes automatically.
+It includes the assertions from the retired standalone MVC probes.
+
+Rotation, reflection, scale and shear affect the whole clipped View, including
+text, images and custom draw routines. Input uses the inverse of the same affine
+transform; a view collapsed to zero scale cannot be hit. `getViewArea()` remains
+the unrotated layout rectangle. Point conversion methods include the transform
+outside `drawSelf()`; during drawing, `localToGlobal()` produces layout coordinates
+because the View applies its transform to the completed drawing. Rectangle
+conversion methods return bounding rectangles of all four converted corners.
+
+A `ScrollingView` clips to `getViewFrame()` while its content uses `getViewArea()`.
+Moving the content scrolls within the frame. Resize the viewport with
+`setViewFrame(rect)`. Port clipping is intersected and restored, including when
+`drawSelf()` throws. Transformed clipping follows the actual viewport, not its
+axis-aligned bounds. Each transformed View reuses an offscreen surface; resizing
+the viewport reallocates it. Destroy a View when finished to release that surface.
+
+For composite controls, `child.setParentView(parent)` links drawing, clipping,
+visibility and coordinate conversion. Both views must belong to the same
+Controller. The controller still steps each once; the parent draws its children
+once in insertion order. Children keep Port-coordinate layout rectangles and
+follow their parent's movement and resizing. `setParentView(null)` detaches without
+deleting either view; cycles are rejected. ListBox uses this for its scrollbar.
+Custom composites can override `viewAreaChanged(previous)` to refine child layout
+after calling the base implementation.
+
+A custom control can compose its own theme with
+`this.getDrawingAttributes(themeAttributes)`; pass `true` as the second argument
+for a label. The equivalent general-purpose snapshot is
+`themeAttributes.withAppearance(view, textOnly)`. Neither source is modified.
+Built-in rectangle backgrounds inset their centered stroke by half its thickness,
+so all four borders fit inside the View's clip. Custom draw routines should inset
+border rectangles themselves; for a 5-pixel border use `new pdg.Rect(area).shrink(2.5)`.
+Default checkbox boxes use the larger of font ascent plus 2 pixels or capital
+height plus 4 pixels, with a bold filled checkmark. Radio circles keep a diameter
+equal to the label's text size (14 pixels by default). Both use
+`Font.getFontCapHeight()` to center their indicators against the label capitals.
+
+Controllers capture each mouse press on its original View and part. That View
+receives drag motion and mouse-up even outside its bounds; an outside release
+has `part == -1` and does not produce a click. Clicks require the same mouse
+button to release over the original enabled, visible part. Moving out clears
+a button's pressed appearance; returning before release restores it. Removing
+the View or deactivating its controller cancels capture and resets its state.
+Scrollbar arrow repeat stops on exit, while thumb dragging continues outside
+the track until release. Put actions in `doLeftClick()`/`doRightClick()` and use
+`doMouseUp()` for release cleanup.
+
+Controllers route `eventType_ScrollWheel` to the visible view under the pointer,
+then through its visual parents until `doScrollWheel(wheelInfo)` returns true.
+Vertical scrollbars consume `vertDelta` (positive down), horizontal scrollbars use
+`horizDelta` (positive right). Each unit moves one configured step; position clamps
+to the range, and a control at its limit lets the event bubble. ListBox forwards
+wheel events over its rows to its scrollbar. Disabled controls ignore wheel input.
+The C++ View/Scrollbar/ListBox hooks use `const ScrollWheelInfo*` with the same behavior.
+
+Custom ControlAttributes draw routines receive the composed attributes as
+`state.drawing`; use them when drawing to honor the View overrides:
+
+```javascript
+const themed = new ControlAttributes().stateDrawRoutine(ControlState.Normal,
+    (port, area, state) => {
+        const base = new pdg.Attributes().fillColor('navy').roundedCorners(8);
+        port.drawRect(area, base.withAppearance(state.drawing || new pdg.Attributes()));
+    });
+button.setAttributes(themed);
+button.fillOpacity(1).changeFillOpacity(0.5, 0.8);
+button.rotateTo(0.12, 0.8);
+```
+
+The MVC gallery is the demo entry: `test/demo mvc`, `test/demo --web mvc`, or
+`test/demo --ios mvc`. `control-gallery` is a compatibility alias for `mvc`.
+`test/mvc` also opens the gallery. Use `test/unit mvc-app mvc_animation` for specs
+and `tools/node test/emscripten/check_mvc_gallery.js` for real browser input checks.
+The gallery includes animated and reflected buttons, a clipped scrolling viewport,
+a resizing ListBox with a scrollbar, and default/custom dialogs.
+
 
 ```javascript
 const { View, Rect } = require('./View');
@@ -145,6 +299,37 @@ An interactive parity gallery is available at `test/js/app-control-gallery.js`:
 ```sh
 ./pdg test/js/app-control-gallery.js
 ```
+
+For the browser gallery, serve the repository root over HTTP:
+
+```sh
+python3 -m http.server 8123 --bind 127.0.0.1
+```
+
+Open <http://127.0.0.1:8123/test/ui.html?interactive=1&kind=demo&suites=mvc>. It stays open
+for mouse interaction, including the default and themed dialogs. The browser
+uses `build/wasm/wasm32/libpdg.js` and `libpdg.wasm`; rebuild them after native
+or binding changes. With Emscripten enabled by `./configure`, use `make pdg-js`.
+If the generated root Makefile predates your Emscripten installation, use:
+
+```sh
+PDG_ROOT="$PWD" EMSDK_PYTHON="$(command -v python3)" \
+  EM_CACHE="$PWD/build/wasm/wasm32/emscripten-cache" \
+  emmake make --jobs=8 -f tools/pdg-js.mak
+```
+
+The finite browser check is
+<http://127.0.0.1:8123/test/ui.html?test=mvc&automated=1>.
+It verifies real PortDraw frames, a moving control, and a View whose color and
+opacity change in seconds before closing the drawing port. The same check runs
+on desktop with `./pdg test/js/app-control-gallery.js --ui-test`.
+Shared appearance and drawing specs can be run at
+<http://127.0.0.1:8123/test/unit.html?specs=animatedattributes,drawing>.
+
+Browser AnimatedAttributes exposes both APIs and can be subclassed with
+`class MyView extends pdg.AnimatedAttributes`. Native drawing calls accept the
+adjusted Attributes base directly; Drawing elements still copy a snapshot.
+
 
 ### Button
 
@@ -439,8 +624,8 @@ Override the appropriate methods in your View or Controller subclasses to handle
 Run the test suite to verify the framework functionality:
 
 ```bash
-cd src/js/app
-node test.js
+./test/unit mvc-app mvc_animation
+./test/demo --automated mvc
 ```
 
 The test suite includes:
@@ -466,7 +651,7 @@ This JavaScript framework is designed to work alongside the C++ PDG framework. T
 To use this framework in a PDG application:
 
 1. Include the JavaScript files in your project
-2. Create mock implementations of PDG managers (EventManager, ResourceManager, etc.)
+2. Use the real PDG managers supplied by `require('pdg')`
 3. Extend the base classes to implement your application logic
 4. Use the UI components to build your interface
 
@@ -477,7 +662,8 @@ While the JavaScript version maintains API compatibility, there are some differe
 - **Memory Management**: JavaScript uses garbage collection instead of reference counting
 - **Type Safety**: JavaScript is dynamically typed, so type checking is less strict
 - **Event System**: Simplified event system compared to the full PDG event manager
-- **Graphics**: Mock graphics implementation for testing (replace with actual PDG graphics)
+- **Graphics**: Views render through PDG Ports and Drawing/AnimatedAttributes.
+  `mocks.js` supports isolated tests; applications use the real runtime.
 
 ## Future Enhancements
 
@@ -485,7 +671,6 @@ Potential future improvements:
 
 - Additional UI components (ProgressBar, Slider, TabControl, etc.)
 - More sophisticated event handling
-- Integration with actual PDG graphics system
 - Performance optimizations
 - TypeScript definitions
 - More comprehensive test coverage

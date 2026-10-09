@@ -88,7 +88,7 @@ skrybble/
 ### Running the Application
 
 ```bash
-# macOS (Apple silicon): downloads and verifies PDG v1.0.0 on first run
+# macOS (Apple silicon): downloads and verifies PDG v1.1.1 on first run
 ./skrybble
 
 # Load an existing file
@@ -101,7 +101,7 @@ skrybble/
 
 ### Web build
 
-The web build downloads the pinned PDG `v1.0.0` Emscripten/Wasm32 release on
+The web build downloads the pinned PDG `v1.1.1` Emscripten/Wasm32 release on
 first use, verifies its SHA-256, and caches it under `.pdg/`:
 
 ```bash
@@ -329,7 +329,7 @@ Each shape implements:
 
 ## Dependencies
 
-- **PDG v1.0.0** - Pinned public runtime; downloaded by the portable launcher
+- **PDG v1.1.1** - Pinned public runtime; downloaded by the portable launcher
 - **PDG MVC Framework** - Required public-tag sources are vendored with license and provenance
 - **Node.js APIs** - Supplied by the PDG runtime for filesystem operations and modules
 - **Native Graphics** - PDG provides cross-platform window and drawing

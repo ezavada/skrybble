@@ -45,8 +45,8 @@ class EditText extends View {
         this.allowedKeys = '';
         this.blockedKeys = '';
         this.caretPos = 0;
-        this.highlightStartPoint = new Point(0, 0);
-        this.highlightEndPoint = new Point(0, 0);
+        this.highlightStartPoint = new pdg.Point(0, 0);
+        this.highlightEndPoint = new pdg.Point(0, 0);
         this.highlightStartCharIndex = 0;
         this.highlightEndCharIndex = 0;
         this.maxChars = 256; // Default maximum characters
@@ -83,7 +83,8 @@ class EditText extends View {
      */
     calcClickableAreas() {
         const viewArea = this.getViewArea();
-        this.addClickablePart(viewArea, EditTextClickIDs.CLICK_ID_EDITBOXVIEW);
+        this.removeClickablePart(EditTextClickIDs.CLICK_ID_EDITBOXVIEW);
+        this.addClickablePart(new pdg.Rect(0, 0, viewArea.width(), viewArea.height()), EditTextClickIDs.CLICK_ID_EDITBOXVIEW);
     }
 
     /**
@@ -95,7 +96,7 @@ class EditText extends View {
         
         // Draw background
         var backgroundAttrs = new pdg.Attributes().fillColor(this.mbkColor);
-        port.drawRect(viewArea, backgroundAttrs);
+        port.drawRect(viewArea, this.getDrawingAttributes(backgroundAttrs));
         
         // Draw border
         this.drawBorder();
@@ -126,7 +127,7 @@ class EditText extends View {
             new pdg.Color(0.7, 0.7, 0.7, 1.0);  // Gray when not focused
         
         var borderAttrs = new pdg.Attributes().lineColor(borderColor).lineThickness(1);
-        port.drawRect(viewArea, borderAttrs);
+        port.drawRect(viewArea, this.getDrawingAttributes(borderAttrs));
     }
 
     /**
@@ -138,11 +139,12 @@ class EditText extends View {
         
         // Calculate text position
         const textX = viewArea.left + LEFT_MARGIN;
-        const textY = viewArea.top + viewArea.height() / 2 + this.fontSize / 2;
+        const textAttrs = this.getDrawingAttributes(new pdg.Attributes().textSize(this.fontSize).textStyle(this.style), true);
+        const textY = viewArea.top + viewArea.height() / 2 + textAttrs.getTextSize() / 2;
         
         // Draw text
         if (this.text) {
-            port.drawText(this.text, new Point(textX, textY), this.fontSize, this.style, this.textColor);
+            port.drawText(this.text, new pdg.Point(textX, textY), this.getDrawingAttributes(new pdg.Attributes().textSize(this.fontSize).textStyle(this.style).fillColor(this.textColor), true));
         }
     }
 
@@ -161,9 +163,9 @@ class EditText extends View {
         const selY = viewArea.top + TEXT_HEIGHT_OFFSET;
         const selHeight = viewArea.height() - TEXT_HEIGHT_OFFSET * 2;
         
-        const selectionRect = new pdg.Rect(startX, selY, endX - startX, selHeight);
+        const selectionRect = new pdg.Rect(startX, selY, endX, selY + selHeight);
         var selectionAttrs = new pdg.Attributes().fillColor(new pdg.Color(0.3, 0.5, 1.0, 0.3)); // Light blue highlight
-        port.drawRect(selectionRect, selectionAttrs);
+        port.drawRect(selectionRect, this.getDrawingAttributes(selectionAttrs));
     }
 
     /**
@@ -179,11 +181,7 @@ class EditText extends View {
         const caretHeight = viewArea.height() - TEXT_HEIGHT_OFFSET * 2;
         
         // Draw caret as a vertical line
-        port.drawLine(
-            new pdg.Point(caretX, caretY),
-            new pdg.Point(caretX, caretY + caretHeight),
-            this.textColor, 1
-        );
+        port.drawLine(new pdg.Point(caretX, caretY), new pdg.Point(caretX, caretY + caretHeight), this.getDrawingAttributes(new pdg.Attributes().lineColor(this.textColor).lineThickness(1), true));
     }
 
     /**
@@ -192,9 +190,7 @@ class EditText extends View {
      * @returns {number} Text width in pixels
      */
     getTextWidth(text) {
-        // In a real implementation, this would use the port's text measurement
-        // For now, we'll use a simple approximation
-        return text.length * this.fontSize * 0.6; // Rough character width
+        return this._measureText(text, new pdg.Attributes().textSize(this.fontSize).textStyle(this.style));
     }
 
     /**
@@ -632,10 +628,7 @@ class EditText extends View {
      * Cleanup when EditText is destroyed
      */
     destroy() {
-        // Unregister event handlers
-        this.eventMgr.removeHandler(this, PDGEventTypes.eventType_KeyPress);
-        this.eventMgr.removeHandler(this, PDGEventTypes.eventType_Timer);
-        
+        super.destroy();
         // Stop caret timer
         if (this.mbHasFocus) {
             this.timerMgr.cancelTimer('EDIT_CARET_TIMER');

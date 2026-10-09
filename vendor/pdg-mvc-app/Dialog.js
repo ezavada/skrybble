@@ -24,6 +24,7 @@ class DialogBackgroundView extends View {
         backgroundArea.top -= 1;
         backgroundArea.right += 1;
         backgroundArea.bottom += 1;
+        this.setViewArea(backgroundArea);
         this.addClickablePart(new pdg.Rect(0, 0,
             backgroundArea.width(), backgroundArea.height()), 1);
     }
@@ -31,13 +32,13 @@ class DialogBackgroundView extends View {
     drawSelf(port) {
         const normal = this.attributes.state(ControlState.Normal);
         if (normal.hasDrawRoutine || normal.hasImage || normal.hasDrawing) {
-            this.attributes.draw(port, this.getViewArea(), ControlState.Normal);
+            this.attributes.draw(port, this.getViewArea(), ControlState.Normal, this);
             return;
         }
-        port.drawRect(this.getViewArea(), new pdg.Attributes()
-            .fillColor(new pdg.Color(1, 1, 1, 1)));
-        port.drawRect(this.getViewArea(), new pdg.Attributes()
-            .lineColor(new pdg.Color(0, 0, 0, 1)).lineThickness(1));
+        port.drawRect(this.getViewArea(), this.getDrawingAttributes(new pdg.Attributes()
+            .fillColor(new pdg.Color(1, 1, 1, 1))));
+        port.drawRect(new pdg.Rect(this.getViewArea()).shrink(0.5), this.getDrawingAttributes(new pdg.Attributes()
+            .lineColor(new pdg.Color(0.3, 0.32, 0.35, 1)).lineThickness(1)));
     }
 }
 
@@ -78,7 +79,6 @@ class Dialog extends Controller {
         // Create with key press events enabled
         super(parentController, null, null, true, true, true, false, true);
         
-        this.buttonWithMouseDown = null;
         this.okButtonId = okButtonId;
         this.cancelButtonId = cancelButtonId;
         this.flags = flags;
@@ -140,12 +140,7 @@ class Dialog extends Controller {
      * @returns {boolean} true if handled
      */
     doMouseDown(mouseInfo, view, id, part) {
-        // Check if this is a button click
-        if (view && typeof view.setClickState === 'function') {
-            // This is likely a button
-            view.setClickState(true);
-            this.buttonWithMouseDown = view;
-        }
+        super.doMouseDown(mouseInfo, view, id, part);
 
         // Modal dialogs swallow all mouse-down events, including clicks
         // outside their background, just like the C++ Dialog controller.
@@ -161,11 +156,7 @@ class Dialog extends Controller {
      * @returns {boolean} true if handled
      */
     doMouseUp(mouseInfo, view, id, part) {
-        // Check if this is a button release
-        if (this.buttonWithMouseDown) {
-            this.buttonWithMouseDown.setClickState(false);
-            this.buttonWithMouseDown = null;
-        }
+        super.doMouseUp(mouseInfo, view, id, part);
         // Allow Controller.onMouseUp() to follow with doLeftClick().
         return false;
     }
@@ -231,9 +222,7 @@ class Dialog extends Controller {
         const dx = this.dialogRect.left - oldTopLeft.x;
         const dy = this.dialogRect.top - oldTopLeft.y;
         for (const viewPair of this.views) {
-            const area = viewPair.first.getViewArea();
-            area.moveRight(dx);
-            area.moveDown(dy);
+            viewPair.first.moveBy(dx, dy);
         }
         this.cachedPortDrawingArea = resizedPort.getDrawingArea();
     }
@@ -382,9 +371,6 @@ class Dialog extends Controller {
      * Cleanup when dialog is destroyed
      */
     destroy() {
-        // Clean up button reference
-        this.buttonWithMouseDown = null;
-        
         // Clean up visibility save array
         this.viewVisibilitySave = null;
         

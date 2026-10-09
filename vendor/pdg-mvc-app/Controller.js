@@ -64,6 +64,9 @@ class Controller {
         this.views = [];
         this.children = [];
         this.lastClicked = null;
+        this.mousePress = null;
+        this.lastClickedPart = -1;
+        this.backgroundMouseDown = false;
         this.clickCount = 0;
         this.rightClick = false;
         this.active = true;
@@ -111,6 +114,7 @@ class Controller {
         this.mouseUpHandler = pdg.onMouseUp((eventData) => { return this.onMouseUp(eventData); });
         this.mouseDownHandler = pdg.onMouseDown((eventData) => { return this.onMouseDown(eventData); });
         this.mouseMoveHandler = pdg.onMouseMove((eventData) => { return this.onMouseMove(eventData); });
+        this.scrollWheelHandler = pdg.on(pdg.eventType_ScrollWheel, eventData => this.onScrollWheel(eventData));
         
         if (wantKeyUpDown) {
             this.keyUpHandler = pdg.onKeyUp((eventData) => { return this.onKeyUp(eventData); });
@@ -154,6 +158,7 @@ class Controller {
         cancel('mouseUpHandler', pdg.eventType_MouseUp);
         cancel('mouseDownHandler', pdg.eventType_MouseDown);
         cancel('mouseMoveHandler', pdg.eventType_MouseMove);
+        cancel('scrollWheelHandler', pdg.eventType_ScrollWheel);
         cancel('keyUpHandler', pdg.eventType_KeyUp);
         cancel('keyDownHandler', pdg.eventType_KeyDown);
         cancel('keyPressHandler', pdg.eventType_KeyPress);
@@ -226,8 +231,12 @@ class Controller {
      * @param {View} view - The view to remove
      */
     removeView(view) {
+        if (this.mousePress && this.isViewWithin(this.mousePress.view, view)) this.cancelMousePress();
+        if (this.isViewWithin(this.lastClicked, view)) this.lastClicked = null;
+        if (this.isViewWithin(this.viewOnLastMouseMoved, view)) this.viewOnLastMouseMoved = null;
         for (let i = 0; i < this.views.length; i++) {
             if (this.views[i].first === view) {
+                view.setParentView(null);
                 this.views.splice(i, 1);
                 return;
             }
@@ -246,6 +255,8 @@ class Controller {
      * Remove all views from the controller
      */
     removeAllViews() {
+        this.cancelMousePress();
+        this.lastClicked = this.viewOnLastMouseMoved = null;
         this.views.length = 0;
     }
 
@@ -284,8 +295,9 @@ class Controller {
         for (let i = this.views.length - 1; i >= 0; i--) {
             const viewPair = this.views[i];
             const view = viewPair.first;
-            if (view.isVisible() && view.pointInViewVisibleArea(screenPoint)) {
-                return view;
+            if (!view.getParentView()) {
+                const hit=view.getHitView(screenPoint);
+                if (hit) return hit;
             }
         }
         return null;
@@ -333,11 +345,27 @@ class Controller {
         return new ControlAttributes();
     }
 
-     /**
-     * Draw all the views, then call drawViews for active children
-     * @param {pdg.Port} port - Port to draw into
-     * @param {number} frameNum - Frame number
+    /**
+     * Advance views and child controllers once, in floating-point seconds.
+     * Hidden views continue; controllers excluded from drawing pause their views.
+     * Removed views are skipped and newly added views start on the next step.
+     * PortDraw calls this automatically; do not also advance managed views.
+     * @param {number} deltaSeconds - Finite nonnegative elapsed seconds.
+     * @returns {undefined}
      */
+    animateViews(deltaSeconds) {
+        if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0)
+            throw new RangeError('View animation requires finite nonnegative seconds');
+        if (!this.drawInactive && !this.active) return;
+        const views = [...new Set(this.views.map(pair => pair.first))];
+        for (const view of views) {
+            if (this.views.some(pair => pair.first === view)) view.animate(deltaSeconds);
+        }
+        for (const child of this.children.slice()) {
+            if (this.children.includes(child)) child.animateViews(deltaSeconds);
+        }
+    }
+
     drawViews(port, frameNum) {
         if (!this.drawInactive && !this.active) {
             return; // Don't draw if we are inactive unless we draw while inactive
@@ -346,7 +374,7 @@ class Controller {
         // Draw back to front, so most recently added overlays oldest
         for (const viewPair of this.views) {
             const view = viewPair.first;
-            view.draw(port, frameNum);
+            if (!view.getParentView()) view.draw(port, frameNum);
         }
 
         // Draw all active children
@@ -363,10 +391,20 @@ class Controller {
      * @returns {boolean} true if handled
      */
     onPortDraw(eventData) {
-        if (!this.parent) {
+        if (!this.parent && eventData && eventData.port === this.port) {
             // the top level controller handles port draw events
             // but this keeps us safe if a subclass overrides it
             // and calls super to do some additional drawing
+            if (this._lastAnimationFrame === eventData.frameNum && this._lastAnimationTime !== undefined)
+                return false;
+            const now = pdg.tm.getMilliseconds();
+            // PortDraw has no delta; the scheduler clock is explicitly converted
+            // from milliseconds to the public animation unit, seconds.
+            const seconds = this._lastAnimationTime === undefined ? 0
+                : ((now - this._lastAnimationTime) >>> 0) / 1000;
+            this._lastAnimationTime = now;
+            this._lastAnimationFrame = eventData.frameNum;
+            this.animateViews(seconds);
             this.drawViews(eventData.port, eventData.frameNum);
         }
         return false; // always propagate port draw events as much as possible
@@ -382,59 +420,96 @@ class Controller {
     }
 
     /**
-     * Handle mouse down events
-     * @param {Object} eventData - Event data
-     * @returns {boolean} true if handled
+     * Route wheel input from the hit view through its visual parents.
+     * @param {Object} eventData - ScrollWheelInfo (positive vertDelta scrolls down).
+     * @returns {boolean} true if consumed
      */
-    onMouseDown(eventData) {
+    onScrollWheel(eventData) {
         if (!this.active) return false;
-        const hitView = this.getHitView(eventData.mousePos);
-        const hitViewID = hitView ? hitView.getID() : -1;
-        const hitViewPart = hitView ? hitView.getPartClicked(eventData.mousePos) : -1;
-        if ((hitView == this.lastClicked) && (eventData.lastClickElapsed <= DBL_CLICK_TIME)) {
-            this.clickCount++;
-        } else {
-            this.clickCount = 1;
-            this.lastClicked = hitView;
-            this.rightClick = eventData.rightButton;
+        let view = this.getHitView(pdg.gfx.getMouse());
+        while (view) {
+            if (view.isEnabled() && view.doScrollWheel(eventData)) return true;
+            view = view.getParentView();
         }
-        let handled = this.doMouseDown(eventData, hitView, hitViewID, hitViewPart);
-        // handling for non-modal dialogs and other types of nested controllers
-        if (!handled && this.parent && hitView == null) {
-            handled = this.parent.onMouseDown(eventData);
-        }
-        return handled;
+        return false;
     }
 
-    /**
-     * Handle mouse up events
-     * @param {Object} eventData - Event data
-     * @returns {boolean} true if handled
-     */
+    // Capture belongs to a press, independently of the last completed click.
+    isViewWithin(view, ancestor) {
+        for (; view; view = view.getParentView()) if (view === ancestor) return true;
+        return false;
+    }
+
+    cancelMousePress() {
+        this.backgroundMouseDown = false;
+        const press = this.mousePress;
+        this.mousePress = null;
+        if (!press) return;
+        this.lastClicked = null;
+        this.clickCount = 0;
+        press.view.doMouseLeave(press.event, press.id, press.part);
+        press.view.doMouseUp(press.event, press.id, -1);
+        this.viewOnLastMouseMoved = null;
+    }
+
+    onMouseDown(eventData) {
+        if (!this.active) return false;
+        // A second mouse button cannot steal an in-progress press.
+        if (this.mousePress) return true;
+        const hitView = this.getHitView(eventData.mousePos);
+        if (hitView && !hitView.isEnabled()) return true;
+        const id = hitView ? hitView.getID() : -1;
+        const part = hitView ? hitView.getPartClicked(eventData.mousePos) : -1;
+        if (hitView === this.lastClicked && part === this.lastClickedPart && !!eventData.rightButton === this.rightClick &&
+            eventData.lastClickElapsed <= DBL_CLICK_TIME) ++this.clickCount;
+        else this.clickCount = 1;
+        this.rightClick = !!eventData.rightButton;
+        if (hitView) {
+            if (this.viewOnLastMouseMoved && this.viewOnLastMouseMoved !== hitView)
+                this.doMouseLeave(eventData, this.viewOnLastMouseMoved, this.lastHitViewID, this.lastHitViewPart);
+            this.viewOnLastMouseMoved = hitView;
+            this.lastHitViewID = id;
+            this.lastHitViewPart = part;
+            this.mousePress = {view: hitView, id, part, rightButton: this.rightClick, inside: true, event: eventData};
+        }
+        const handled = this.doMouseDown(eventData, hitView, id, part);
+        this.backgroundMouseDown = !hitView && (handled || !this.parent);
+        if (handled || hitView) return true;
+        return this.parent ? this.parent.onMouseDown(eventData) : false;
+    }
+
     onMouseUp(eventData) {
         if (!this.active) return false;
-        const hitView = this.getHitView(eventData.mousePos);
-        const hitViewID = hitView ? hitView.getID() : -1;
-        const hitViewPart = hitView ? hitView.getPartClicked(eventData.mousePos) : -1;
-        let handled = this.doMouseUp(eventData, hitView, hitViewID, hitViewPart);
-        if (!handled) {
-            // after doMouseUp, do a click method if this was a complete click,
-            // that is, the mouse was released over the same view that was clicked
-            if (hitView == this.lastClicked) {
-                if (this.rightClick) {
-                    handled = this.doRightClick(eventData, hitView, hitViewID, hitViewPart);
-                } else if (this.clickCount > 1) {
-                    handled = this.doDoubleClick(eventData, hitView, hitViewID, hitViewPart, this.clickCount);
-                } else {
-                    handled = this.doLeftClick(eventData, hitView, hitViewID, hitViewPart);
-                }
+        const press = this.mousePress;
+        if (!press) {
+            if (this.backgroundMouseDown) {
+                this.backgroundMouseDown = false;
+                return this.doMouseUp(eventData, null, -1, -1);
             }
+            // An unmatched release must never operate the view under the pointer.
+            return this.parent ? this.parent.onMouseUp(eventData) : false;
         }
-        // handling for non-modal dialogs and other types of nested controllers
-        if (!handled && this.parent && hitView == null) {
-            handled = this.parent.onMouseUp(eventData);
+        if (!!eventData.rightButton !== press.rightButton) return true;
+        const hit = this.getHitView(eventData.mousePos);
+        const complete = hit === press.view && hit.isEnabled() && hit.isVisible() &&
+            hit.getPartClicked(eventData.mousePos) === press.part;
+        this.mousePress = null;
+        if (!complete && press.inside)
+            this.doMouseLeave(eventData, press.view, press.id, press.part);
+        this.lastClicked = complete ? press.view : null;
+        this.lastClickedPart = complete ? press.part : -1;
+        if (!complete) this.viewOnLastMouseMoved = null;
+        if (!complete) this.clickCount = 0;
+        const handled = this.doMouseUp(eventData, press.view, press.id, complete ? press.part : -1);
+        if (handled) return true;
+        // Release callbacks may remove, hide, or disable their view.
+        if (complete && this.active && this.getHitView(eventData.mousePos) === press.view &&
+            press.view.isEnabled() && press.view.isVisible()) {
+            if (press.rightButton) this.doRightClick(eventData, press.view, press.id, press.part);
+            else if (this.clickCount > 1) this.doDoubleClick(eventData, press.view, press.id, press.part, this.clickCount);
+            else this.doLeftClick(eventData, press.view, press.id, press.part);
         }
-        return handled;
+        return true;
     }
 
     /**
@@ -444,6 +519,25 @@ class Controller {
      */
     onMouseMove(eventData) {
         if (!this.active) return false;
+        const press = this.mousePress;
+        if (press) {
+            press.event = eventData;
+            if (!press.view.isEnabled() || !press.view.isVisible()) {
+                this.cancelMousePress();
+                return false;
+            }
+            const hit = this.getHitView(eventData.mousePos);
+            const inside = hit === press.view && hit.getPartClicked(eventData.mousePos) === press.part;
+            if (inside !== press.inside) {
+                press.inside = inside;
+                this.viewOnLastMouseMoved = inside ? press.view : null;
+                if (inside) this.doMouseEnter(eventData, press.view, press.id, press.part);
+                else this.doMouseLeave(eventData, press.view, press.id, press.part);
+            }
+            if (this.mousePress === press)
+                this.doMouseMove(eventData, press.view, press.id, inside ? press.part : -1);
+            return false;
+        }
         // this generates synthetic mouse enter and leave events to views
         const hitView = this.getHitView(eventData.mousePos);
         const hitViewID = hitView ? hitView.getID() : -1;
@@ -454,14 +548,14 @@ class Controller {
             if (this.viewOnLastMouseMoved) {  // if changed, call the leave for last place
                 this.doMouseLeave(eventData, this.viewOnLastMouseMoved, this.lastHitViewID, this.lastHitViewPart);
             }
-            if (hitView && (hitViewID > -1)) {
+            if (hitView) {
                 // if new view is valid, enter it
                 this.doMouseEnter(eventData, hitView, hitViewID, hitViewPart);
             }
             this.viewOnLastMouseMoved = hitView;
             this.lastHitViewID = hitViewID;
             this.lastHitViewPart = hitViewPart;
-        } else if (hitView && (hitViewID > -1)) { 
+        } else if (hitView) {
             // still in same valid view, do mouse move
             this.doMouseMove(eventData, hitView, hitViewID, hitViewPart);
         }
@@ -512,6 +606,7 @@ class Controller {
         if (!this.active) return false;
         const mousePos = pdg.gfx.getMouse();
         const hitView = this.getHitView(mousePos);
+        if (hitView && !hitView.isEnabled()) return false;
         const hitViewID = hitView ? hitView.getID() : -1;
         const hitViewPart = hitView ? hitView.getPartClicked(mousePos) : -1;
         return this.doKeyDown(eventData, hitView, hitViewID, hitViewPart);
@@ -526,6 +621,7 @@ class Controller {
         if (!this.active) return false;
         const mousePos = pdg.gfx.getMouse();
         const hitView = this.getHitView(mousePos);
+        if (hitView && !hitView.isEnabled()) return false;
         const hitViewID = hitView ? hitView.getID() : -1;
         console.log('eventData', eventData);
         const hitViewPart = hitView ? hitView.getPartClicked(mousePos) : -1;
@@ -541,6 +637,7 @@ class Controller {
         if (!this.active) return false;
         const mousePos = pdg.gfx.getMouse();
         const hitView = this.getHitView(mousePos);
+        if (hitView && !hitView.isEnabled()) return false;
         const hitViewID = hitView ? hitView.getID() : -1;
         const hitViewPart = hitView ? hitView.getPartClicked(mousePos) : -1;
         return this.doKeyPress(eventData, hitView, hitViewID, hitViewPart);
@@ -862,6 +959,7 @@ class Controller {
      * @param {boolean} active - Whether the controller is active
      */
     setActive(active) {
+        if (!active) this.cancelMousePress();
         this.active = active;
     }
 
@@ -913,8 +1011,8 @@ class Controller {
             return false;
         }
 
-        if (eventType = pdg.eventType_PortDraw && this.port == eventData.port) {
-            this.drawViews(); // don't return true, others may want to draw in this port
+        if (eventType === pdg.eventType_PortDraw) {
+            return this.onPortDraw(eventData);
         }
 
         return false; // We didn't handle this event
@@ -935,6 +1033,9 @@ class Controller {
         }
         
         this._unregisterEventHandlers();
+        for (const {first:view} of this.views.slice()) {
+            if (this.views.some(pair=>pair.first===view) && typeof view.destroy === "function") view.destroy();
+        }
         this.removeAllViews();
     }
 }

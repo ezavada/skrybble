@@ -97,18 +97,18 @@ class Scrollbar extends View {
         this.scrollSliderClicked = false;
         this.attributes = new ControlAttributes();
         this.attributes
-            .stateAttributes(ControlState.Normal, new pdg.Attributes()
-                .fillColor(new pdg.Color(76 / 255, 100 / 255, 126 / 255, 1)))
-            .stateAttributes(ControlState.Decrement, new pdg.Attributes()
-                .fillColor(new pdg.Color(0.8, 0.8, 0.8, 1)).lineColor(new pdg.Color(0.6, 0.6, 0.6, 1)))
-            .stateAttributes(ControlState.DecrementPressed, new pdg.Attributes()
-                .fillColor(new pdg.Color(0.6, 0.6, 0.6, 1)).lineColor(new pdg.Color(0, 0, 0, 1)))
-            .stateAttributes(ControlState.Increment, new pdg.Attributes()
-                .fillColor(new pdg.Color(0.8, 0.8, 0.8, 1)).lineColor(new pdg.Color(0.6, 0.6, 0.6, 1)))
-            .stateAttributes(ControlState.IncrementPressed, new pdg.Attributes()
-                .fillColor(new pdg.Color(0.6, 0.6, 0.6, 1)).lineColor(new pdg.Color(0, 0, 0, 1)))
-            .stateAttributes(ControlState.Thumb, new pdg.Attributes()
-                .fillColor(new pdg.Color(1, 1, 1, 1)).lineColor(new pdg.Color(0, 0, 0, 1)).roundedCorners(3));
+            .stateAttributes(ControlState.Normal, new pdg.Attributes().fillColor(new pdg.Color(235/255,239/255,244/255,1))
+                .lineStyle(pdg.lineStyle_Solid).lineColor(new pdg.Color(214/255,221/255,230/255,1)).roundedCorners(4))
+            .stateAttributes(ControlState.Decrement, new pdg.Attributes().fillColor(new pdg.Color(226/255,232/255,240/255,1))
+                .lineStyle(pdg.lineStyle_Solid).lineColor(new pdg.Color(179/255,191/255,207/255,1)).roundedCorners(4))
+            .stateAttributes(ControlState.DecrementPressed, new pdg.Attributes().fillColor(new pdg.Color(183/255,199/255,219/255,1))
+                .lineStyle(pdg.lineStyle_Solid).lineColor(new pdg.Color(123/255,141/255,165/255,1)).roundedCorners(4))
+            .stateAttributes(ControlState.Increment, new pdg.Attributes().fillColor(new pdg.Color(226/255,232/255,240/255,1))
+                .lineStyle(pdg.lineStyle_Solid).lineColor(new pdg.Color(179/255,191/255,207/255,1)).roundedCorners(4))
+            .stateAttributes(ControlState.IncrementPressed, new pdg.Attributes().fillColor(new pdg.Color(183/255,199/255,219/255,1))
+                .lineStyle(pdg.lineStyle_Solid).lineColor(new pdg.Color(123/255,141/255,165/255,1)).roundedCorners(4))
+            .stateAttributes(ControlState.Thumb, new pdg.Attributes().fillColor(new pdg.Color(124/255,144/255,170/255,1))
+                .lineStyle(pdg.lineStyle_Solid).lineColor(new pdg.Color(94/255,114/255,140/255,1)).roundedCorners(4));
         this.attributes.merge(controller.getTopController()
             .getControlAttributes(ControlType.Scrollbar, orientation));
         
@@ -158,6 +158,11 @@ class Scrollbar extends View {
     /**
      * Calculate clickable areas
      */
+    viewAreaChanged(previous) {
+        super.viewAreaChanged(previous);
+        if (this.sliderArea) this.calcClickableAreas();
+    }
+
     calcClickableAreas() {
         const viewArea = this.getViewArea();
         const decrementSize = this.decrementExtent();
@@ -242,13 +247,13 @@ class Scrollbar extends View {
             ? ControlState.IncrementPressed : ControlState.Increment;
         const decrementRect = horizontal ? this.getDownButtonRect() : this.getUpButtonRect();
         const incrementRect = horizontal ? this.getUpButtonRect() : this.getDownButtonRect();
-        this.attributes.draw(port, this.sliderArea, ControlState.Normal);
-        this.attributes.draw(port, decrementRect, decrementState);
-        this.attributes.draw(port, incrementRect, incrementState);
+        this.attributes.draw(port, this.sliderArea, ControlState.Normal, this);
+        this.attributes.draw(port, decrementRect, decrementState, this);
+        this.attributes.draw(port, incrementRect, incrementState, this);
         if (!this._stateImage(decrementState)) this.drawArrow(decrementRect, false);
         if (!this._stateImage(incrementState)) this.drawArrow(incrementRect, true);
         if (!this.scrollSliderClicked) this.updateSliderPosition();
-        this.attributes.draw(port, this.getSliderRect(), ControlState.Thumb);
+        this.attributes.draw(port, this.getSliderRect(), ControlState.Thumb, this);
     }
 
     /**
@@ -268,9 +273,9 @@ class Scrollbar extends View {
         
         // Draw slider area background
         var sliderBgAttrs = new pdg.Attributes().fillColor(new pdg.Color(0.8, 0.8, 0.8, 1.0));
-        port.drawRect(this.sliderArea, sliderBgAttrs);
+        port.drawRect(this.sliderArea, this.getDrawingAttributes(sliderBgAttrs));
         var sliderBorderAttrs = new pdg.Attributes().lineColor(new pdg.Color(0.6, 0.6, 0.6, 1.0)).lineThickness(1);
-        port.drawRect(this.sliderArea, sliderBorderAttrs);
+        port.drawRect(this.sliderArea, this.getDrawingAttributes(sliderBorderAttrs));
         
         // Draw slider
         if (this.maxRange > 0) {
@@ -289,7 +294,7 @@ class Scrollbar extends View {
         
         if (this.mpScrollBarImages[imageIndex]) {
             // Draw using loaded image
-            port.drawImage(this.mpScrollBarImages[imageIndex], rect.leftTop(), rect);
+            port.drawImage(this.mpScrollBarImages[imageIndex], rect, this.getDrawingAttributes(new pdg.Attributes()));
         } else {
             // Draw standard button
             const bgColor = this.isButtonPressed(imageIndex) ? 
@@ -297,9 +302,9 @@ class Scrollbar extends View {
                 new pdg.Color(0.9, 0.9, 0.9, 1.0);
             
             var buttonBgAttrs = new pdg.Attributes().fillColor(bgColor);
-            port.drawRect(rect, buttonBgAttrs);
+            port.drawRect(rect, this.getDrawingAttributes(buttonBgAttrs));
             var buttonBorderAttrs = new pdg.Attributes().lineColor(new pdg.Color(0.5, 0.5, 0.5, 1.0)).lineThickness(1);
-            port.drawRect(rect, buttonBorderAttrs);
+            port.drawRect(rect, this.getDrawingAttributes(buttonBorderAttrs));
             
             // Draw arrow
             this.drawArrow(rect, imageIndex);
@@ -315,22 +320,16 @@ class Scrollbar extends View {
         const port = this.getPort();
         const centerX = rect.left + rect.width() / 2;
         const centerY = rect.top + rect.height() / 2;
-        const size = 4;
-        
-        const line = new pdg.Attributes().lineColor(new pdg.Color(0.2, 0.2, 0.2, 1)).lineThickness(2);
-        if (this.orientation === ScrollbarOrientation.HORIZONTAL) {
-            const direction = increment ? 1 : -1;
-            port.drawLine(new pdg.Point(centerX - direction * size, centerY - size),
-                new pdg.Point(centerX + direction * size, centerY), line);
-            port.drawLine(new pdg.Point(centerX + direction * size, centerY),
-                new pdg.Point(centerX - direction * size, centerY + size), line);
-        } else {
-            const direction = increment ? 1 : -1;
-            port.drawLine(new pdg.Point(centerX - size, centerY - direction * size),
-                new pdg.Point(centerX, centerY + direction * size), line);
-            port.drawLine(new pdg.Point(centerX, centerY + direction * size),
-                new pdg.Point(centerX + size, centerY - direction * size), line);
+        const size = Math.min(rect.width(), rect.height())*0.25;
+        const direction = increment ? 1 : -1;
+        const glyph = new pdg.Polygon();
+        for (const [x,y] of [[-.8,-.5],[0,.15],[.8,-.5],[1,-.2],[0,.65],[-1,-.2]]) {
+            const dx = this.orientation === ScrollbarOrientation.HORIZONTAL ? y*direction : x;
+            const dy = this.orientation === ScrollbarOrientation.HORIZONTAL ? x : y*direction;
+            glyph.insertPoint(glyph.getPointCount(), new pdg.Point(centerX+dx*size,centerY+dy*size));
         }
+        port.drawPolygon(glyph, this.getDrawingAttributes(new pdg.Attributes()
+            .fillColor(new pdg.Color(.24,.29,.36,1)), true));
     }
 
     /**
@@ -342,7 +341,7 @@ class Scrollbar extends View {
         
         if (this.mpScrollBarImages[ScrollbarImages.SCROLL_SLIDER]) {
             // Draw using loaded image
-            port.drawImage(this.mpScrollBarImages[ScrollbarImages.SCROLL_SLIDER], rect.leftTop(), rect);
+            port.drawImage(this.mpScrollBarImages[ScrollbarImages.SCROLL_SLIDER], rect, this.getDrawingAttributes(new pdg.Attributes()));
         } else {
             // Draw standard slider
             const bgColor = this.scrollSliderClicked ? 
@@ -350,9 +349,9 @@ class Scrollbar extends View {
                 new pdg.Color(0.7, 0.7, 0.7, 1.0);
             
             var sliderBgAttrs = new pdg.Attributes().fillColor(bgColor);
-            port.drawRect(rect, sliderBgAttrs);
+            port.drawRect(rect, this.getDrawingAttributes(sliderBgAttrs));
             var sliderBorderAttrs = new pdg.Attributes().lineColor(new pdg.Color(0.3, 0.3, 0.3, 1.0)).lineThickness(1);
-            port.drawRect(rect, sliderBorderAttrs);
+            port.drawRect(rect, this.getDrawingAttributes(sliderBorderAttrs));
         }
     }
 
@@ -500,6 +499,13 @@ class Scrollbar extends View {
         return handled;
     }
 
+    doMouseLeave(mouseInfo, id, part) {
+        // Arrow repeat stops on exit; thumb drags retain capture outside the track.
+        if (this.scrollUpClicked) this.scrollUpReleased();
+        if (this.scrollDownClicked) this.scrollDownReleased();
+        if (!this.scrollSliderClicked) this.scrollSliderAreaReleased();
+    }
+
     doMouseMove(mouseInfo, id, part) {
         if (this.scrollSliderClicked) this.trackScrollSlider(mouseInfo.mousePos);
     }
@@ -563,6 +569,7 @@ class Scrollbar extends View {
      * @param {pdg.Point} clickPoint - Click point
      */
     scrollSliderAreaPressed(clickPoint) {
+        clickPoint = this.globalToLocal(clickPoint).add(this.viewArea.leftTop());
         if (this.getSliderRect().contains(clickPoint)) {
             // Clicked on slider - start tracking
             this.scrollSliderClicked = true;
@@ -623,6 +630,7 @@ class Scrollbar extends View {
      */
     trackScrollSlider(mousePoint = pdg.gfx.getMouse()) {
         if (!this.scrollSliderClicked || !mousePoint) return;
+        mousePoint = this.globalToLocal(mousePoint).add(this.viewArea.leftTop());
 
         const thumb = this.thumbDimensions();
         let ratio;
@@ -694,6 +702,15 @@ class Scrollbar extends View {
      * Set current position
      * @param {number} position - New position
      */
+    doScrollWheel(wheel) {
+        if (!this.isEnabled()) return false;
+        const delta = this.orientation === ScrollbarOrientation.VERTICAL ? wheel.vertDelta : wheel.horizDelta;
+        if (!delta) return false;
+        const previous = this.currentPosition;
+        this.setCurrentPosition(previous + delta*this.stepSize);
+        return this.currentPosition !== previous;
+    }
+
     setCurrentPosition(position) {
         const oldPosition = this.currentPosition;
         this.currentPosition = Math.min(Math.max(position, this.minRange), this.maxRange);
@@ -781,6 +798,7 @@ class Scrollbar extends View {
      * Cleanup when scrollbar is destroyed
      */
     destroy() {
+        super.destroy();
         // Cancel timers
         this.timerMgr.cancelTimer(this.scrollUpTimerID);
         this.timerMgr.cancelTimer(this.scrollDownTimerID);

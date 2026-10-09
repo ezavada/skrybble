@@ -88,7 +88,7 @@ class PopupMenu extends View {
         this.textColor = textColor;
         this.highlightColor = highlightColor;
         this.hotItem = HOT_ITEM_NONE;
-        this.textSize = textSize;
+        this.textSize(textSize);
         this.itemShowable = 0;
         this.needScrolling = false;
         this.showUpArrow = false;
@@ -301,11 +301,11 @@ class PopupMenu extends View {
         
         // Draw background
         var backgroundAttrs = new pdg.Attributes().fillColor(this.bkColor);
-        port.drawRect(viewArea, backgroundAttrs);
+        port.drawRect(viewArea, this.getDrawingAttributes(backgroundAttrs));
         
         // Draw border
         var borderAttrs = new pdg.Attributes().lineColor(new pdg.Color(0.5, 0.5, 0.5, 1.0)).lineThickness(1);
-        port.drawRect(viewArea, borderAttrs);
+        port.drawRect(viewArea, this.getDrawingAttributes(borderAttrs));
         
         // Draw menu items
         this.drawMenuItems();
@@ -330,28 +330,24 @@ class PopupMenu extends View {
             // Draw item background
             if (item.itemID === this.hotItem) {
                 var highlightAttrs = new pdg.Attributes().fillColor(this.highlightColor);
-                port.drawRect(rect, highlightAttrs);
+                port.drawRect(rect, this.getDrawingAttributes(highlightAttrs));
             } else {
                 var defaultAttrs = new pdg.Attributes().fillColor(new pdg.Color(1.0, 1.0, 1.0, 1.0));
-                port.drawRect(rect, defaultAttrs);
+                port.drawRect(rect, this.getDrawingAttributes(defaultAttrs));
             }
             
             // Draw item text
             const textPoint = new pdg.Point(
                 rect.left + TEXT_LEFT_MARGIN,
-                rect.top + rect.height() / 2 + this.textSize / 2
+                rect.top + rect.height() / 2 + super.getTextSize() / 2
             );
             
-            port.drawText(item.itemString, textPoint, this.textSize, item.style, this.textColor);
+            port.drawText(item.itemString, textPoint, this.getDrawingAttributes(new pdg.Attributes().textSize(super.getTextSize()).textStyle(item.style).fillColor(this.textColor), true));
             
             // Draw item separator
             if (i < this.drawableItemList.length - 1) {
                 const separatorY = rect.bottom - 1;
-                port.drawLine(
-                    new pdg.Point(rect.left, separatorY),
-                    new pdg.Point(rect.right, separatorY),
-                    new pdg.Color(0.8, 0.8, 0.8, 1.0), 1
-                );
+                port.drawLine(new pdg.Point(rect.left, separatorY), new pdg.Point(rect.right, separatorY), this.getDrawingAttributes(new pdg.Attributes().lineColor(new pdg.Color(0.8, 0.8, 0.8, 1.0)).lineThickness(1), true));
             }
         }
     }
@@ -397,9 +393,9 @@ class PopupMenu extends View {
         
         // Draw arrow background
         var arrowBgAttrs = new pdg.Attributes().fillColor(new pdg.Color(0.9, 0.9, 0.9, 1.0));
-        port.drawRect(rect, arrowBgAttrs);
+        port.drawRect(rect, this.getDrawingAttributes(arrowBgAttrs));
         var arrowBorderAttrs = new pdg.Attributes().lineColor(new pdg.Color(0.5, 0.5, 0.5, 1.0)).lineThickness(1);
-        port.drawRect(rect, arrowBorderAttrs);
+        port.drawRect(rect, this.getDrawingAttributes(arrowBorderAttrs));
         
         // Draw arrow shape
         const centerX = rect.left + rect.width() / 2;
@@ -410,12 +406,12 @@ class PopupMenu extends View {
         
         if (up) {
             // Draw up arrow
-            port.drawLine(new pdg.Point(centerX, centerY - size), new pdg.Point(centerX - size, centerY), arrowColor, 2);
-            port.drawLine(new pdg.Point(centerX, centerY - size), new pdg.Point(centerX + size, centerY), arrowColor, 2);
+            port.drawLine(new pdg.Point(centerX, centerY - size), new pdg.Point(centerX - size, centerY), this.getDrawingAttributes(new pdg.Attributes().lineColor(arrowColor).lineThickness(2), true));
+            port.drawLine(new pdg.Point(centerX, centerY - size), new pdg.Point(centerX + size, centerY), this.getDrawingAttributes(new pdg.Attributes().lineColor(arrowColor).lineThickness(2), true));
         } else {
             // Draw down arrow
-            port.drawLine(new pdg.Point(centerX, centerY + size), new pdg.Point(centerX - size, centerY), arrowColor, 2);
-            port.drawLine(new pdg.Point(centerX, centerY + size), new pdg.Point(centerX + size, centerY), arrowColor, 2);
+            port.drawLine(new pdg.Point(centerX, centerY + size), new pdg.Point(centerX - size, centerY), this.getDrawingAttributes(new pdg.Attributes().lineColor(arrowColor).lineThickness(2), true));
+            port.drawLine(new pdg.Point(centerX, centerY + size), new pdg.Point(centerX + size, centerY), this.getDrawingAttributes(new pdg.Attributes().lineColor(arrowColor).lineThickness(2), true));
         }
     }
 
@@ -434,8 +430,7 @@ class PopupMenu extends View {
      */
     doMouseMove(mouseInfo, id, part) {
         // Update hot item based on mouse position
-        const localPoint = this.globalToLocal(mouseInfo.mousePos);
-        const itemID = this.getPartClicked(localPoint);
+        const itemID = this.getPartClicked(mouseInfo.mousePos);
         
         if (itemID !== this.hotItem) {
             this.hotItem = itemID;
@@ -467,7 +462,21 @@ class PopupMenu extends View {
      * @param {pdg.Point} screenPoint - Screen point
      * @returns {number} Item ID of part clicked
      */
+    viewAreaChanged(previous) {
+        super.viewAreaChanged(previous);
+        if (this.drawableItemList) {
+            const area=this.viewArea, sx=previous.width() ? area.width()/previous.width() : 1;
+            const sy=previous.height() ? area.height()/previous.height() : 1;
+            for (const item of this.drawableItemList) {
+                const r=item.rect;
+                item.rect=new pdg.Rect(area.left+(r.left-previous.left)*sx,area.top+(r.top-previous.top)*sy,
+                    area.left+(r.right-previous.left)*sx,area.top+(r.bottom-previous.top)*sy);
+            }
+        }
+    }
+
     getPartClicked(screenPoint) {
+        screenPoint = this.globalToLocal(screenPoint).add(this.viewArea.leftTop());
         for (let i = 0; i < this.drawableItemList.length; i++) {
             const itemPair = this.drawableItemList[i];
             if (itemPair.rect.contains(screenPoint)) {
@@ -497,7 +506,7 @@ class PopupMenu extends View {
      */
     sanitiseViewArea() {
         const viewArea = this.getViewArea();
-        const itemHeight = this.textSize + ITEM_SIZE_OFFSET;
+        const itemHeight = super.getTextSize() + ITEM_SIZE_OFFSET;
         this.itemShowable = Math.floor(viewArea.height() / itemHeight);
         
         // Check if scrolling is needed
@@ -542,7 +551,7 @@ class PopupMenu extends View {
      * @param {number} size - Text size
      */
     setTextSize(size) {
-        this.textSize = size;
+        this.textSize(size);
         this.sanitiseViewArea();
         this.calcClickableAreas();
     }
@@ -576,7 +585,7 @@ class PopupMenu extends View {
         }
         
         // Update minimum width based on longest text
-        this.minWidth = Math.min(MAX_MENU_WIDTH, this.longestText.length * this.textSize * 0.6 + TEXT_WIDTH_OFFSET);
+        this.minWidth = Math.min(MAX_MENU_WIDTH, this.longestText.length * super.getTextSize() * 0.6 + TEXT_WIDTH_OFFSET);
     }
 
     /**
@@ -622,6 +631,7 @@ class PopupMenu extends View {
      * Cleanup when popup menu is destroyed
      */
     destroy() {
+        super.destroy();
         this.itemList = [];
         this.drawableItemList = [];
         this.pullArrowImage = null;

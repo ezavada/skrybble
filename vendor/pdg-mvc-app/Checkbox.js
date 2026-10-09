@@ -53,7 +53,7 @@ class Checkbox extends View {
         this.attributes = new ControlAttributes();
         this.checked = false;
         this.string = '';
-        this.textSize = CHECKBOX_TEXT_SIZE;
+        this.textSize(CHECKBOX_TEXT_SIZE);
         
         this.attributes
             .stateForeground(ControlState.Normal, new pdg.Color(0, 0, 0, 1))
@@ -111,11 +111,11 @@ class Checkbox extends View {
         const metrics = this.getTextMetrics(port);
         const baseline = Math.round(
             (viewArea.height() - metrics.ascent - metrics.descent) * 0.5 + metrics.ascent);
-        const checkboxSize = image ? imageWidth : Math.max(1, Math.round(metrics.ascent));
+        const checkboxSize = image ? imageWidth : Math.max(1, Math.round(metrics.ascent + 2), Math.round(metrics.capHeight + 4));
         const checkboxHeight = image ? imageHeight : checkboxSize;
         const checkboxTop = image
             ? viewArea.top + (viewArea.height() - checkboxHeight) / 2
-            : viewArea.top + baseline - checkboxHeight;
+            : viewArea.top + baseline - (metrics.capHeight + checkboxHeight) / 2;
         const checkboxRect = new pdg.Rect(
             viewArea.left,
             checkboxTop,
@@ -123,12 +123,12 @@ class Checkbox extends View {
             checkboxTop + checkboxHeight
         );
 
-        this.attributes.draw(port, checkboxRect, state);
+        this.attributes.draw(port, checkboxRect, state, this);
         if (!image && !visual.hasDrawing && !visual.hasDrawRoutine &&
             !normal.hasDrawing && !normal.hasDrawRoutine) {
             const markColor = visual.hasForeground ? visual.foreground : normal.foreground;
-            port.drawRect(checkboxRect, new pdg.Attributes()
-                .fillColor(new pdg.Color(1, 1, 1, 1)).lineColor(markColor).lineThickness(1));
+            port.drawRect(new pdg.Rect(checkboxRect).shrink(0.5), this.getDrawingAttributes(new pdg.Attributes()
+                .fillColor(new pdg.Color(1, 1, 1, 1)).lineStyle(pdg.lineStyle_Solid).lineColor(markColor).lineThickness(1)));
             if (this.checked) this.drawCheckmark(checkboxRect, markColor);
         }
         
@@ -140,17 +140,19 @@ class Checkbox extends View {
     }
 
     getTextMetrics(port = this.getPort()) {
-        const style = getCheckboxTextStyle();
+        const attrs = this.getDrawingAttributes(new pdg.Attributes().textSize(super.getTextSize()).textStyle(getCheckboxTextStyle()), true);
+        const style = attrs.getTextStyle();
         try {
-            const font = port.getCurrentFont(style);
-            const ascent = font.getFontAscent(this.textSize, style);
-            const descent = font.getFontDescent(this.textSize, style);
+            const font = (typeof attrs.getFont === 'function' && attrs.getFont()) || port.getCurrentFont(style);
+            const ascent = font.getFontAscent(super.getTextSize(), style);
+            const descent = font.getFontDescent(super.getTextSize(), style);
+            const capHeight = font.getFontCapHeight(super.getTextSize(), style);
             if (Number.isFinite(ascent) && ascent > 0 &&
                 Number.isFinite(descent) && descent >= 0) {
-                return { ascent, descent };
+                return { ascent, descent, capHeight };
             }
         } catch (_) {}
-        return { ascent: this.textSize * 0.8, descent: this.textSize * 0.2 };
+        return { ascent: super.getTextSize() * 0.8, descent: super.getTextSize() * 0.2, capHeight: super.getTextSize() * 0.7 };
     }
 
     /**
@@ -168,7 +170,7 @@ class Checkbox extends View {
             const checkboxSize = Math.min(viewArea.height(), 20); // Standard checkbox size
             const checkboxRect = new pdg.Rect(viewArea.left, viewArea.top, checkboxSize, checkboxSize);
             
-            port.drawImage(image, checkboxRect.leftTop(), checkboxRect);
+            port.drawImage(image, checkboxRect, this.getDrawingAttributes(new pdg.Attributes()));
         }
     }
 
@@ -198,11 +200,11 @@ class Checkbox extends View {
         
         // Draw checkbox background
         var backgroundAttrs = new pdg.Attributes().fillColor(fillColor);
-        port.drawRect(checkboxRect, backgroundAttrs);
+        port.drawRect(checkboxRect, this.getDrawingAttributes(backgroundAttrs));
         
         // Draw checkbox border
         var borderAttrs = new pdg.Attributes().lineColor(borderColor).lineThickness(1);
-        port.drawRect(checkboxRect, borderAttrs);
+        port.drawRect(checkboxRect, this.getDrawingAttributes(borderAttrs));
         
         // Draw checkmark if checked
         if (this.checked) {
@@ -217,31 +219,13 @@ class Checkbox extends View {
      */
     drawCheckmark(checkboxRect, color) {
         const port = this.getPort();
-        const line = new pdg.Attributes().lineColor(color).lineThickness(2);
-        
-        // Draw a simple checkmark using lines
-        const margin = 3;
-        const left = checkboxRect.left + margin;
-        const right = checkboxRect.right - margin;
-        const top = checkboxRect.top + margin;
-        const bottom = checkboxRect.bottom - margin;
-        const centerX = checkboxRect.left + checkboxRect.width() / 2;
-        const centerY = checkboxRect.top + checkboxRect.height() / 2;
-        
-        // Draw checkmark as two lines forming a check
-        // First line: from bottom-left to center
-        port.drawLine(
-            new pdg.Point(left, centerY + 2),
-            new pdg.Point(centerX - 1, bottom - 1),
-            line
-        );
-        
-        // Second line: from center to top-right
-        port.drawLine(
-            new pdg.Point(centerX - 1, bottom - 1),
-            new pdg.Point(right, top),
-            line
-        );
+        // A filled glyph remains bold even on GL implementations limited to 1px lines.
+        const check = new pdg.Polygon();
+        for (const [x,y] of [[.08,.46],[.26,.29],[.42,.51],[.77,.08],[.94,.25],[.43,.92]]) {
+            check.insertPoint(check.getPointCount(), new pdg.Point(
+                checkboxRect.left+x*checkboxRect.width(), checkboxRect.top+y*checkboxRect.height()));
+        }
+        port.drawPolygon(check, this.getDrawingAttributes(new pdg.Attributes().fillColor(color), true));
     }
 
     /**
@@ -262,8 +246,8 @@ class Checkbox extends View {
             new pdg.Color(0.5, 0.5, 0.5, 1.0));  // Gray
         
         // Draw text
-        port.drawText(this.string, new pdg.Point(textX, textY), new pdg.Attributes()
-            .textSize(this.textSize).textStyle(getCheckboxTextStyle()).fillColor(textColor));
+        port.drawText(this.string, new pdg.Point(textX, textY), this.getDrawingAttributes(new pdg.Attributes()
+            .textSize(super.getTextSize()).textStyle(getCheckboxTextStyle()).fillColor(textColor), true));
     }
 
     /**
@@ -318,9 +302,9 @@ class Checkbox extends View {
             ? (typeof image.width === 'function' ? image.width() : image.width) : 0;
         const imageHeight = image
             ? (typeof image.height === 'function' ? image.height() : image.height) : 0;
-        const boxWidth = image ? imageWidth : Math.max(1, Math.round(metrics.ascent));
+        const boxWidth = image ? imageWidth : Math.max(1, Math.round(metrics.ascent + 2), Math.round(metrics.capHeight + 4));
         const boxHeight = image ? imageHeight : boxWidth;
-        const textWidth = port.getTextWidth(this.string, this.textSize, style);
+        const textWidth = this._measureText(this.string, new pdg.Attributes().textSize(super.getTextSize()).textStyle(style));
         const newClickArea = new pdg.Rect(this.getViewArea());
         newClickArea.bottom = newClickArea.top + Math.max(
             boxHeight, Math.ceil(metrics.ascent + metrics.descent) + SPACE_UP_FROM_BOTTOM);
@@ -343,7 +327,7 @@ class Checkbox extends View {
      * @param {number} pointSize - Text size in points
      */
     setTextSize(pointSize) {
-        this.textSize = pointSize;
+        this.textSize(pointSize);
     }
 
     /**
@@ -351,7 +335,7 @@ class Checkbox extends View {
      * @returns {number} Current text size
      */
     getTextSize() {
-        return this.textSize;
+        return super.getTextSize();
     }
 
     /**
@@ -359,6 +343,7 @@ class Checkbox extends View {
      * @param {number} part - Clicked part
      */
     doClick(part) {
+        if (!this.isEnabled()) return;
         if (part === CheckboxClickIDs.CLICK_ID_CHECKBOX) {
             this.toggle();
             
@@ -418,6 +403,7 @@ class Checkbox extends View {
      * Cleanup when checkbox is destroyed
      */
     destroy() {
+        super.destroy();
         // Clean up images
         for (let i = 0; i < CBImages.NUM_CHECKBOX_IMAGES; i++) {
             if (this.mpCheckboxImages[i]) {

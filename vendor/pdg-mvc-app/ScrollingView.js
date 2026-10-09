@@ -57,25 +57,8 @@ class ScrollingView extends View {
     /**
      * Draw the scrolling view
      */
-    draw(port, frameNum) {
-        if (this.visible) {
-            const clipSave = port.getClipRect();
-            let ourClip;
-            
-            if (!clipSave.empty()) {
-                ourClip = this.viewFrame.intersection(clipSave);
-            } else {
-                ourClip = this.viewFrame;
-            }
-            
-            if (!ourClip.empty()) {
-                // Don't draw if everything is clipped
-                port.setClipRect(ourClip);
-                this.drawSelf(port, frameNum);
-                port.setClipRect(clipSave);
-            }
-        }
-    }
+    draw(port, frameNum) { super.draw(port, frameNum); }
+    getVisibleFrame() { return this.viewFrame || this.getViewArea(); }
 
     /**
      * Set view frame
@@ -108,7 +91,7 @@ class ScrollingView extends View {
      * @returns {boolean} true if point is in view
      */
     pointInViewVisibleArea(screenPoint) {
-        return this.viewFrame.contains(screenPoint);
+        return super.pointInViewVisibleArea(screenPoint);
     }
 
     /**
@@ -117,7 +100,7 @@ class ScrollingView extends View {
      * @returns {boolean} true if point is in frame
      */
     pointInViewFrame(screenPoint) {
-        return this.viewFrame.contains(screenPoint);
+        return super.pointInViewVisibleArea(screenPoint);
     }
 
     /**
@@ -251,10 +234,7 @@ class ScrollingView extends View {
         }
         
         // Apply new position
-        this.viewArea.left = newLeft;
-        this.viewArea.top = newTop;
-        this.viewArea.right = newLeft + viewWidth;
-        this.viewArea.bottom = newTop + viewHeight;
+        this.setViewArea(new pdg.Rect(newLeft, newTop, newLeft + viewWidth, newTop + viewHeight));
         
         // Check if position actually changed
         return !(oldViewArea.left === this.viewArea.left && 
@@ -269,10 +249,7 @@ class ScrollingView extends View {
      * @param {number} deltaY - Y delta
      */
     moveView(deltaX, deltaY) {
-        this.viewArea.left += deltaX;
-        this.viewArea.top += deltaY;
-        this.viewArea.right += deltaX;
-        this.viewArea.bottom += deltaY;
+        this.moveBy(deltaX, deltaY);
         
         this.applyAutoAdjust();
     }
@@ -456,32 +433,28 @@ class ScrollingView extends View {
      * Scroll to top
      */
     scrollToTop() {
-        this.viewArea.top = this.viewFrame.top;
-        this.viewArea.bottom = this.viewArea.top + this.viewArea.height();
+        this.moveBy(0, this.viewFrame.top - this.viewArea.top);
     }
 
     /**
      * Scroll to bottom
      */
     scrollToBottom() {
-        this.viewArea.bottom = this.viewFrame.bottom;
-        this.viewArea.top = this.viewArea.bottom - this.viewArea.height();
+        this.moveBy(0, this.viewFrame.bottom - this.viewArea.bottom);
     }
 
     /**
      * Scroll to left
      */
     scrollToLeft() {
-        this.viewArea.left = this.viewFrame.left;
-        this.viewArea.right = this.viewArea.left + this.viewArea.width();
+        this.moveBy(this.viewFrame.left - this.viewArea.left, 0);
     }
 
     /**
      * Scroll to right
      */
     scrollToRight() {
-        this.viewArea.right = this.viewFrame.right;
-        this.viewArea.left = this.viewArea.right - this.viewArea.width();
+        this.moveBy(this.viewFrame.right - this.viewArea.right, 0);
     }
 }
 

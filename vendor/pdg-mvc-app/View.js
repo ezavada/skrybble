@@ -32,12 +32,19 @@ const ViewBinding = {
  * Base View class
  * Manages view area, drawing, and input handling
  */
-class View {
-    constructor(controller, rect, binding = 0) {        
+// Appearance and transform tracks step together through Controller.animateViews().
+// Passing the View as Attributes uses centered unit drawing coordinates. Existing
+// controls retain their ControlAttributes themes; view attributes do not silently
+// replace each control's state-dependent theme.
+class View extends pdg.AnimatedAttributes {
+    constructor(controller, rect, binding = 0) {
+        super();
         if (!controller) {
             throw new Error("Controller is required");
         }
 
+        this.parentView = null;
+        this.childViews = [];
         this.controller = controller;
         this.port = controller.port;
         this.visible = true;
@@ -93,23 +100,103 @@ class View {
      * @param {number} frameNum - Frame number
      */
     draw(port, frameNum) {
-        if (this.visible) {
-            const clipSave = port.getClipRect();
-            let ourClip;
-            
-            if (!clipSave.empty()) {
-                ourClip = this.viewArea.intersection(clipSave);
-            } else {
-                ourClip = this.viewArea;
+        if (!this.isVisible()) return;
+        const frame = this.getVisibleFrame();
+        if (frame.empty() || !this.getWidth() || !this.getHeight()) return;
+        const matrix = this.getLayoutTransform(false);
+        const destination = new pdg.Quad(frame);
+        for (let i=0; i<4; ++i) destination.points[i] = mapPoint(matrix, destination.points[i]);
+        const savedClip = port.getClipRect();
+        if (savedClip.intersection(destination.getBounds()).empty()) return;
+        const transformed = matrix.some((value, i) => Math.abs(value - (i%4===0 ? 1 : 0)) > 0.00001);
+        let target = port;
+        if (transformed) {
+            const width=Math.ceil(frame.width()), height=Math.ceil(frame.height());
+            if (this._renderPort && (this._renderImage.getWidth()!==width || this._renderImage.getHeight()!==height))
+                this._releaseRenderSurface();
+            if (!this._renderPort) {
+                this._renderPort = pdg.gfx.createOffscreenPort(new pdg.Rect(width,height));
+                if (!this._renderPort) throw new Error('Unable to create View rendering surface');
+                this._renderImage = new pdg.Image(this._renderPort, pdg.SharedSurface);
             }
-            
-            if (!ourClip.empty()) {
-                // Don't draw if everything is clipped
-                port.setClipRect(ourClip);
-                this.drawSelf(port, frameNum);
-                port.setClipRect(clipSave);
-            }
+            target=this._renderPort;
+            target.setDrawingOrigin(frame.leftTop());
+            target.clear();
+            target.setClipRect(frame);
+            for (let style=0; style<8; ++style) target.setFontForStyle(style, port.getCurrentFont(style));
+        } else port.setClipRect(frame.intersection(savedClip));
+        const previousPort=this.port;
+        this.port=target; this._drawingLayout=true; this._setDrawingLayout(true);
+        try {
+            this.drawSelf(target, frameNum);
+            for (const child of this.childViews) child.draw(target, frameNum);
+        } finally {
+            this.port=previousPort; this._drawingLayout=false; this._setDrawingLayout(false);
+            port.setClipRect(savedClip);
         }
+        if (transformed) port.drawImage(this._renderImage, destination,
+            new pdg.Attributes().subsection(new pdg.Rect(frame.width(),frame.height())));
+    }
+
+    _releaseRenderSurface() {
+        if (this._renderPort) pdg.gfx.closeGraphicsPort(this._renderPort);
+        this._renderPort=null; this._renderImage=null;
+    }
+
+    /** Release rendering resources and unregister this View. Children are detached. */
+    destroy() {
+        this.setParentView(null);
+        for (const child of this.childViews.slice()) child.setParentView(null);
+        this._releaseRenderSurface();
+        this.controller.removeView(this);
+    }
+
+    /** Merge explicitly assigned/animated appearance onto a theme; text keeps its foreground. */
+    getDrawingAttributes(theme, textOnly = false) {
+        return theme.withAppearance(this, textOnly);
+    }
+
+    _measureText(text, base) {
+        const attrs = this.getDrawingAttributes(base, true), port = this.getPort();
+        const style = attrs.getTextStyle();
+        const font = typeof attrs.getFont === 'function' && attrs.getFont();
+        const previous = font ? port.getCurrentFont(style) : null;
+        if (font) port.setFontForStyle(style, font);
+        try { return port.getTextWidth(text, attrs.getTextSize(), style); }
+        finally { if (font) port.setFontForStyle(style, previous); }
+    }
+
+    /** Non-owning visual parent. Layout stays in Port coordinates; input and drawing
+     * inherit the parent transform and clip. Controllers still step each View once. */
+    setParentView(parent) {
+        if (parent && parent.controller !== this.controller) throw new Error("Parent and child must share a Controller");
+        for (let ancestor=parent; ancestor; ancestor=ancestor.parentView)
+            if (ancestor===this) throw new Error('View parenting cannot contain cycles');
+        if (parent===this.parentView) return;
+        if (this.parentView) this.parentView.childViews = this.parentView.childViews.filter(child=>child!==this);
+        this.parentView=parent;
+        if (parent) parent.childViews.push(this);
+    }
+    getHitView(point) {
+        if (!this.isVisible() || !this.pointInViewVisibleArea(point)) return null;
+        for (let i=this.childViews.length-1;i>=0;--i) {
+            const child=this.childViews[i].getHitView(point);
+            if (child) return child;
+        }
+        return this;
+    }
+    getParentView() { return this.parentView; }
+    getVisibleFrame() { return this.getViewArea(); }
+
+    getLayoutTransform(includeParent = true) {
+        const area=this.viewArea, width=area.width(), height=area.height();
+        if (!width || !height) return [0,0,0,0,0,0,0,0,0];
+        const normalize=[1/width,0,0,0,1/height,0,-area.left/width-.5,-area.top/height-.5,1];
+        const matrix=multiply(this.getTransform(), normalize);
+        // Avoid numerical drift in ordinary, untransformed layout coordinates.
+        if (matrix.every((v,i)=>Math.abs(v-(i%4===0 ? 1 : 0))<1e-10))
+            return includeParent && this.parentView ? this.parentView.getLayoutTransform() : [1,0,0,0,1,0,0,0,1];
+        return includeParent && this.parentView ? multiply(this.parentView.getLayoutTransform(),matrix) : matrix;
     }
 
     /**
@@ -210,15 +297,19 @@ class View {
      * @param {number} part - Clicked part
      * @returns {boolean} true if handled
      */
+    /** Return true to consume a wheel event over this view or a child. */
+    doScrollWheel(wheelInfo) { return false; }
+
     doMouseDown(mouseInfo, id, part) {
         return false;
     }
 
     /**
-     * Handle mouse up event
+     * Clean up a press that began here, including outside release or cancellation.
+     * Put activation in doLeftClick/doRightClick, which require a completed click.
      * @param {Object} mouseInfo - Mouse information
      * @param {number} id - View ID
-     * @param {number} part - Clicked part
+     * @param {number} part - Original part, or -1 for outside release/cancellation
      * @returns {boolean} true if handled
      */
     doMouseUp(mouseInfo, id, part) {
@@ -226,7 +317,7 @@ class View {
     }
 
     /**
-     * Handle mouse move event
+     * Handle hover motion or captured drag motion, including outside this view.
      * @param {Object} mouseInfo - Mouse information
      * @param {number} id - View ID
      * @param {number} part - Clicked part
@@ -429,15 +520,78 @@ class View {
     setViewArea(rect) {
         // Match the C++ value semantics: a View owns its rectangle rather than
         // retaining and later mutating the caller's Rect object.
-        this.viewArea = new pdg.Rect(rect);
+        const area = new pdg.Rect(rect);
+        this.setSize(area.width(), area.height());
+        this.setLocation(area.centerPoint());
+        this._syncViewArea();
     }
 
     /**
      * Get view area
      * @returns {pdg.Rect} View area in global/port coordinates
      */
-    getViewArea() {
-        return this.viewArea;
+    getViewArea() { return this.viewArea; }
+
+    // Layout is derived from Animated. Return a value, never a mutable second
+    // transform. Use setViewArea() to commit edits to a returned rectangle.
+    get viewArea() {
+        this._syncViewArea();
+        return new pdg.Rect(this._viewArea);
+    }
+    set viewArea(rect) { this.setViewArea(rect); }
+
+    _syncViewArea() {
+        if (this.parentView && !this.parentView._updatingViewLayout) this.parentView._syncViewArea();
+        const center = this.getLocation();
+        const w = this.getWidth(), h = this.getHeight();
+        const area = new pdg.Rect(center.x-w/2, center.y-h/2, center.x+w/2, center.y+h/2);
+        const previous = this._viewArea;
+        this._viewArea = area;
+        if (previous && this.clickableParts && !this._updatingViewLayout &&
+            (previous.left !== area.left || previous.top !== area.top ||
+             previous.right !== area.right || previous.bottom !== area.bottom)) {
+            this._updatingViewLayout = true;
+            try { this.viewAreaChanged(previous); }
+            finally { this._updatingViewLayout = false; }
+        }
+    }
+
+    /**
+     * Respond after the unrotated layout rectangle changes.
+     * The new rectangle is already available from getViewArea(). The base
+     * implementation scales local clickable regions to preserve proportions.
+     * Overrides should call super.viewAreaChanged(previous) before custom layout.
+     * @param {pdg.Rect} previous - Previous layout rectangle in Port coordinates.
+     * @returns {undefined}
+     */
+    viewAreaChanged(previous) {
+        for (const child of this.childViews || []) {
+            const old=child.getViewArea(), area=this.viewArea;
+            const sx=previous.width() ? area.width()/previous.width() : 1;
+            const sy=previous.height() ? area.height()/previous.height() : 1;
+            child.setViewArea(new pdg.Rect(area.left+(old.left-previous.left)*sx,
+                area.top+(old.top-previous.top)*sy,area.left+(old.right-previous.left)*sx,
+                area.top+(old.bottom-previous.top)*sy));
+        }
+
+        const sx = previous.width() ? this._viewArea.width()/previous.width() : 1;
+        const sy = previous.height() ? this._viewArea.height()/previous.height() : 1;
+        for (const part of this.clickableParts) {
+            part.first.left *= sx; part.first.right *= sx;
+            part.first.top *= sy; part.first.bottom *= sy;
+        }
+    }
+
+    /**
+     * Advance appearance and transforms while keeping layout synchronized.
+     * Controllers call this before drawing; step manually only for unmanaged views.
+     * @param {number} deltaSeconds - Finite nonnegative elapsed seconds.
+     * @returns {boolean} Whether animation values changed.
+     */
+    animate(deltaSeconds) {
+        const changed = super.animate(deltaSeconds);
+        this._syncViewArea();
+        return changed;
     }
 
     /**
@@ -446,7 +600,9 @@ class View {
      * @returns {boolean} true if point is in view
      */
     pointInViewVisibleArea(screenPoint) {
-        return this.viewArea.contains(screenPoint);
+        if (this.parentView && !this.parentView.pointInViewVisibleArea(screenPoint)) return false;
+        const local=this.globalToLocal(screenPoint), area=this.viewArea;
+        return this.getVisibleFrame().contains(new pdg.Point(local.x+area.left,local.y+area.top));
     }
 
     /**
@@ -455,7 +611,7 @@ class View {
      * @returns {boolean} true if point is in view
      */
     pointInViewArea(screenPoint) {
-        return this.viewArea.contains(screenPoint);
+        return new pdg.Rect(this.getWidth(),this.getHeight()).contains(this.globalToLocal(screenPoint));
     }
 
     /**
@@ -556,10 +712,10 @@ class View {
                 // Also bound to right, need to shrink or grow
                 newViewArea.right = newDrawingArea.right - (oldDrawingArea.right - this.viewArea.right);
                 // Make sure we are within our min and max sizes
-                if (this.maxWidth && this.viewArea.width() > this.maxWidth) {
+                if (this.maxWidth && newViewArea.width() > this.maxWidth) {
                     newViewArea.setWidth(this.maxWidth);
                 }
-                if (this.viewArea.width() < this.minWidth) {
+                if (newViewArea.width() < this.minWidth) {
                     newViewArea.setWidth(this.minWidth);
                 }
             }
@@ -576,10 +732,10 @@ class View {
                 // Also bound to bottom, need to shrink or grow
                 newViewArea.bottom = newDrawingArea.bottom - (oldDrawingArea.bottom - this.viewArea.bottom);
                 // Make sure we are within our min and max sizes
-                if (this.maxHeight && this.viewArea.height() > this.maxHeight) {
+                if (this.maxHeight && newViewArea.height() > this.maxHeight) {
                     newViewArea.setHeight(this.maxHeight);
                 }
-                if (this.viewArea.height() < this.minHeight) {
+                if (newViewArea.height() < this.minHeight) {
                     newViewArea.setHeight(this.minHeight);
                 }
             }
@@ -600,7 +756,8 @@ class View {
      * @returns {pdg.Point} Global point
      */
     localToGlobal(inPt) {
-        return new pdg.Point(inPt.x + this.viewArea.left, inPt.y + this.viewArea.top);
+        const point=new pdg.Point(inPt.x+this.viewArea.left,inPt.y+this.viewArea.top);
+        return this._drawingLayout ? point : mapPoint(this.getLayoutTransform(),point);
     }
 
     /**
@@ -609,7 +766,7 @@ class View {
      * @returns {pdg.Rect} Global rect
      */
     localToGlobalRect(inRect) {
-        return new pdg.Rect(inRect).add(this.viewArea.leftTop());
+        return mapRect(inRect, point=>this.localToGlobal(point));
     }
 
     /**
@@ -618,7 +775,11 @@ class View {
      * @returns {pdg.Point} Local point
      */
     globalToLocal(inPt) {
-        return new pdg.Point(inPt.x - this.viewArea.left, inPt.y - this.viewArea.top);
+        const m=this.getLayoutTransform(), determinant=m[0]*m[4]-m[1]*m[3];
+        if (Math.abs(determinant)<1e-10) return new pdg.Point(Infinity,Infinity);
+        const x=inPt.x-m[6], y=inPt.y-m[7];
+        return new pdg.Point((m[4]*x-m[3]*y)/determinant-this.viewArea.left,
+            (-m[1]*x+m[0]*y)/determinant-this.viewArea.top);
     }
 
     /**
@@ -627,12 +788,12 @@ class View {
      * @returns {pdg.Rect} Local rect
      */
     globalToLocalRect(inRect) {
-        return new pdg.Rect(inRect).sub(this.viewArea.leftTop());
+        return mapRect(inRect, point=>this.globalToLocal(point));
     }
 
     // Getters for state
     isVisible() {
-        return this.visible;
+        return this.visible && (!this.parentView || this.parentView.isVisible());
     }
 
     isEnabled() {
@@ -685,6 +846,19 @@ class View {
         this.maxWidth = maxWidth;
         this.maxHeight = maxHeight;
     }
+}
+
+function multiply(a,b) {
+    const out=Array(9).fill(0);
+    for (let c=0;c<3;++c) for (let r=0;r<3;++r)
+        for (let k=0;k<3;++k) out[c*3+r]+=a[k*3+r]*b[c*3+k];
+    return out;
+}
+function mapPoint(m,p) { return new pdg.Point(m[0]*p.x+m[3]*p.y+m[6],m[1]*p.x+m[4]*p.y+m[7]); }
+function mapRect(rect,convert) {
+    const points=[rect.leftTop(),new pdg.Point(rect.right,rect.top),rect.rightBottom(),new pdg.Point(rect.left,rect.bottom)].map(convert);
+    return new pdg.Rect(Math.min(...points.map(p=>p.x)),Math.min(...points.map(p=>p.y)),
+        Math.max(...points.map(p=>p.x)),Math.max(...points.map(p=>p.y)));
 }
 
 module.exports = {

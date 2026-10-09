@@ -101,7 +101,7 @@ class TouchController extends ModalController {
             const touchDuration = Date.now() - this.touchStartTime;
             const distance = this.calculateDistance(this.touchStartPoint, mouseInfo.mousePos);
             
-            if (touchDuration < FLICK_MAX_MOUSE_UNMOVED_MS && distance < 10) {
+            if (part !== -1 && touchDuration < FLICK_MAX_MOUSE_UNMOVED_MS && distance < 10) {
                 // This was a tap
                 this.handleTap(mouseInfo, view, id, part);
             } else if (distance > 5) {

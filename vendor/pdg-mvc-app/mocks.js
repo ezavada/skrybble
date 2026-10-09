@@ -172,7 +172,7 @@ class MockGraphicsManager {
 class MockPort {
     constructor() {
         this.drawingArea = new pdg.Rect(0, 0, 800, 600);
-        this.clipRect = new pdg.Rect(0, 0, 0, 0);
+        this.clipRect = new pdg.Rect(this.drawingArea);
     }
     
     getDrawingArea() {
@@ -180,13 +180,18 @@ class MockPort {
     }
     
     getClipRect() {
-        return this.clipRect;
+        return new pdg.Rect(this.clipRect);
     }
     
     setClipRect(rect) {
-        this.clipRect = rect;
+        this.clipRect = rect.intersection(this.drawingArea);
+        return this;
     }
     
+    resetClipRect() {
+        this.clipRect = new pdg.Rect(this.drawingArea);
+    }
+
     fillRect(rect, color) {
         mockLog(`fillRect: ${rect.width()}x${rect.height()} at (${rect.left}, ${rect.top}) with color`, color);
     }

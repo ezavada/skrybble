@@ -314,7 +314,7 @@ class MessageDialogView extends View {
     constructor(controller, rect, message) {
         super(controller, rect);
         this.message = message;
-        this.textSize = 12;
+        this.textSize(12);
         this.textColor = new pdg.Color(0.0, 0.0, 0.0, 1.0);
     }
 
@@ -326,15 +326,15 @@ class MessageDialogView extends View {
         
         // Draw background
         var backgroundAttrs = new pdg.Attributes().fillColor(new pdg.Color(1.0, 1.0, 1.0, 1.0));
-        port.drawRect(viewArea, backgroundAttrs);
+        port.drawRect(viewArea, this.getDrawingAttributes(backgroundAttrs));
         
         // Draw message text
         const textPoint = new pdg.Point(
             viewArea.left + 10,
-            viewArea.top + viewArea.height() / 2 + this.textSize / 2
+            viewArea.top + viewArea.height() / 2 + super.getTextSize() / 2
         );
-        var textAttrs = new pdg.Attributes().textSize(this.textSize).textStyle(pdg.textStyle_Centered).fillColor(this.textColor);
-        port.drawText(this.message, textPoint, textAttrs);
+        var textAttrs = new pdg.Attributes().textSize(super.getTextSize()).textStyle(pdg.textStyle_Centered).fillColor(this.textColor);
+        port.drawText(this.message, textPoint, this.getDrawingAttributes(textAttrs, true));
     }
 
     /**
@@ -350,7 +350,7 @@ class MessageDialogView extends View {
      * @param {number} size - Text size
      */
     setTextSize(size) {
-        this.textSize = size;
+        this.textSize(size);
     }
 
     /**
@@ -380,7 +380,7 @@ class MessageDialogBorderView extends View {
         
         // Draw border
         var borderAttrs = new pdg.Attributes().lineColor(this.borderColor).lineThickness(this.borderWidth);
-        port.drawRect(viewArea, borderAttrs);
+        port.drawRect(viewArea, this.getDrawingAttributes(borderAttrs));
     }
 
     /**

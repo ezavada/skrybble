@@ -27,7 +27,7 @@ class RadioButton extends View {
         this.strings = [];
         this.maxStrings = numStrings;
         this.attributes = new ControlAttributes();
-        this.textSize = 14;
+        this.textSize(14);
         
         this.attributes
             .stateForeground(ControlState.Normal, new pdg.Color(0, 0, 0, 1))
@@ -108,6 +108,11 @@ class RadioButton extends View {
     drawRadioOptions(port = this.getPort()) {
         const viewArea = this.getViewArea();
         const optionWidth = viewArea.width() / Math.max(1, this.strings.length);
+        const textAttrs = this.getDrawingAttributes(new pdg.Attributes().textSize(super.getTextSize()).textStyle(pdg.textStyle_Plain), true);
+        const font = (typeof textAttrs.getFont === 'function' && textAttrs.getFont()) || port.getCurrentFont(textAttrs.getTextStyle());
+        const capHeight = font.getFontCapHeight(textAttrs.getTextSize(), textAttrs.getTextStyle());
+        const diameter = Math.max(1, Math.round(textAttrs.getTextSize()));
+        const baseline = Math.round(viewArea.top + (viewArea.height()+capHeight)/2);
         
         for (let i = 0; i < this.strings.length; i++) {
             const selected = i === this.selectedIndex;
@@ -117,16 +122,16 @@ class RadioButton extends View {
             const visual = this.attributes.state(state);
             const normal = this.attributes.state(ControlState.Normal);
             const image = visual.hasImage ? visual.image : (normal.hasImage ? normal.image : null);
-            const imageWidth = image ? (typeof image.width === 'function' ? image.width() : image.width) : this.textSize;
-            const imageHeight = image ? (typeof image.height === 'function' ? image.height() : image.height) : this.textSize;
+            const imageWidth = image ? (typeof image.width === 'function' ? image.width() : image.width) : diameter;
+            const imageHeight = image ? (typeof image.height === 'function' ? image.height() : image.height) : diameter;
             const optionX = viewArea.left + i * optionWidth;
             const radioRect = new pdg.Rect(
                 optionX,
-                viewArea.top + (viewArea.height() - imageHeight) / 2,
+                (image ? viewArea.top + (viewArea.height() - imageHeight) / 2 : baseline-(capHeight+diameter)/2),
                 optionX + imageWidth,
-                viewArea.top + (viewArea.height() - imageHeight) / 2 + imageHeight
+                (image ? viewArea.top + (viewArea.height() - imageHeight) / 2 : baseline-(capHeight+diameter)/2) + imageHeight
             );
-            this.attributes.draw(port, radioRect, state);
+            this.attributes.draw(port, radioRect, state, this);
             if (!image && !visual.hasDrawing && !visual.hasDrawRoutine &&
                 !normal.hasDrawing && !normal.hasDrawRoutine) {
                 this.drawRadioCircle(radioRect, selected,
@@ -136,12 +141,12 @@ class RadioButton extends View {
             // Draw text
             const textPoint = new pdg.Point(
                 optionX + imageWidth + 5,
-                viewArea.top + viewArea.height() / 2 + this.textSize / 2
+                baseline
             );
             const textColor = visual.hasForeground ? visual.foreground : normal.foreground;
             
-            port.drawText(this.strings[i], textPoint, new pdg.Attributes()
-                .textSize(this.textSize).textStyle(pdg.textStyle_Plain).fillColor(textColor));
+            port.drawText(this.strings[i], textPoint, this.getDrawingAttributes(new pdg.Attributes()
+                .textSize(super.getTextSize()).textStyle(pdg.textStyle_Plain).fillColor(textColor), true));
         }
     }
 
@@ -154,19 +159,13 @@ class RadioButton extends View {
         const port = this.getPort();
         
         // Draw outer circle
-        port.drawEllipse(rect.centerPoint(), rect.width() / 2, rect.height() / 2,
-            new pdg.Attributes().fillColor(new pdg.Color(1, 1, 1, 1)).lineColor(color));
+        port.drawEllipse(rect.centerPoint(), (rect.width()-1) / 2, (rect.height()-1) / 2, this.getDrawingAttributes(new pdg.Attributes().fillColor(new pdg.Color(1, 1, 1, 1)).lineStyle(pdg.lineStyle_Solid).lineColor(color), true));
         
         if (selected) {
             // Draw inner filled circle
-            const innerRect = new pdg.Rect(
-                rect.left + 3,
-                rect.top + 3,
-                rect.right - 3,
-                rect.bottom - 3
-            );
-            var innerAttrs = new pdg.Attributes().fillColor(new pdg.Color(0.0, 0.0, 0.0, 1.0));
-            port.drawEllipse(innerRect.centerPoint(), innerRect.width() / 2, innerRect.height() / 2, innerAttrs);
+            const radius = rect.width()*0.25;
+            port.drawCircle(rect.centerPoint(), radius,
+                this.getDrawingAttributes(new pdg.Attributes().fillColor(color), true));
         }
     }
 
@@ -175,6 +174,7 @@ class RadioButton extends View {
      * @param {number} part - Clicked part
      */
     doClick(part) {
+        if (!this.isEnabled()) return;
         if (part >= 0 && part < this.strings.length) {
             this.setSelectedIndex(part);
             this.attributes.playClick();
@@ -189,20 +189,22 @@ class RadioButton extends View {
      * @returns {boolean} true if handled
      */
     doMouseDown(mouseInfo, id, part) {
+        if (!this.isEnabled()) return false;
         if (part >= 0 && part < this.strings.length) {
-            return true; // We'll handle the selection on mouse up
+            return true; // Selection waits for a completed click
         }
         return false;
     }
 
     /**
-     * Handle mouse up
+     * Handle a completed click
      * @param {Object} mouseInfo - Mouse information
      * @param {number} id - View ID
      * @param {number} part - Clicked part
      * @returns {boolean} true if handled
      */
-    doMouseUp(mouseInfo, id, part) {
+    doLeftClick(mouseInfo, id, part) {
+        if (!this.isEnabled()) return false;
         if (part >= 0 && part < this.strings.length) {
             this.doClick(part);
             return true;
@@ -219,6 +221,7 @@ class RadioButton extends View {
      * @returns {boolean} true if handled
      */
     doKeyPress(keyPressInfo, view, id, part) {
+        if (!this.isEnabled()) return false;
         const keyCode = keyPressInfo.keyCode;
         
         switch (keyCode) {
@@ -428,7 +431,7 @@ class RadioButton extends View {
     setTextSize(size) {
         // This would be used in a more advanced implementation
         // For now, we'll just store it
-        this.textSize = size;
+        this.textSize(size);
     }
 
     /**
@@ -436,7 +439,7 @@ class RadioButton extends View {
      * @returns {number} Text size
      */
     getTextSize() {
-        return this.textSize || 12;
+        return super.getTextSize() || 12;
     }
 
     setClickSound(clickSound) {
@@ -456,6 +459,7 @@ class RadioButton extends View {
      * Cleanup when radio button is destroyed
      */
     destroy() {
+        super.destroy();
         // Clean up images
         for (let i = 0; i < MAX_RADIO_IMAGES; i++) {
             this.mpRadioImages[i] = null;

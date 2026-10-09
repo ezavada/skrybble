@@ -19,10 +19,10 @@ class MessageView extends View {
         super(controller, rect);
         
         this.message = message;
-        this.textSize = 12;
+        this.textSize(12);
         this.textColor = new pdg.Color(0.0, 0.0, 0.0, 1.0);
         this.backgroundColor = new pdg.Color(1.0, 1.0, 1.0, 1.0);
-        this.textStyle = 'textStyle_Plain';
+        this.textStyle(pdg.textStyle_Plain);
         this.textAlignment = 'textStyle_LeftJustified';
         this.wordWrap = true;
         this.maxLines = 0; // 0 = unlimited
@@ -41,11 +41,11 @@ class MessageView extends View {
         
         // Draw background
         var backgroundAttrs = new pdg.Attributes().fillColor(this.backgroundColor);
-        port.drawRect(viewArea, backgroundAttrs);
+        port.drawRect(viewArea, this.getDrawingAttributes(backgroundAttrs));
         
         // Draw border
         var borderAttrs = new pdg.Attributes().lineColor(new pdg.Color(0.7, 0.7, 0.7, 1.0)).lineThickness(1);
-        port.drawRect(viewArea, borderAttrs);
+        port.drawRect(viewArea, this.getDrawingAttributes(borderAttrs));
         
         // Draw message text
         this.drawMessageText();
@@ -78,7 +78,7 @@ class MessageView extends View {
         }
         
         // Calculate line height
-        const lineHeight = this.textSize + this.lineSpacing;
+        const lineHeight = super.getTextSize() + this.lineSpacing;
         
         // Draw lines
         let y = textArea.top - this.scrollOffset;
@@ -89,7 +89,7 @@ class MessageView extends View {
                 const line = this.wrappedLines[i];
                 const x = this.getTextX(textArea, line);
                 
-                port.drawText(line, new pdg.Point(x, y + this.textSize), this.textSize, this.textStyle, this.textColor);
+                port.drawText(line, new pdg.Point(x, y + super.getTextSize()), this.getDrawingAttributes(new pdg.Attributes().textSize(super.getTextSize()).textStyle(super.getTextStyle()).fillColor(this.textColor), true));
             }
             y += lineHeight;
         }
@@ -103,7 +103,7 @@ class MessageView extends View {
      */
     getTextX(textArea, line) {
         const port = this.getPort();
-        const textWidth = port.getTextWidth(line, this.textSize, this.textStyle);
+        const textWidth = port.getTextWidth(line, super.getTextSize(), super.getTextStyle());
         
         switch (this.textAlignment) {
             case 'textStyle_Centered':
@@ -133,7 +133,7 @@ class MessageView extends View {
         
         for (const word of words) {
             const testLine = currentLine ? `${currentLine} ${word}` : word;
-            const testWidth = port.getTextWidth(testLine, this.textSize, this.textStyle);
+            const testWidth = port.getTextWidth(testLine, super.getTextSize(), super.getTextStyle());
             
             if (testWidth <= width) {
                 currentLine = testLine;
@@ -176,7 +176,7 @@ class MessageView extends View {
      * @param {number} size - Text size
      */
     setTextSize(size) {
-        this.textSize = size;
+        this.textSize(size);
         this.wrappedLines = [];
     }
 
@@ -185,7 +185,7 @@ class MessageView extends View {
      * @returns {number} Current text size
      */
     getTextSize() {
-        return this.textSize;
+        return super.getTextSize();
     }
 
     /**
@@ -225,7 +225,7 @@ class MessageView extends View {
      * @param {string} style - Text style
      */
     setTextStyle(style) {
-        this.textStyle = style;
+        this.textStyle(typeof style === 'string' ? pdg[style] : style);
     }
 
     /**
@@ -233,7 +233,7 @@ class MessageView extends View {
      * @returns {string} Current text style
      */
     getTextStyle() {
-        return this.textStyle;
+        return super.getTextStyle();
     }
 
     /**
@@ -405,7 +405,7 @@ class MessageView extends View {
             viewArea.height() - this.margins.top - this.margins.bottom
         );
         
-        const lineHeight = this.textSize + this.lineSpacing;
+        const lineHeight = super.getTextSize() + this.lineSpacing;
         const totalHeight = this.wrappedLines.length * lineHeight;
         const visibleHeight = textArea.height();
         
@@ -572,6 +572,7 @@ class MessageView extends View {
      * Cleanup when message view is destroyed
      */
     destroy() {
+        super.destroy();
         this.message = '';
         this.wrappedLines = [];
     }

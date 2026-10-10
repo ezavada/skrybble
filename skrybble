@@ -28,6 +28,12 @@ if [[ -n ${PDG_EXECUTABLE:-} ]]; then
     exec "$PDG_EXECUTABLE" "$APP_SCRIPT" "$@"
 fi
 
+# Source checkouts use the sibling development runtime when available.
+LOCAL_PDG="$ROOT_DIR/../pdg-devel/pdg"
+if [[ $REFRESH -eq 0 && -x "$LOCAL_PDG" ]]; then
+    exec "$LOCAL_PDG" "$APP_SCRIPT" "$@"
+fi
+
 CACHE_ROOT="${PDG_CACHE_DIR:-$ROOT_DIR/.pdg}"
 INSTALL_DIR="$CACHE_ROOT/$PDG_VERSION/macos-arm64"
 PDG_EXE="$INSTALL_DIR/pdg.app/Contents/MacOS/pdg"

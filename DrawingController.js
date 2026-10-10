@@ -18,6 +18,8 @@ const LineWidthController = require('./LineWidthController.js');
 const SmoothnessController = require('./SmoothnessController.js');
 const chooseImageFile = require('./image-file-picker.js');
 const chooseDrawingFile = require('./drawing-file-picker.js');
+const pdgDrawingImport = require('./pdg-drawing-import.js');
+const chooseSaveDrawingFile = require('./save-drawing-file-picker.js');
 
 const CanvasNavigation = require('./CanvasNavigation');
 const ToolCursors=require('./ToolCursors');
@@ -1326,7 +1328,7 @@ class DrawingController extends Controller {
                     }
                     return true;
                 case 'S': // Save
-                    this.saveFile();
+                    if (event.shift) this.saveAs(); else this.saveFile();
                     return true;
                 case 'O': // Open
                     this.openDrawingFile();
@@ -1681,9 +1683,9 @@ class DrawingController extends Controller {
         }
         if (!selectedFilename) return false;
 
-        if (path.extname(selectedFilename).toLowerCase() === '.skrbl') {
+        if (path.extname(selectedFilename).toLowerCase() === '.skrbl' || pdgDrawingImport.isPdgDrawing(selectedFilename)) {
             try {
-                const documentData = JSON.parse(fs.readFileSync(selectedFilename, 'utf8'));
+                const documentData = pdgDrawingImport.readDocument(selectedFilename);
                 const importedShapes = this.drawing.deserializeDocument(documentData);
                 if (importedShapes.length === 0) {
                     throw new Error('drawing contains no shapes');
@@ -2223,8 +2225,8 @@ class DrawingController extends Controller {
         }
         if (!selectedFilename) return false;
 
-        if (path.extname(selectedFilename).toLowerCase() !== '.skrbl') {
-            this.showSaveMessage('Open failed: choose a .skrbl file');
+        if (path.extname(selectedFilename).toLowerCase() !== '.skrbl' && !pdgDrawingImport.isPdgDrawing(selectedFilename)) {
+            this.showSaveMessage('Open failed: choose a .skrbl, .pdgdrawing or .drawing.json file');
             return false;
         }
 
@@ -2248,9 +2250,12 @@ class DrawingController extends Controller {
     loadFile(filename) {
         this.commitTextEdit(true);
         try {
-            const fileData = fs.readFileSync(filename, 'utf8');
-            const data = JSON.parse(fileData);
+            const data = pdgDrawingImport.readDocument(filename);
             const loadedShapes = this.drawing.deserializeDocument(data);
+            const canvas = data.canvas || [1024,1024];
+            if (!Array.isArray(canvas) || canvas.length !== 2 ||
+                !canvas.every(n => Number.isFinite(n) && n > 0 && n <= 100000))
+                throw new Error('Invalid document canvas');
 
             // Only replace the current drawing after the entire document has
             // been validated and materialized successfully.
@@ -2262,13 +2267,34 @@ class DrawingController extends Controller {
                 this.recentColors = data.recentColors;
             }
             
-            this.currentFilename = filename;
+            // Save imports as editor documents, preserving the source stream.
+            this.currentFilename = pdgDrawingImport.isPdgDrawing(filename)
+                ? filename.replace(/\.(pdgdrawing|drawing\.json)$/i, '.skrbl') : filename;
+            this.navigation.setCanvas(canvas[0],canvas[1]);
             console.log('Loaded file:', filename);
             return true;
         } catch (error) {
             console.error('Failed to load file:', error);
             return false;
         }
+    }
+
+    saveAs(filename = null) {
+        const suggested=path.basename(this.currentFilename || 'drawing.skrbl').replace(/\.skrbl$/i,'.pdgdrawing');
+        const selected=filename || chooseSaveDrawingFile(suggested);
+        if (selected && typeof selected.then === 'function') {
+            selected.then(name => { if (name) this.saveAs(name); }).catch(error => this.showSaveMessage(`Save failed: ${error.message}`));
+            return true;
+        }
+        if (!selected) return false;
+        if (!/\.(skrbl|pdgdrawing)$/i.test(selected)) {
+            this.showSaveMessage('Save failed: choose a .skrbl or .pdgdrawing filename');return false;
+        }
+        const previous=this.currentFilename;
+        this.currentFilename=selected;
+        if (this.saveFile()) return true;
+        this.currentFilename=previous;
+        return false;
     }
 
     saveFile() {
@@ -2282,6 +2308,14 @@ class DrawingController extends Controller {
         }
         
         try {
+            if (/\.pdgdrawing$/i.test(this.currentFilename)) {
+                const bytes=pdgDrawingImport.exportBinary(this.drawing.getShapes());
+                fs.writeFileSync(this.currentFilename,bytes);
+                if (typeof globalThis !== 'undefined' && globalThis.skrybbleWeb)
+                    globalThis.skrybbleWeb.downloadFile(this.currentFilename,bytes,'application/octet-stream');
+                this.showSaveMessage(`Saved to ${this.currentFilename}`);
+                return true;
+            }
             const imageRegistry = this.drawing.createImageRegistry();
             const shapes = this.drawing.getShapes().map(shape => {
                 const serialized = this.drawing.serializeShape(shape, imageRegistry);
@@ -2292,6 +2326,7 @@ class DrawingController extends Controller {
             });
             const data = {
                 fileFormat: 'skrbl-v0.0.4',
+                canvas: [this.navigation.width,this.navigation.height],
                 imageData: imageRegistry.entries,
                 shapes,
                 recentColors: this.recentColors

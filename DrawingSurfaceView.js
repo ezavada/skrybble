@@ -58,9 +58,9 @@ class DrawingSurfaceView extends View {
         controller.navigation.setViewport(area);
         port.drawRect(area,new pdg.Attributes().fillColor(new pdg.Color('#d8dce2')));
         const canvas=cameraPort(port,controller.navigation.camera);
-        const page=new pdg.Rect(0,0,1024,1024);
+        const page=new pdg.Rect(0,0,controller.navigation.width,controller.navigation.height);
         const savedClip=port.getClipRect();
-        const a=controller.navigation.toView({x:0,y:0}), b=controller.navigation.toView({x:1024,y:1024});
+        const a=controller.navigation.toView({x:0,y:0}), b=controller.navigation.toView({x:controller.navigation.width,y:controller.navigation.height});
         const pageClip=new pdg.Rect(a.x,a.y,b.x,b.y).intersection(area).intersection(savedClip);
         port.setClipRect(pageClip);
         try {
@@ -97,7 +97,7 @@ class DrawingSurfaceView extends View {
             for (const attrs of this._notificationStyles) attrs.fillOpacity(this.notificationAppearance.getFillOpacity());
             port.drawDrawing(this._notificationDrawing,new pdg.Point(0,0),new pdg.Attributes());
         }
-        port.drawText(controller.textEdit ? 'Type text · Enter to accept · Esc to cancel' : `${Math.round(controller.navigation.camera.getZoom()*100)}% · 1024 × 1024`,
+        port.drawText(controller.textEdit ? 'Type text · Enter to accept · Esc to cancel' : `${Math.round(controller.navigation.camera.getZoom()*100)}% · ${controller.navigation.width} × ${controller.navigation.height}`,
             new pdg.Point(area.left+8,area.bottom-8),new pdg.Attributes().textSize(12).fillColor(new pdg.Color('#475569')));
     }
 
@@ -156,6 +156,7 @@ class DrawingSurfaceView extends View {
             { key: 'CMD/CTRL+SHIFT+Z', description: 'Redo' },
             { key: 'CMD/CTRL+O', description: 'Open drawing' },
             { key: 'CMD/CTRL+S', description: 'Save drawing' },
+            { key: 'CMD/CTRL+SHIFT+S', description: 'Save as PDG / Skrybble' },
             { key: '', description: '' },
             { key: '+/=', description: 'Move shape forward' },
             { key: '-', description: 'Move shape backward' },

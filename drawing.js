@@ -97,6 +97,7 @@ class Drawing {
                 shape.x += dx;
                 shape.y += dy;
                 break;
+            case 'NativeDrawing':
             case 'Text':
             case 'Rectangle':
             case 'Image':
@@ -276,6 +277,9 @@ class Drawing {
         let data;
         
         switch (typeName) {
+            case 'NativeDrawing':
+                data={stream:shape.stream,x:shape.x,y:shape.y,rotation:shape.rotation};
+                break;
             case 'Text':
                 data = {x:shape.x,y:shape.y,text:shape.text,fontSize:shape.fontSize,fontName:shape.fontName,textStyle:shape.textStyle,
                     width:shape.width,height:shape.height,fillColor:shape.fillColor,rotation:shape.rotation};
@@ -383,6 +387,10 @@ class Drawing {
         let shape = null;
         
         switch (type) {
+            case 'NativeDrawing':
+                shape=new ShapeClasses.NativeDrawing(data.stream);
+                shape.x=data.x || 0;shape.y=data.y || 0;
+                break;
             case 'Text':
                 shape = new ShapeClasses.Text(data.x,data.y,data.text,data.fillColor,
                     data.fontSize,data.width,data.height,data.fontName,data.textStyle);

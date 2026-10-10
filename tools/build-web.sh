@@ -16,6 +16,12 @@ if [ "$#" -ne 0 ]; then
     exit 2
 fi
 
+LOCAL_WASM_DIR="$PROJECT_DIR/../pdg-devel/build/wasm/wasm32/release"
+if [ -z "${PDG_WASM_DIR:-}" ] && [ "$REFRESH_PDG" -eq 0 ] &&
+   [ -f "$LOCAL_WASM_DIR/libpdg.js" ] && [ -f "$LOCAL_WASM_DIR/libpdg.wasm" ]; then
+    PDG_WASM_DIR="$LOCAL_WASM_DIR"
+fi
+
 if [ -z "${PDG_WASM_DIR:-}" ]; then
     # shellcheck disable=SC1091
     . "$PROJECT_DIR/tools/pdg-release.env"

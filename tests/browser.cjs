@@ -1,5 +1,5 @@
 const fs=require('fs'),http=require('http'),path=require('path'),os=require('os'),{spawn}=require('child_process');
-const root=path.resolve(__dirname,'../dist');
+const root=path.resolve(process.env.SKRYBBLE_WEB_ROOT || path.join(__dirname,'../dist'));
 const errors=[];
 const server=http.createServer((req,res)=>{try{const p=path.join(root,new URL(req.url,'http://localhost').pathname);const file=p.endsWith('/')?p+'index.html':p;res.setHeader('Content-Type',file.endsWith('.wasm')?'application/wasm':file.endsWith('.js')?'text/javascript':'text/html');const content=fs.readFileSync(file);res.end(file.endsWith('/main.js') ? content.toString().replace('const app = new DrawingApp(process.argv);','const app = new DrawingApp(process.argv); window.__skrybbleTestApp=app;') : content);}catch(e){res.writeHead(404);res.end('Missing');}});
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'skrybble-smoke-'));
@@ -11,6 +11,58 @@ const delay=ms=>new Promise(r=>setTimeout(r,ms));
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const {targetId}=await send('Target.createTarget',{url:'about:blank'});const {sessionId}=await send('Target.attachToTarget',{targetId,flatten:true});const call=(m,p)=>send(m,p,sessionId);const evalPage=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);return r.result.value;};
 await call('Page.enable');await call('Runtime.enable');await call('Emulation.setDeviceMetricsOverride',{width:1280,height:960,deviceScaleFactor:1,mobile:false});await call('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/'});
 let ready=false;for(let i=0;i<120;i++){await delay(250);const status=await evalPage('document.documentElement.dataset.status');if(status==='failed')throw Error(await evalPage('document.getElementById("status").textContent'));if(status==='ready'){ready=true;break;}}if(!ready)throw Error('Startup timed out');
+const poseRoot=process.env.PDG_POSE_DIR || path.resolve(__dirname,'../../v5-pose-library/drawings');
+const poseFile=path.join(poseRoot,'t-pose-000-v5-tank-yoga-shaded.pdgdrawing');
+if(fs.existsSync(poseFile)) {
+    const bytes=fs.readFileSync(poseFile),base64=bytes.toString('base64');
+    const expected=JSON.parse(fs.readFileSync(poseFile.replace('.pdgdrawing','.drawing.json'),'utf8'));
+    const count=expected.layers.reduce((n,layer)=>n+layer.polygons.length,0);
+    if(!await evalPage(`(()=> {
+        const raw=atob(${JSON.stringify(base64)}),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
+        FS.mkdirTree('/uploads');FS.writeFile('/uploads/pose.pdgdrawing',bytes);
+        const controller=__skrybbleTestApp.drawingController;
+        if(!controller.openDrawingFile('/uploads/pose.pdgdrawing') || controller.drawing.getShapeCount()!==${count})return false;
+        if(!controller.saveAs('/uploads/export.pdgdrawing'))return false;
+        const saved=FS.readFile('/uploads/export.pdgdrawing');
+        if(saved.length!==bytes.length || saved.some((v,i)=>v!==bytes[i]))return false;
+        const ink=controller.drawing.getShapes().at(-1);let captured;
+        ink.drawArtwork({drawPolygon:(p,a)=>captured=a.getLineStyle()});
+        if(captured!==pdg.lineStyle_None)return false;
+        controller.drawing.clearShapes();controller.currentFilename=null;controller.navigation.setCanvas(1024,1024);controller.navigation.reset();
+        return true;
+    })()`))throw Error('Browser PDG pose import/save did not round trip');
+    console.log('PASS: browser native PDG pose import and byte-identical Save As');
+}
+if(!await evalPage(`(()=> {
+    if(typeof pdg.Serializer.prototype.serializeDrawing!=='function')throw Error('Browser runtime lacks native drawing codec');
+    const art=pdg.createDrawing();
+    art.addText('Café 世界',new pdg.Rect(4,4,92,28),new pdg.Attributes().textSize(18).fillColor('red'));
+    const imagePort=pdg.gfx.createOffscreenPort(new pdg.Rect(8,8));
+    imagePort.drawRect(new pdg.Rect(8,8),new pdg.Attributes().fillColor('blue').lineStyle(pdg.lineStyle_None));
+    art.addImage(new pdg.Rect(10,40,30,60),new pdg.Image(imagePort),new pdg.Attributes().fitType(pdg.fit_Fill));
+    const writer=new pdg.Serializer();writer.setResourceMode(pdg.serialization_Complete);writer.serializeDrawing(art);
+    const block=writer.getDataPtr(),bytes=new Uint8Array(block.getDataSize());
+    for(let i=0;i<bytes.length;++i)bytes[i]=block.getByte(i);
+    const reader=new pdg.Deserializer();reader.setDataPtr(bytes);const restored=reader.deserializeDrawing();
+    if(restored.getElement(0).getText()!=='Café 世界' || restored.getElement(1).type()!==pdg.type_Image)return false;
+    const port=pdg.gfx.createOffscreenPort(new pdg.Rect(96,72));
+    port.drawDrawing(art,new pdg.Point(0,0),new pdg.Attributes());const before=new pdg.Image(port);
+    port.clear();port.drawDrawing(restored,new pdg.Point(0,0),new pdg.Attributes());const after=new pdg.Image(port);
+    let match=true;
+    for(let y=0;y<72;y++)for(let x=0;x<96;x++) {
+        const a=before.getPixel(x,y),b=after.getPixel(x,y);
+        for(const k of ['red','green','blue','alpha'])if(Math.abs(a[k]-b[k])>.01)match=false;
+    }
+    if(after.getPixel(20,50).blue<.9)match=false;
+    const c=__skrybbleTestApp.drawingController;FS.writeFile('/uploads/mixed.pdgdrawing',bytes);
+    if(!c.openDrawingFile('/uploads/mixed.pdgdrawing') || c.drawing.getShapes()[0].constructor.name!=='NativeDrawing')return false;
+    if(!c.saveAs('/uploads/mixed-save.pdgdrawing') || !c.loadFile('/uploads/mixed-save.pdgdrawing'))return false;
+    if(!c.saveAs('/uploads/mixed.skrbl') || !c.loadFile('/uploads/mixed.skrbl'))return false;
+    c.drawing.clearShapes();c.currentFilename=null;c.navigation.setCanvas(1024,1024);c.navigation.reset();
+    pdg.gfx.closeGraphicsPort(port);pdg.gfx.closeGraphicsPort(imagePort);
+    return match;
+})()`))throw Error('Browser native text/image drawing round trip failed');
+console.log('PASS: browser native text, embedded images and mixed drawing Save As');
 const key=async (text,code,virtual)=> {
     await call('Input.dispatchKeyEvent',{type:'keyDown',key:text,code,windowsVirtualKeyCode:virtual,text});
     await call('Input.dispatchKeyEvent',{type:'keyUp',key:text,code,windowsVirtualKeyCode:virtual});

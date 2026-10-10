@@ -26,6 +26,12 @@ if ($env:PDG_EXECUTABLE) {
     exit $LASTEXITCODE
 }
 
+$localPdg = Join-Path $rootDir "..\pdg-devel\pdg.exe"
+if (-not $RefreshPdg -and (Test-Path $localPdg -PathType Leaf)) {
+    & $localPdg $appScript @AppArguments
+    exit $LASTEXITCODE
+}
+
 $cacheRoot = if ($env:PDG_CACHE_DIR) { $env:PDG_CACHE_DIR } else { Join-Path $rootDir ".pdg" }
 $installDir = Join-Path $cacheRoot "$($settings.PDG_VERSION)\windows-x64"
 $pdgExe = Join-Path $installDir "pdg.exe"

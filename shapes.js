@@ -1335,23 +1335,26 @@ class Polygon extends Shape {
 
     drawArtwork(port) {
         // Create a PDG Polygon object
-        const polygon = new pdg.Polygon();
         const center = this.getCenterPoint();
         
         // Add all points to the polygon, applying rotation if set
-        this.points.forEach(point => {
+        const vertices = this.points.map(point => {
             let p = point;
             if (this.rotation !== 0) {
                 p = this.rotatePoint(p.x, p.y, center.x, center.y, this.rotation);
             }
-            polygon.addPoint(new pdg.Point(p.x, p.y));
+            return new pdg.Point(p.x, p.y);
         });
+        // addPoint drops adjacent subpixel vertices. The array constructor
+        // retains thin imported ink and the doubled bridges around holes.
+        const polygon = new pdg.Polygon(vertices);
         
         // Draw the polygon
         const attrs = new pdg.Attributes();
-        attrs.lineColor(new pdg.Color(this.strokeColor))
-             .lineThickness(this.strokeWidth)
-             .lineStyle(pdg.lineStyle_Solid);
+        if (this.strokeColor && this.strokeWidth > 0) {
+            attrs.lineColor(new pdg.Color(this.strokeColor))
+                .lineThickness(this.strokeWidth).lineStyle(pdg.lineStyle_Solid);
+        } else attrs.lineStyle(pdg.lineStyle_None);
         if (this.fillColor) {
             attrs.fillColor(new pdg.Color(this.fillColor));
         }
@@ -1929,9 +1932,48 @@ class Group extends Shape {
     get strokeWidth() { return this._strokeWidth; }
 }
 
+// Arbitrary native drawings retain text, images, curves and their attributes.
+// The editor can move, rotate, duplicate and group this artwork as a unit.
+class NativeDrawing extends Shape {
+    constructor(stream) {
+        super(0,0,null,null,0);
+        const codec=require('./pdg-drawing-import');
+        this._drawing=codec.decodeNative(codec.fromBase64(stream));
+        this.stream=stream;
+    }
+    getArtwork() {
+        const bounds=this._drawing.getBounds(),center=this.getCenterPoint();
+        if (!this._artwork) {
+            this._appearance=new pdg.Attributes();this._artwork=pdg.createDrawing();
+            this._rootElement=this._artwork.addDrawing(bounds,this._drawing,this._appearance);
+            this._rootElement.setLiveAttributes(this._appearance);
+        }
+        const c=Math.cos(this.rotation),s=Math.sin(this.rotation);
+        this._appearance.setTransform([c,s,0,-s,c,0,
+            center.x+c*(this.x-center.x)-s*(this.y-center.y),
+            center.y+s*(this.x-center.x)+c*(this.y-center.y),1]);
+        return this._artwork;
+    }
+    getEndpoints() {
+        const b=this._drawing.getBounds();
+        return [{x:b.left+this.x,y:b.top+this.y},{x:b.right+this.x,y:b.top+this.y},
+            {x:b.right+this.x,y:b.bottom+this.y},{x:b.left+this.x,y:b.bottom+this.y}];
+    }
+    getCenterPoint() {
+        const b=this._drawing.getBounds();
+        return {x:(b.left+b.right)/2+this.x,y:(b.top+b.bottom)/2+this.y};
+    }
+    contains(x,y) {
+        const c=this.getCenterPoint(),p=this.rotatePoint(x,y,c.x,c.y,-this.rotation);
+        const b=this._drawing.getBounds();
+        return p.x-this.x>=b.left && p.x-this.x<=b.right && p.y-this.y>=b.top && p.y-this.y<=b.bottom;
+    }
+}
+
 module.exports = {
     getShapeBounds,
     Shape,
+    NativeDrawing,
     Text,
     Line,
     Circle,

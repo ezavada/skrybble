@@ -29,7 +29,7 @@ undo/redo, draw-order control, and persistent `.skrbl` documents.
 - **Help Tool** (`?`) - Display keyboard shortcuts
 
 ### Canvas Navigation
-- Documents occupy a fixed **1024 × 1024** logical canvas; 100% zoom is 1:1.
+- New documents use a **1024 × 1024** logical canvas; imported PDG drawings retain their canvas dimensions. 100% zoom is 1:1.
 - Use the **Pan tool** (`H`) or hold **Space** while dragging to pan.
 - Scroll the mouse wheel/trackpad to zoom in and out; no modifier is required.
 - The **Magnifier tool** (beside Pan) zooms in on click; **Right-click** or **Shift/Option/Control-click** zooms out.
@@ -95,8 +95,9 @@ load, duplicate, and undo.
 - Smart accumulation for nudges and draw order changes
 
 ### File Management
-- **Open** (`Cmd/Ctrl+O`) - Choose and load a `.skrbl` drawing
-- **Save** (`Cmd/Ctrl+S`) - Save drawing to .skrbl file
+- **Open** (`Cmd/Ctrl+O`) - Load `.skrbl`, `.pdgdrawing`, or `.drawing.json` drawings
+- **Save** (`Cmd/Ctrl+S`) - Save to the current document filename
+- **Save As** (`Cmd/Ctrl+Shift+S`) - Choose `.skrbl` or native `.pdgdrawing` output
 - **Load** - Specify filename on command line to load on startup
 - Auto-generates timestamped filename if none specified
 - JSON-based file format preserves all shape properties and stores each unique embedded image once
@@ -155,12 +156,13 @@ clones, or `SKRYBBLE_WEB_OUTPUT` to change the output directory. Pass
 `--refresh-pdg` to download and reverify the pinned release again. The generated
 site is static and contains Skrybble, `libpdg.js`, `libpdg.wasm`, and PDG's
 license bundle. Browser Open/Image operations use the system file picker; Save
-downloads a `.skrbl` file.
+downloads the selected `.skrbl` or `.pdgdrawing` format.
 
-The launchers cache the exact public PDG release under `.pdg/` and verify its
+The launchers prefer a built sibling `pdg-devel` checkout when available.
+Otherwise they cache the exact public PDG release under `.pdg/` and verify its
 SHA-256 before use. Set `PDG_CACHE_DIR` to share that cache between clones, or
 `PDG_EXECUTABLE` to test with an already installed runtime. Pass
-`--refresh-pdg` (or `-RefreshPdg` in PowerShell) to replace the cached copy.
+`--refresh-pdg` (or `-RefreshPdg` in PowerShell) to use and replace the cached release.
 
 The wide-stroke renderer fix is currently in `pdg-devel`; pinned PDG 1.2 binaries
 still have OpenGL line-width limits. For native development, build that checkout
@@ -512,3 +514,47 @@ when the pointer is stationary.
 
 The canvas uses an I-beam cursor for text creation/editing, a crosshair for shape
 creation, and magnifier cursors for zoom. Toolbar and popup cursors remain arrows.
+
+## Import PDG pose drawings
+
+Open the pose converter's `.pdgdrawing` or `.drawing.json` files with Ctrl/Cmd+O,
+or pass a file to the launcher:
+
+```sh
+./skrybble ../v5-pose-library/drawings/t-pose-000-v5-tank-yoga-shaded.pdgdrawing
+```
+
+Shift+I also accepts these files and places their polygons as a group in the
+current drawing. Desktop and browser file pickers support both formats.
+Polygons remain editable, with fill colors, half-pixel vertices, transparent
+holes and drawing order preserved, so the three cel tones stay below the ink.
+Ungroup a placed drawing to edit individual polygons.
+
+JSON imports preserve the original image canvas. Native streams do not store
+image canvas metadata, so their page dimensions are derived from the polygon
+extents. Opening an import fits its page in the viewport; saving writes a `.skrbl`
+document beside the import and preserves page dimensions, leaving the source
+PDG file unchanged. Existing `.skrbl` files without canvas metadata use 1024 × 1024.
+
+The portable pose reader supports polygon snapshots v4/v5 with flat fills and
+solid/no strokes, including all converted poses. Current development runtimes
+also restore other native artwork through PDG’s full codec. Invalid files leave
+the current document unchanged.
+
+Use **Ctrl/Cmd+Shift+S** to Save As `.pdgdrawing` on desktop or download the
+binary stream in the browser. After Save As, Ctrl/Cmd+S saves that format again.
+Native export preserves polygons, curves, primitives, text, images, attributes,
+and nested groups when running a current `pdg-devel` runtime. Images are embedded;
+font files must be installed on the receiving system. Pose polygons stay fully
+editable. Other native drawings reopen as retained artwork that can be moved,
+rotated, duplicated and grouped, and can also be saved inside `.skrbl` documents.
+
+The launchers use a built sibling `pdg-devel` runtime when available; an explicit
+`PDG_EXECUTABLE` takes precedence and refreshing PDG uses the pinned release.
+The pinned PDG 1.2 runtime supports polygon pose exchange. For complete native
+export/import on desktop, build `pdg-devel` or launch with
+`PDG_EXECUTABLE=/path/to/pdg-devel/pdg ./skrybble`. For the browser, rebuild with
+`PDG_WASM_DIR=/path/to/pdg-devel/build/wasm/wasm32/release ./tools/build-web.sh`.
+Native streams omit editor canvas dimensions; reopening derives the page size
+from the artwork bounds. `.skrbl` retains the editor canvas and shape-specific
+editing information.

@@ -100,15 +100,8 @@ class SmoothnessController extends Controller {
     }
 
     doMouseUp(mouseInfo, view, id, part) {
-        // Check if we've been destroyed or closed
-        const parent = this.parentController || this.parent;
-        if (!parent || parent.smoothnessController !== this) {
-            return false;
-        }
-        
-        console.log('SmoothnessController.doMouseUp called');
-        // Consume the event to prevent it from reaching parent
-        return true;
+        if (!view || part===-1) { this.cancel(); return true; }
+        return false;
     }
 
     doLeftClick(clickInfo, view, id, part) {
@@ -123,14 +116,14 @@ class SmoothnessController extends Controller {
         const pos = this.getMousePosition(clickInfo);
         
         // Check if clicking outside the popup - cancel
-        if (!this.popupRect.contains(pos.x, pos.y)) {
+        if (!this.popupRect.contains(new pdg.Point(pos.x,pos.y))) {
             console.log('SmoothnessController.doLeftClick - click outside popup, canceling');
             this.cancel();
             return true;
         }
         
         // Check if clicking on a smoothness option
-        const clickedIndex = this.getClickedSmoothnessIndex(pos);
+        const clickedIndex = part>=2 && part<=6 ? part-2 : -1;
         console.log('SmoothnessController.doLeftClick - clickedIndex:', clickedIndex);
         if (clickedIndex !== -1) {
             this.selectedIndex = clickedIndex;
@@ -202,50 +195,7 @@ class SmoothnessController extends Controller {
         }
     }
 
-    getClickedSmoothnessIndex(pos) {
-        // Smoothness options are drawn with 30px spacing, starting at y=50
-        const startY = this.popupRect.top + 50;
-        const lineSpacing = 30;
-        const lineHeight = 20; // Clickable area height
-        
-        if (pos.x < this.popupRect.left || pos.x > this.popupRect.right) {
-            return -1;
-        }
-        
-        for (let i = 0; i < 5; i++) {
-            const lineY = startY + i * lineSpacing;
-            if (pos.y >= lineY - lineHeight/2 && pos.y <= lineY + lineHeight/2) {
-                return i;
-            }
-        }
-        
-        return -1;
-    }
 
-    doMouseUp(mouseInfo, view, id, part) {
-        // Ignore the first MouseUp event (from opening the picker)
-        if (this.ignoreNextMouseUp) {
-            console.log('SmoothnessController.doMouseUp - ignoring initial MouseUp');
-            this.ignoreNextMouseUp = false;
-            return true;
-        }
-        
-        // Check if we've been destroyed or closed
-        const parent = this.parentController || this.parent;
-        if (!parent || parent.smoothnessController !== this) {
-            return false;
-        }
-        
-        const pos = this.getMousePosition(mouseInfo);
-        
-        // Check if clicking outside the popup - cancel
-        if (!this.popupRect.contains(pos.x, pos.y)) {
-            this.cancel();
-            return true;
-        }
-        
-        return true;
-    }
 
     doKeyPress(keyPressInfo, view, id, part) {
         // Check if we've been destroyed or closed
@@ -338,7 +288,8 @@ class SmoothnessPickerView extends View {
         
         // Make the entire view area clickable
         const viewArea = this.getViewArea();
-        this.addClickablePart(viewArea, 1);
+        this.addClickablePart(new pdg.Rect(viewArea.width(),viewArea.height()), 1);
+        for(let i=0;i<5;i++) this.addClickablePart(new pdg.Rect(0,40+i*30,viewArea.width(),60+i*30),i+2);
         
         // Pre-generate example irregular lines for each smoothness level
         this.exampleLines = this.generateExampleLines();

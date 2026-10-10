@@ -18,6 +18,60 @@ class Shape {
     }
 
     draw(port) {
+        const artwork = this.getArtwork(port.strokeScale || 1);
+        if (port.drawRetained) port.drawRetained(artwork);
+        else port.drawDrawing(artwork,new pdg.Point(0,0),new pdg.Attributes());
+        if (!this._editing && (this.selected || (this.underConstruction && !this.freehand))) {
+            const controls=port.controls || port;
+            if (this.drawEndpoints) this.drawEndpoints(controls);
+            if (this.drawControlPoints) this.drawControlPoints(controls);
+            this.drawRotationControl(controls);
+        }
+    }
+
+    getArtwork(strokeScale = 1) {
+        const geometry = JSON.stringify(Object.fromEntries(Object.entries(this).filter(([key]) =>
+            !key.startsWith('_') && !['selected','rotation','fillColor','strokeColor','strokeWidth',
+                'image','loadError','manuallyEditedControls','text'].includes(key) &&
+            !(this.constructor.name==='Text' && ['x','y','width','height'].includes(key)))));
+        const style = JSON.stringify([this.fillColor,this.strokeColor,this.strokeWidth,strokeScale]);
+        if (!this._artwork || geometry !== this._geometryKey) {
+            this._geometry = pdg.createDrawing();
+            const recorder = require('./rendering').drawingPort(this._geometry,null,strokeScale);
+            this._paintUnselected(recorder);
+            this._elements = recorder.refs;
+            this._artwork = pdg.createDrawing();
+            this._appearance = new pdg.Attributes();
+            this._rootElement = this._artwork.addDrawing(this._geometry.getBounds(), this._geometry, this._appearance);
+            this._rootElement.setLiveAttributes(this._appearance);
+            this._transformKey=null;
+            this._geometryKey = geometry;
+            this._styleKey = style;
+        } else if (style !== this._styleKey) {
+            this._paintUnselected(require('./rendering').drawingPort(this._geometry, this._elements,strokeScale));
+            this._styleKey = style;
+        }
+        if (this.constructor.name==='Text' && this._textKey!==this.text) {
+            this._elements[0].setText(this.text); this._textKey=this.text;
+        }
+        const center=this.getCenterPoint();
+        const transformKey=[this.rotation,center.x,center.y].join(',');
+        if (transformKey!==this._transformKey) {
+            this._appearance.setTransform([1,0,0,0,1,0,0,0,1]);
+            if (this.rotation) this._appearance.rotation(this.rotation,new pdg.Point(center));
+            this._transformKey=transformKey;
+        }
+        return this._artwork;
+    }
+
+    _paintUnselected(port) {
+        const selected = this.selected, rotation = this.rotation, construction=this.underConstruction;
+        this.selected = false; this.rotation = 0; this.underConstruction=false;
+        try { this.drawArtwork(port); }
+        finally { this.selected = selected; this.rotation = rotation; this.underConstruction=construction; }
+    }
+
+    drawArtwork(port) {
         // Override in subclasses
     }
 
@@ -66,7 +120,7 @@ class Shape {
         if (this.constructor.name === 'Circle') return;
         
         const center = this.getCenterPoint();
-        const lineLength = this.getRotationLineLength();
+        const lineLength = Math.max(this.getRotationLineLength(),this._rotationGuideLength || 0);
         
         // Draw blue center point with white outline
         port.drawCircle(new pdg.Point(center.x, center.y), 5, 
@@ -89,21 +143,6 @@ class Shape {
     addPoint(point) {
         // Override in subclasses where applicable
     }
-}
-
-// Adapts the Port calls used by Skrybble shapes to pdg.Drawing's element API.
-function createDrawingPort(drawing) {
-    return {
-        drawLine: (from, to, attrs) => drawing.addLine(from, to, attrs),
-        drawRect: (rect, attrs) => drawing.addRect(rect, attrs),
-        drawCircle: (center, radius, attrs) => drawing.addEllipse(center, radius, radius, attrs),
-        drawEllipse: (center, radiusX, radiusY, attrs) => drawing.addEllipse(center, radiusX, radiusY, attrs),
-        drawPolygon: (polygon, attrs) => drawing.addPolygon(polygon, attrs),
-        drawSpline: (spline, attrs) => drawing.addSpline(spline, attrs),
-        drawQuad: (quad, attrs) => drawing.addQuad(quad, attrs),
-        drawArc: (arc, attrs) => drawing.addArc(arc, attrs),
-        drawImage: (image, rect, attrs) => drawing.addImage(rect, image, attrs)
-    };
 }
 
 function includePoint(bounds, point) {
@@ -131,7 +170,10 @@ function getShapeBounds(shape) {
         bounds = includePoint(bounds, worldPoint);
     };
 
-    if (shape.constructor.name === 'Circle') {
+    if (shape.constructor.name === 'Text') {
+        [{x:shape.x,y:shape.y},{x:shape.x+shape.width,y:shape.y},
+            {x:shape.x+shape.width,y:shape.y+shape.height},{x:shape.x,y:shape.y+shape.height}].forEach(addLocalPoint);
+    } else if (shape.constructor.name === 'Circle') {
         bounds = includePoint(bounds, { x: shape.x - shape.radius, y: shape.y - shape.radius });
         bounds = includePoint(bounds, { x: shape.x + shape.radius, y: shape.y + shape.radius });
     } else if (shape.constructor.name === 'Oval') {
@@ -158,7 +200,7 @@ class Line extends Shape {
         this.y2 = y2;
     }
 
-    draw(port) {
+    drawArtwork(port) {
         let p1 = { x: this.x, y: this.y };
         let p2 = { x: this.x2, y: this.y2 };
         
@@ -320,7 +362,7 @@ class Circle extends Shape {
         this.radius = radius;
     }
 
-    draw(port) {
+    drawArtwork(port) {
         const center = new pdg.Point(this.x, this.y);
         const attrs = new pdg.Attributes();
         
@@ -401,7 +443,7 @@ class Rectangle extends Shape {
         this.height = height;
     }
 
-    draw(port) {
+    drawArtwork(port) {
         const attrs = new pdg.Attributes();
         
         attrs.lineColor(new pdg.Color(this.strokeColor))
@@ -562,7 +604,7 @@ class Spline extends Shape {
         this.underConstruction = false; // Track if shape is still being built
     }
 
-    draw(port) {
+    drawArtwork(port) {
         // Need at least 2 points to draw a spline
         if (this.points.length < 2) return;
         
@@ -897,7 +939,7 @@ class BezierSpline extends Shape {
         return controls;
     }
 
-    draw(port) {
+    drawArtwork(port) {
         // Create a PDG Spline object
         const spline = new pdg.Spline(pdg.spline_CubicBezier);
         const center = this.getCenterPoint();
@@ -1163,7 +1205,7 @@ class Oval extends Shape {
         this.radiusY = radiusY;
     }
 
-    draw(port) {
+    drawArtwork(port) {
         const center = new pdg.Point(this.x, this.y);
         const attrs = new pdg.Attributes();
         
@@ -1291,7 +1333,7 @@ class Polygon extends Shape {
         this.underConstruction = false; // Track if shape is still being built
     }
 
-    draw(port) {
+    drawArtwork(port) {
         // Create a PDG Polygon object
         const polygon = new pdg.Polygon();
         const center = this.getCenterPoint();
@@ -1582,7 +1624,7 @@ class Image extends Shape {
         };
     }
 
-    draw(port) {
+    drawArtwork(port) {
         const bounds = this.getNormalizedBounds();
         const rect = new pdg.Rect(bounds.left, bounds.top, bounds.right, bounds.bottom);
         const center = this.getCenterPoint();
@@ -1665,6 +1707,80 @@ class Image extends Shape {
     }
 }
 
+// UTF-8 text is semantic document data; native Drawing owns rendering.
+class Text extends Shape {
+    constructor(x,y,text='Text',color='black',fontSize=24,width=72,height=32,fontName='Arial',textStyle=0) {
+        super(x,y,color,color,0);
+        this.text=text;this.fontSize=fontSize;this.width=width;this.height=height;
+        this.fontName=fontName;this.textStyle=textStyle;
+    }
+    getFont() {
+        if(this._fontName!==this.fontName) {this._font=pdg.gfx.createFont(this.fontName);this._fontName=this.fontName;}
+        return this._font;
+    }
+    measure(port,text=this.text) {
+        const old=port.getCurrentFont(this.textStyle);
+        try {port.setFontForStyle(this.textStyle,this.getFont());return port.getTextWidth(text,this.fontSize,this.textStyle);}
+        finally {port.setFontForStyle(this.textStyle,old);}
+    }
+    layout(port=pdg.gfx.getMainPort()) {
+        // x/y are the box's top-left for persistence and hit testing. Resizing
+        // its natural text metrics must preserve the rotation/selection pivot.
+        const center=this.getCenterPoint();
+        if(port)this._layoutPort=port;
+        port ||= this._layoutPort;
+        const font=this.getFont();
+        this._ascent=Math.ceil(font.getFontAscent(this.fontSize,this.textStyle));
+        this._descent=Math.ceil(font.getFontDescent(this.fontSize,this.textStyle));
+        this._textWidth=port?this.measure(port):Array.from(this.text).length*this.fontSize*.6;
+        const minimum=port?this.measure(port,'MMM'):this.fontSize*2.5;
+        this.width=Math.max(minimum,this._textWidth)+8;
+        this.height=this._ascent+this._descent+8;
+        this.x=center.x-this.width/2;
+        this.y=center.y-this.height/2;
+    }
+    textRect() {
+        return new pdg.Rect(this.x+4,this.y+4,this.x+4+Math.max(1,this._textWidth),this.y+4+this._ascent+this._descent);
+    }
+    draw(port) {this.layout(this._layoutPort || pdg.gfx.getMainPort());super.draw(port);}
+    drawArtwork(port) {
+        this.layout();
+        port.drawText(this.text,this.textRect(),new pdg.Attributes().font(this.getFont())
+            .textStyle(this.textStyle).textSize(this.fontSize).fillColor(new pdg.Color(this.fillColor)));
+    }
+    getArtwork(strokeScale = 1) {
+        this.layout();
+        const art=super.getArtwork(strokeScale),rect=this.textRect();
+        // Changing text changes natural ink bounds, without fitting it into
+        // the editing box or replacing the retained text element.
+        const points=[rect.leftTop(),rect.rightTop(),rect.rightBottom(),rect.leftBottom()];
+        const key=[rect.left,rect.top,rect.right,rect.bottom].join(',');
+        if(key!==this._inkKey) {
+            points.forEach((point,index)=>this._elements[0].changeControlPoint(index,point));
+            const bounds=this._geometry.getBounds();
+            [bounds.leftTop(),bounds.rightTop(),bounds.rightBottom(),bounds.leftBottom()]
+                .forEach((point,index)=>this._rootElement.changeControlPoint(index,point));
+            this._inkKey=key;
+        }
+        return art;
+    }
+    getCenterPoint() { return {x:this.x+this.width/2,y:this.y+this.height/2}; }
+    getEndpoints() { return []; }
+    contains(x,y) {
+        const c=this.getCenterPoint();
+        const p=this.rotatePoint(x,y,c.x,c.y,-this.rotation);
+        return p.x>=this.x && p.x<=this.x+this.width && p.y>=this.y && p.y<=this.y+this.height;
+    }
+    intersectsRect(left,top,right,bottom) {
+        const c=this.getCenterPoint();
+        const points=[{x:this.x,y:this.y},{x:this.x+this.width,y:this.y},
+            {x:this.x+this.width,y:this.y+this.height},{x:this.x,y:this.y+this.height}]
+            .map(p=>this.rotatePoint(p.x,p.y,c.x,c.y,this.rotation));
+        return Math.min(...points.map(p=>p.x))<=right && Math.max(...points.map(p=>p.x))>=left &&
+            Math.min(...points.map(p=>p.y))<=bottom && Math.max(...points.map(p=>p.y))>=top;
+    }
+}
+
 // A first-class shape whose children render through one pdg.Drawing. Keeping
 // the child objects intact makes ungrouping and serialization lossless.
 class Group extends Shape {
@@ -1674,35 +1790,58 @@ class Group extends Shape {
             first ? first.strokeColor : 'black', first ? first.strokeWidth : 1);
         this.children = children;
         this.children.forEach(child => child.selected = false);
-        this.pdgDrawing = null;
         this.rebuildDrawing();
     }
 
     rebuildDrawing() {
-        if (typeof pdg === 'undefined' || !pdg.createDrawing) return null;
-        const drawing = pdg.createDrawing();
-        this.addChildrenToDrawing(drawing, createDrawingPort(drawing));
-        this.pdgDrawing = drawing;
-        return drawing;
+        this._artwork = null;
+        return null;
     }
 
-    addChildrenToDrawing(drawing, drawingPort = createDrawingPort(drawing)) {
-        for (const child of this.children) {
-            if (child instanceof Group) {
-                child.addChildrenToDrawing(drawing, drawingPort);
-            } else {
-                const wasSelected = child.selected;
-                child.selected = false;
-                child.draw(drawingPort);
-                child.selected = wasSelected;
-            }
+    getArtwork(strokeScale = 1) {
+        const children = this.children.map(child => child.getArtwork(strokeScale));
+        if (!this._artwork || children.some((drawing,i) => drawing !== this._childArtwork[i])) {
+            this._artwork = pdg.createDrawing();
+            this._appearance = new pdg.Attributes();
+            this._childElements = children.map(drawing => {
+                const element = this._artwork.addDrawing(drawing.getBounds(),drawing,this._appearance);
+                element.setLiveAttributes(this._appearance);
+                return element;
+            });
+            this._childArtwork = children;
+            this._childBounds=[];
+            this._translationKey=null;
         }
+        children.forEach((drawing,i) => {
+            const b=drawing.getBounds();
+            const key=[b.left,b.top,b.right,b.bottom].join(',');
+            if (!this._childBounds) this._childBounds=[];
+            if (this._childBounds[i]!==key) {
+                const q=new pdg.Quad(b);
+                for (let j=0;j<4;j++) this._childElements[i].changeControlPoint(j,q.points[j]);
+                this._childBounds[i]=key;
+            }
+        });
+        const center=this.getCenterPoint();
+        const translationKey=[this.x,this.y,this.rotation,center.x,center.y].join(',');
+        if (translationKey!==this._translationKey) {
+            const c=Math.cos(this.rotation),s=Math.sin(this.rotation);
+            this._appearance.setTransform([c,s,0,-s,c,0,
+                center.x+c*(this.x-center.x)-s*(this.y-center.y),
+                center.y+s*(this.x-center.x)+c*(this.y-center.y),1]);
+            this._translationKey=translationKey;
+        }
+        return this._artwork;
     }
 
     draw(port) {
-        const drawing = this.pdgDrawing || this.rebuildDrawing();
-        if (drawing) drawing.draw(port);
-        if (this.selected) this.drawSelectionBounds(port);
+        const artwork = this.getArtwork(port.strokeScale || 1);
+        if (port.drawRetained) port.drawRetained(artwork);
+        else port.drawDrawing(artwork,new pdg.Point(0,0),new pdg.Attributes());
+        if (this.selected) {
+            const controls=port.controls || port;
+            this.drawSelectionBounds(controls);this.drawRotationControl(controls);
+        }
     }
 
     drawSelectionBounds(port) {
@@ -1715,29 +1854,45 @@ class Group extends Shape {
     }
 
     contains(x, y) {
+        const center=this.getCenterPoint(),point=this.rotatePoint(x,y,center.x,center.y,-this.rotation);
+        x=point.x;y=point.y;
         for (let i = this.children.length - 1; i >= 0; i--) {
-            if (this.children[i].contains(x, y)) return true;
+            if (this.children[i].contains(x - this.x, y - this.y)) return true;
         }
         return false;
     }
 
     intersectsRect(left, top, right, bottom) {
+        if(this.rotation) {
+            const b=this.getBounds();return b.left<=right && b.right>=left && b.top<=bottom && b.bottom>=top;
+        }
         return this.children.some(child =>
-            child.intersectsRect && child.intersectsRect(left, top, right, bottom));
+            child.intersectsRect && child.intersectsRect(left-this.x, top-this.y, right-this.x, bottom-this.y));
     }
 
-    getBounds() {
+    getBaseBounds() {
         let bounds = null;
         for (const child of this.children) {
             const childBounds = getShapeBounds(child);
             bounds = includePoint(bounds, { x: childBounds.left, y: childBounds.top });
             bounds = includePoint(bounds, { x: childBounds.right, y: childBounds.bottom });
         }
-        return bounds || { left: 0, top: 0, right: 0, bottom: 0 };
+        bounds = bounds || { left: 0, top: 0, right: 0, bottom: 0 };
+        return {left:bounds.left+this.x,top:bounds.top+this.y,
+            right:bounds.right+this.x,bottom:bounds.bottom+this.y};
+    }
+
+    getBounds() {
+        const b=this.getBaseBounds(),center=this.getCenterPoint();
+        if(!this.rotation)return b;
+        const points=[{x:b.left,y:b.top},{x:b.right,y:b.top},{x:b.right,y:b.bottom},{x:b.left,y:b.bottom}]
+            .map(p=>this.rotatePoint(p.x,p.y,center.x,center.y,this.rotation));
+        return {left:Math.min(...points.map(p=>p.x)),right:Math.max(...points.map(p=>p.x)),
+            top:Math.min(...points.map(p=>p.y)),bottom:Math.max(...points.map(p=>p.y))};
     }
 
     getCenterPoint() {
-        const bounds = this.getBounds();
+        const bounds = this.getBaseBounds();
         return { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 };
     }
 
@@ -1745,32 +1900,14 @@ class Group extends Shape {
     getControlPoints() { return []; }
 
     moveBy(dx, dy) {
-        for (const child of this.children) {
-            if (child instanceof Group) {
-                child.moveBy(dx, dy);
-            } else if (child.constructor.name === 'Line') {
-                child.x += dx;
-                child.y += dy;
-                child.x2 += dx;
-                child.y2 += dy;
-            } else if (child.points) {
-                child.points.forEach(point => { point.x += dx; point.y += dy; });
-                if (child.controlPoints) {
-                    child.controlPoints.forEach(point => { point.x += dx; point.y += dy; });
-                }
-            } else {
-                child.x += dx;
-                child.y += dy;
-            }
-        }
-        this.rebuildDrawing();
+        this.x += dx;
+        this.y += dy;
     }
 
     set fillColor(value) {
         this._fillColor = value;
         if (this.children) {
             this.children.forEach(child => child.fillColor = value);
-            this.rebuildDrawing();
         }
     }
     get fillColor() { return this._fillColor; }
@@ -1779,7 +1916,6 @@ class Group extends Shape {
         this._strokeColor = value;
         if (this.children) {
             this.children.forEach(child => child.strokeColor = value);
-            this.rebuildDrawing();
         }
     }
     get strokeColor() { return this._strokeColor; }
@@ -1788,14 +1924,15 @@ class Group extends Shape {
         this._strokeWidth = value;
         if (this.children) {
             this.children.forEach(child => child.strokeWidth = value);
-            this.rebuildDrawing();
         }
     }
     get strokeWidth() { return this._strokeWidth; }
 }
 
 module.exports = {
+    getShapeBounds,
     Shape,
+    Text,
     Line,
     Circle,
     Rectangle,

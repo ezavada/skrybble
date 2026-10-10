@@ -15,11 +15,27 @@ class SliderView extends View {
         this.value = value; // 0.0 to 1.0
         this.color = color; // Current color for the knob
         this.gradient = gradient; // Array of colors for the gradient [start, end]
-        this.isDragging = false;
+
         
         // Make the entire slider area clickable
         const viewArea = this.getViewArea();
-        this.addClickablePart(viewArea, 1);
+        this.addClickablePart(new pdg.Rect(viewArea.width(),viewArea.height()), 1);
+    }
+
+    updateFromPointer(info) {
+        const local=this.globalToLocal(info.mousePos);
+        this.setValue(this.mouseToValue(local.x+this.getViewArea().left));
+        if (this.onValueChanged) this.onValueChanged(this.value);
+        return true;
+    }
+    doMouseDown(info) { return this.updateFromPointer(info); }
+    doMouseMove(info) {
+        const press=this.controller.mousePress;
+        return press && press.view===this ? this.updateFromPointer(info) : false;
+    }
+    doMouseUp(info,id,part) {
+        if(part!==-1) this.updateFromPointer(info);
+        return true;
     }
 
     setValue(value) {
@@ -145,32 +161,18 @@ class SliderView extends View {
         return Math.max(0, Math.min(1, value));
     }
 
-    drawCheckerboard(port, rect, cornerRadius) {
-        // Draw checkerboard pattern for transparency visualization
-        const squareSize = 4;
-        const lightGray = new pdg.Color(0.9, 0.9, 0.9);
-        const darkGray = new pdg.Color(0.75, 0.75, 0.75);
-        
-        // Draw checkerboard
-        for (let x = rect.left; x < rect.right; x += squareSize) {
-            for (let y = rect.top; y < rect.bottom; y += squareSize) {
-                const col = Math.floor((x - rect.left) / squareSize);
-                const row = Math.floor((y - rect.top) / squareSize);
-                const isLight = (col + row) % 2 === 0;
-                
-                const squareRect = new pdg.Rect(
-                    Math.max(x, rect.left),
-                    Math.max(y, rect.top),
-                    Math.min(x + squareSize, rect.right),
-                    Math.min(y + squareSize, rect.bottom)
-                );
-                
-                const attrs = new pdg.Attributes().fillColor(isLight ? lightGray : darkGray);
-                port.drawRect(squareRect, attrs);
+    drawCheckerboard(port, rect) {
+        const key=[rect.width(),rect.height()].join(',');
+        if (!this._checkerboard || key!==this._checkerboardKey) {
+            this._checkerboard=pdg.createDrawing();
+            for(let x=0;x<rect.width();x+=4) for(let y=0;y<rect.height();y+=4) {
+                const color=((x+y)/4)%2 ? '#bfbfbf' : '#e6e6e6';
+                this._checkerboard.addRect(new pdg.Rect(x,y,Math.min(x+4,rect.width()),Math.min(y+4,rect.height())),
+                    new pdg.Attributes().fillColor(new pdg.Color(color)));
             }
+            this._checkerboardKey=key;
         }
+        port.drawDrawing(this._checkerboard,rect,new pdg.Attributes());
     }
 }
-
-module.exports = SliderView;
-
+module.exports=SliderView;

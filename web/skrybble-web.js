@@ -162,6 +162,28 @@
     }
 
     window.skrybbleWeb = {
+        // Capture DOM wheel input before GLFW. Some packaged WASM runtimes do
+        // not deliver ScrollWheelInfo; handling it here also preserves trackpad
+        // precision and the modifier keys carried by the original DOM event.
+        readClipboard: function() { return Promise.resolve().then(function() { return navigator.clipboard.readText(); }); },
+        writeClipboard: function(text) { return Promise.resolve().then(function() { return navigator.clipboard.writeText(text); }); },
+        setCanvasCursor: function(cursor) { canvas.style.cursor = cursor; },
+        onCanvasWheel: function(handler) {
+            var listener = function(event) {
+                var rect = canvas.getBoundingClientRect();
+                var unit = event.deltaMode === 1 ? 20 : event.deltaMode === 2 ? rect.height : 1;
+                if (!handler({
+                    x: (event.clientX - rect.left) / rect.width,
+                    y: (event.clientY - rect.top) / rect.height,
+                    deltaX: event.deltaX * unit, deltaY: event.deltaY * unit,
+                    ctrl: event.ctrlKey, meta: event.metaKey
+                })) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            };
+            canvas.addEventListener('wheel', listener, {capture: true, passive: false});
+            return function() { canvas.removeEventListener('wheel', listener, true); };
+        },
         chooseFile: function(options) {
             return new Promise(function(resolve, reject) {
                 var input = document.createElement('input');

@@ -19,6 +19,11 @@ const SmoothnessController = require('./SmoothnessController.js');
 const chooseImageFile = require('./image-file-picker.js');
 const chooseDrawingFile = require('./drawing-file-picker.js');
 
+const CanvasNavigation = require('./CanvasNavigation');
+const ToolCursors=require('./ToolCursors');
+const CanvasTextEditor=require('./CanvasTextEditor');
+const FontPickerController=require('./FontPickerController');
+const {axisPoint,snapAngle,linePoint}=require('./GestureConstraints');
 const fs = require('fs');
 const path = require('path');
 
@@ -31,6 +36,25 @@ class DrawingController extends Controller {
         // super calls setupViews()
         // this is the top level controller, so we give it app and port rather than a parent
         super(null, app, port, true, true, true, false, true);
+        this.cursors=new ToolCursors(this.port);
+        this.navigation = new CanvasNavigation();
+        this.navigation.setViewport(this.backgroundView.getViewArea());
+        this.spaceHeld = false;
+        this.panPosition = null;
+        this.textEdit = null;
+        if (globalThis.skrybbleWeb && globalThis.skrybbleWeb.onCanvasWheel) {
+            this.removeBrowserWheel=globalThis.skrybbleWeb.onCanvasWheel(event=> {
+                const area=this.port.getDrawingArea();
+                const point=new pdg.Point(area.left+event.x*area.width(),area.top+event.y*area.height());
+                if (!this.backgroundView.pointInViewArea(point)) return false;
+                this.navigation.setViewport(this.backgroundView.getViewArea());
+                if (this.fontPickerController || this.colorPickerController || this.lineWidthController || this.smoothnessController) return true;
+                this.navigation.zoomAt(Math.exp(-event.deltaY/1000),this.navigationAnchor(point));
+                return true;
+            });
+        }
+        this.textDefaults={fontName:'Arial',fontSize:24,textStyle:0};
+        this.fontPickerController=null;
         this.drawing = new Drawing();
         this.toolManager = new Tools(this.drawing.getShapeClasses());
         
@@ -51,8 +75,6 @@ class DrawingController extends Controller {
         this.rubberBandEnd = null;
         this.rubberBandActive = false;
         this.rubberBandPending = false; // True when mouse is down but hasn't moved minimum distance
-        this.rubberBandColorToggle = false;
-        this.rubberBandTimer = null;
         this.rubberBandModifiers = null; // Store modifier keys (shift, ctrl, etc.) for selection
         this.rubberBandInitialStates = null; // Store initial selection states for toggle mode
         
@@ -90,7 +112,6 @@ class DrawingController extends Controller {
         
         // Save confirmation message
         this.saveMessage = null;
-        this.saveMessageTimer = null;
     }
     
     setupViews() {
@@ -115,6 +136,97 @@ class DrawingController extends Controller {
 
     // ============================ Event Handling Overrides ============================
 
+    activePicker() {return this.fontPickerController || this.colorPickerController || this.lineWidthController || this.smoothnessController;}
+    routePickerInput(method,event) {
+        // A child controller may bubble an unmatched event back to us.
+        // Avoid routing it straight back to that same child.
+        if(this._routingPicker)return false;
+        const picker=this.activePicker();
+        if(!picker)return super[method](event);
+        this._routingPicker=picker;
+        try {picker[method](event);return true;}
+        finally {this._routingPicker=null;}
+    }
+    onMouseDown(event) {
+        // Toolbar input takes precedence over popup and canvas capture.
+        const palette=this.toolPaletteView;
+        if(this.active && palette.pointInViewArea(event.mousePos) && !event.rightButton) {
+            const part=palette.getPartClicked(event.mousePos);
+            if(part>0) {
+                this.activePicker()?.cancel();
+                this.commitTextEdit();
+                const tool=this.toolManager.getCurrentTool();
+                if([Tools.TOOLS.SPLINE,Tools.TOOLS.BEZIER,Tools.TOOLS.POLY,Tools.TOOLS.QUAD].includes(tool) && this.toolManager.isCurrentlyDrawing()) {
+                    const shape=this.toolManager.finishMultiPointShape(false);
+                    if(shape){if(shape.isQuad)shape.isQuad=false;this.saveUndoState('add shape');this.drawing.addShape(shape);}
+                }
+                this.resetCanvasGesture();
+                const chosen=Object.values(Tools.TOOLS)[part-1];
+                if(chosen!==Tools.TOOLS.HELP)this.showHelp=false;
+                this._toolbarPress=true;palette.pressedTool=chosen;palette.updateHover(event.mousePos);
+                this.doLeftClick(event,palette,palette.getID(),part);
+                this.updateCursor(event);return true;
+            }
+        }
+        const result=this.routePickerInput('onMouseDown',event);this.updateCursor(event);return result;
+    }
+    onMouseUp(event) {
+        if(this._toolbarPress) {
+            this._toolbarPress=false;this.toolPaletteView.pressedTool=null;
+            this.toolPaletteView.updateHover(event.mousePos);this.updateCursor(event);return true;
+        }
+        const result=this.routePickerInput('onMouseUp',event);this.updateCursor(event);return result;
+    }
+    onMouseMove(event) {
+        this.toolPaletteView.updateHover(event.mousePos);this.updateCursor(event);
+        if(this._toolbarPress)return true;
+        return this.routePickerInput('onMouseMove',event);
+    }
+
+    zoomOut(event={}) {
+        return !!(event.shift || event.alt || event.option || event.ctrl || event.control || event.rightButton ||
+            event.buttonNumber===1 || this._shiftKeys?.size || this._zoomModifierKeys?.size);
+    }
+
+    updateZoomModifiers(info,down) {
+        const browser=!!globalThis.skrybbleWeb;
+        const alt=browser?[18]:[pdg.keyCode_LeftAlt,pdg.keyCode_RightAlt,342,346];
+        const ctrl=browser?[17]:[pdg.keyCode_LeftControl,pdg.keyCode_RightControl,341,345];
+        if(!browser && process.platform==='win32'){alt.push(18,164,165);ctrl.push(17,162,163);}
+        if(!alt.includes(info.keyCode) && !ctrl.includes(info.keyCode))return false;
+        this._zoomModifierKeys ||= new Set();
+        if(down)this._zoomModifierKeys.add(info.keyCode);else this._zoomModifierKeys.delete(info.keyCode);
+        // MouseInfo may lag behind KeyInfo. Use the tracked physical keys for
+        // both the cursor and click action, so the minus always means zoom out.
+        if(alt.includes(info.keyCode))this._cursorAlt=down;
+        if(ctrl.includes(info.keyCode))this._cursorCtrl=down;
+        this.updateCursor();return true;
+    }
+
+    updateCursor(event={}) {
+        if(event.mousePos)this._cursorPoint={x:event.mousePos.x,y:event.mousePos.y};
+        if('shift' in event)this._cursorShift=!!event.shift;
+        if('alt' in event)this._cursorAlt=!!event.alt;
+        if('ctrl' in event)this._cursorCtrl=!!event.ctrl;
+        if('rightButton' in event)this._cursorRight=!!event.rightButton;
+        const point=this._cursorPoint || pdg.gfx.getMouse(),tool=this.toolManager?.getCurrentTool();
+        let cursor='default';
+        if(this.active && !this.showHelp && !this.activePicker() && this.backgroundView.pointInViewArea(point)) {
+            const world=this.navigation.toWorld(point);
+            if(this.spaceHeld || tool===Tools.TOOLS.PAN)cursor=this.panPosition?'grabbing':'grab';
+            else if(tool===Tools.TOOLS.ZOOM)cursor=this.zoomOut({shift:this._cursorShift,alt:this._cursorAlt,ctrl:this._cursorCtrl,rightButton:this._cursorRight})?'zoom-out':'zoom-in';
+            else if(this.navigation.contains(world)) {
+                const textHit=this.drawing.findShapeAt(world.x,world.y)?.constructor.name==='Text';
+                if(tool===Tools.TOOLS.TEXT || (this.textEdit && this.textEdit.shape.contains(world.x,world.y)) ||
+                    (tool===Tools.TOOLS.SELECT && textHit))cursor='text';
+                else if([Tools.TOOLS.LINE,Tools.TOOLS.FREEHAND,Tools.TOOLS.SPLINE,Tools.TOOLS.BEZIER,
+                    Tools.TOOLS.CIRCLE,Tools.TOOLS.OVAL,Tools.TOOLS.RECT,Tools.TOOLS.QUAD,Tools.TOOLS.POLY,Tools.TOOLS.IMAGE].includes(tool))cursor='crosshair';
+            }
+        }
+        this.cursors?.set(cursor);
+        return cursor;
+    }
+
     doMouseDown(mouseInfo, view, id, part) {
         // Don't handle toolbar in MouseDown - let it generate clicks instead
         if (view === this.toolPaletteView) {
@@ -123,7 +235,7 @@ class DrawingController extends Controller {
         
         if (view === this.backgroundView) {
             // If any picker is open, don't handle drawing area clicks
-            if (this.lineWidthController || this.smoothnessController) {
+            if (this.fontPickerController || this.lineWidthController || this.smoothnessController) {
                 return false;
             }
             
@@ -181,8 +293,12 @@ class DrawingController extends Controller {
                 this.handleMouseUp(mouseInfo);
                 return false; // Allow click events to be generated
             }
-            // For other tools, fully handle the event
-            return this.handleMouseUp(mouseInfo);
+            // Text receives normal click counting so double-click starts editing.
+            const result=this.handleMouseUp(mouseInfo);
+            if(currentTool===Tools.TOOLS.ZOOM)return result;
+            const pos=this.getMousePosition(mouseInfo);
+            const hit=this.drawing.findShapeAt(pos.x,pos.y);
+            return hit && hit.constructor.name==='Text' ? false : result;
         }
         return false;
     }
@@ -198,17 +314,15 @@ class DrawingController extends Controller {
     doLeftClick(mouseInfo, view, id, part) {
         // Handle toolbar clicks
         if (view === this.toolPaletteView) {
-            // Block toolbar clicks when any picker is open
-            if (this.colorPickerController || this.lineWidthController || this.smoothnessController) {
-                return true;
-            }
-            
+            this.activePicker()?.cancel();
+            this.commitTextEdit();
             // Handle tool selection from tool palette
             // Part numbers correspond to tool indices (1-based)
             if (part > 0) {
                 const toolNames = Object.values(Tools.TOOLS);
                 const selectedTool = toolNames[part - 1];
                 if (selectedTool) {
+                    if(selectedTool===Tools.TOOLS.FONT) {this.openFontPicker(part);return true;}
                     // Special handling for HELP tool - just toggle help, don't switch tools
                     if (selectedTool === Tools.TOOLS.HELP) {
                         this.toggleHelp();
@@ -253,7 +367,7 @@ class DrawingController extends Controller {
         // Handle single clicks on the drawing surface
         if (view === this.backgroundView) {
             // Don't handle background clicks when pickers are open
-            if (this.lineWidthController || this.smoothnessController) {
+            if (this.fontPickerController || this.lineWidthController || this.smoothnessController) {
                 return false;
             }
             return this.handleMouseClick(mouseInfo);
@@ -278,11 +392,41 @@ class DrawingController extends Controller {
         return false;
     }
 
+    doKeyDown(info) {
+        this.lastPhysicalKey=info.keyCode;
+        const zoomChanged=this.updateZoomModifiers(info,true);
+        return this.updateGestureShift(info,true) || zoomChanged;
+    }
+
+    updateGestureShift(info,down) {
+        // Native KeyInfo has only a raw keyCode; mouse modifiers arrive later.
+        const keys=[pdg.keyCode_LeftShift,pdg.keyCode_RightShift,340,344];
+        if(globalThis.skrybbleWeb || process.platform==='win32')keys.push(16,160,161);
+        if(process.platform==='linux')keys.push(42,54,50,62);
+        if(!keys.includes(info.keyCode) && info.key!=='Shift')return false;
+        this._shiftKeys ||= new Set();
+        const before=this._shiftKeys.size>0;
+        if(down)this._shiftKeys.add(info.keyCode);else this._shiftKeys.delete(info.keyCode);
+        const shift=this._shiftKeys.size>0;
+        this.updateCursor({shift});
+        if(before===shift)return false;
+        if(this._gesturePointer && !this.textEdit && !this.activePicker() && !this.showHelp &&
+            (this.panPosition || this.rotatingShape || this.draggedPoint || this.draggedShapes || this.toolManager.isCurrentlyDrawing())) {
+            this.handleMouseMove({mousePos:new pdg.Point(this._gesturePointer),shift});
+            return true;
+        }
+        return false;
+    }
+
     doKeyUp(keyUpInfo, view, id, part) {
-        return this.handleKeyUp(keyUpInfo);
+        const zoomChanged=this.updateZoomModifiers(keyUpInfo,false);
+        const changed=this.updateGestureShift(keyUpInfo,false);
+        return this.handleKeyUp(keyUpInfo) || changed || zoomChanged;
     }
 
     doKeyPress(keyPressInfo, view, id, part) {
+        if(this.fontPickerController)return this.fontPickerController.doKeyPress(keyPressInfo);
+        if (this.textEdit) return this.handleTextKey(keyPressInfo);
         const unicode = keyPressInfo && keyPressInfo.unicode;
         console.log('DrawingController.doKeyPress, unicode:', unicode, 'colorPickerController:', !!this.colorPickerController, 'showHelp:', this.showHelp);
         
@@ -323,19 +467,118 @@ class DrawingController extends Controller {
     // ============================ Input Handler Methods ============================
 
     getMousePosition(event) {
-        if (event && event.mousePos) {
-            return {
-                x: event.mousePos.x,
-                y: event.mousePos.y
-            };
+        const pos = event && event.mousePos || {x:0,y:0};
+        this.navigation.setViewport(this.backgroundView.getViewArea());
+        return this.navigation.toWorld(pos);
+    }
+
+    onScrollWheel(event) {
+        if (!this.active || this.showHelp) return false;
+        // Native wheel events have no mousePos; do not discard navigation
+        // because the runtime's last pointer sample hits the toolbar.
+        return this.doScrollWheel(event);
+    }
+
+    navigationAnchor(point = pdg.gfx.getMouse()) {
+        this.navigation.setViewport(this.backgroundView.getViewArea());
+        // Galactica's priority: selection, cursor in the canvas, viewport center.
+        // Use the combined world bounds so groups and multiple selections agree.
+        const selected=this.drawing.getShapes().filter(shape=>shape.selected);
+        if(selected.length) {
+            const bounds=selected.map(require('./shapes').getShapeBounds);
+            return this.navigation.toView(new pdg.Point(
+                (Math.min(...bounds.map(b=>b.left))+Math.max(...bounds.map(b=>b.right)))/2,
+                (Math.min(...bounds.map(b=>b.top))+Math.max(...bounds.map(b=>b.bottom)))/2));
         }
-        return { x: 0, y: 0 };
+        return this.backgroundView.pointInViewArea(point) ? point
+            : this.backgroundView.getViewArea().centerPoint();
+    }
+
+    doScrollWheel(event) {
+        // The DOM bridge owns browser wheel navigation. GLFW can also enqueue
+        // a native event before our canvas listener stops propagation; handling
+        // both zooms twice, with the native event using a stale pointer.
+        if (this.removeBrowserWheel) return true;
+        if (this.fontPickerController || this.colorPickerController || this.lineWidthController || this.smoothnessController) return true;
+        this.navigation.zoomAt(Math.exp(-Math.max(-6,Math.min(6,event.vertDelta || 0)) * .1), this.navigationAnchor(event.mousePos));
+        return true;
+    }
+
+    openFontPicker(part) {
+        if(this.fontPickerController)return;
+        this.commitTextEdit();
+        const area=this.toolPaletteView.getViewArea();
+        this.fontPickerController=new FontPickerController(this,area.left+(part-1)*this.toolPaletteView.slotWidth());
+        this.updateToolSelection(Tools.TOOLS.FONT);
+    }
+
+    beginTextEdit(shape, isNew=false) {
+        if(this.textEdit?.shape===shape)return;
+        this.commitTextEdit();
+        shape.layout(this.port);shape._editing=true;
+        this.textEdit = {shape,isNew,before:shape.text,beforeWidth:shape.width,beforeHeight:shape.height,
+            editor:new CanvasTextEditor(this,shape)};
+        this.selectShape(shape);
+    }
+
+    commitTextEdit(cancel=false) {
+        if (!this.textEdit) return;
+        const {shape,isNew,before}=this.textEdit;
+        const text=shape.text;
+        shape.text=before;
+        if (!cancel && text.trim() && (isNew || text!==before)) {
+            this.saveUndoState(isNew ? 'add text' : 'edit text');
+            shape.text=text;
+            if (isNew) this.drawing.addShape(shape);
+        }
+        shape.layout(this.port);
+        this.textEdit.editor.setFocus(false);delete shape._editing;
+        this.textEdit=null;this.textSelecting=false;
+    }
+
+    handleTextKey(event) {
+        const code=event.unicode;
+        if ((event.ctrl || event.meta || event.command) && [83,115].includes(code)) {
+            this.commitTextEdit(); return this.handleKeyPress(event);
+        }
+        if (code===27) this.escapeToSelect();
+        else if (code===13) this.commitTextEdit();
+        else {
+            this.textEdit.editor.doKeyPress(event);
+            this.textEdit.editor.sync();
+        }
+        return true;
     }
 
     handleMouseDown(event) {
+        this._gesturePointer={x:event.mousePos.x,y:event.mousePos.y};
         const pos = this.getMousePosition(event);
         const currentTool = this.toolManager.getCurrentTool();
-
+        if (currentTool===Tools.TOOLS.ZOOM && !this.spaceHeld) {
+            this.commitTextEdit();
+            this.navigation.zoomAt(this.zoomOut(event) ? 1/1.25 : 1.25,this.navigationAnchor(event.mousePos));
+            return true;
+        }
+        if (this.spaceHeld || currentTool === Tools.TOOLS.PAN) {
+            this.panPosition={x:event.mousePos.x,y:event.mousePos.y};
+            this._panOrigin={...this.panPosition};this._panConstraint={};return true;
+        }
+        if (!this.navigation.contains(pos)) return true;
+        if(this.textEdit && this.textEdit.shape.contains(pos.x,pos.y)) {
+            this.textEdit.editor.positionAt(pos,!!event.shift);this.textSelecting=true;return true;
+        }
+        if (currentTool === Tools.TOOLS.TEXT) {
+            const hit=this.drawing.findShapeAt(pos.x,pos.y);
+            if (hit && hit.constructor.name==='Text') this.beginTextEdit(hit);
+            else {
+                const defaults=this.textDefaults;
+                this.beginTextEdit(new (this.drawing.getShapeClasses().Text)(pos.x,pos.y,'',this.toolManager.strokeColor,
+                    defaults.fontSize,undefined,undefined,defaults.fontName,defaults.textStyle),true);
+            }
+            this.textEdit.editor.positionAt(pos,!!event.shift);this.textSelecting=true;
+            return true;
+        }
+        this.commitTextEdit();
         if (currentTool === Tools.TOOLS.SELECT) {
             this.handleSelectMode(pos.x, pos.y, event);
         } else if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) {
@@ -353,18 +596,30 @@ class DrawingController extends Controller {
     }
 
     handleMouseMove(event) {
+        this._gesturePointer={x:event.mousePos.x,y:event.mousePos.y};
+        if(this.textSelecting && this.textEdit) {
+            this.textEdit.editor.positionAt(this.getMousePosition(event),true);return true;
+        }
+        if (this.panPosition) {
+            const point=axisPoint(this._panOrigin,event.mousePos,this._panConstraint,!!event.shift);
+            this.navigation.pan(point.x-this.panPosition.x,point.y-this.panPosition.y);
+            this.panPosition={x:point.x,y:point.y};return true;
+        }
         const pos = this.getMousePosition(event);
+        if(!this.rotatingShape) {
+            pos.x=Math.max(0,Math.min(1024,pos.x));pos.y=Math.max(0,Math.min(1024,pos.y));
+        }
 
         if (this.toolManager.isCurrentlyDrawing()) {
-            this.toolManager.updateDrawing(pos.x, pos.y);
+            this.toolManager.updateDrawing(pos.x, pos.y,!!event.shift);
         } else if (this.rotatingShape) {
-            // Update rotation based on mouse position
-            const center = this.rotatingShape.getCenterPoint();
-            const dx = pos.x - center.x;
-            const dy = pos.y - center.y;
-            const currentAngle = Math.atan2(dy, dx);
-            const angleDelta = currentAngle - this.rotationStartAngle;
-            this.rotatingShape.rotation = this.shapeStartRotation + angleDelta;
+            const shape=this.rotatingShape,center=shape.getCenterPoint();
+            const dx=pos.x-center.x,dy=pos.y-center.y;
+            if(Math.hypot(dx,dy)>1/this.navigation.camera.getZoom()) {
+                const angle=Math.atan2(dy,dx)+Math.PI/2;
+                shape.rotation=event.shift?snapAngle(angle):angle;
+                shape._rotationGuideLength=Math.max(shape.getRotationLineLength(),shape._rotationGuideLength || 0,Math.hypot(dx,dy));
+            }
         } else if (this.rubberBandPending) {
             // Check if we've moved enough to activate rubber-band selection
             const MIN_DISTANCE = 3;
@@ -380,14 +635,24 @@ class DrawingController extends Controller {
         } else if (this.rubberBandActive) {
             this.updateRubberBandSelection(pos.x, pos.y);
         } else if (this.draggedPoint) {
-            this.updateDraggedPoint(pos.x, pos.y);
+            const origin=this._pointDragOrigin ||= {x:pos.x,y:pos.y};
+            this._pointConstraint ||= {};
+            const shape=this.draggedPoint.shape;
+            const constrained=['Rectangle','Oval','Image','Line'].includes(shape.constructor.name)?pos:
+                axisPoint(origin,pos,this._pointConstraint,!!event.shift,6/this.navigation.camera.getZoom());
+            this.updateDraggedPoint(constrained.x,constrained.y,!!event.shift);
         } else if (this.draggedShapes) {
-            this.updateDraggedShapes(pos.x, pos.y);
+            this.updateDraggedShapes(pos.x, pos.y,!!event.shift);
         }
         return true;
     }
 
     handleMouseUp(event) {
+        if(this.textSelecting) {this.textSelecting=false;return true;}
+        this._pointDragGeometry=null;
+        this._pointDragOrigin=null;this._pointConstraint=null;this._moveConstraint=null;this.shapeDragOrigin=null;
+        if(this.rotatingShape) delete this.rotatingShape._rotationGuideLength;
+        if (this.panPosition) { this.panPosition=null; return true; }
         const pos = this.getMousePosition(event);
         const currentTool = this.toolManager.getCurrentTool();
 
@@ -471,6 +736,8 @@ class DrawingController extends Controller {
 
     handleMouseDoubleClick(event) {
         const pos = this.getMousePosition(event);
+        const hit=this.drawing.findShapeAt(pos.x,pos.y);
+        if (hit && hit.constructor.name==='Text') {this.beginTextEdit(hit);this.textEdit.editor.positionAt(pos);this.textEdit.editor.selectWord();return true;}
         const currentTool = this.toolManager.getCurrentTool();
 
         // For multi-point tools, finish the shape on double-click
@@ -491,6 +758,9 @@ class DrawingController extends Controller {
     }
 
     handleMouseRightClick(event) {
+        if(this.toolManager.getCurrentTool()===Tools.TOOLS.ZOOM) {
+            this.navigation.zoomAt(1/1.25,this.navigationAnchor(event.mousePos));return true;
+        }
         const pos = this.getMousePosition(event);
         const currentTool = this.toolManager.getCurrentTool();
 
@@ -514,6 +784,7 @@ class DrawingController extends Controller {
     handleSelectMode(x, y, event) {
         const shiftKey = event && event.shift;
         const toggleKey = event && (event.ctrl || event.alt || event.command);
+        const handleScale=1/this.navigation.camera.getZoom();
         
         // Check if clicking on an endpoint or control point
         const shapes = this.drawing.getShapes();
@@ -525,9 +796,11 @@ class DrawingController extends Controller {
 
             // Check rotation center point FIRST (highest priority)
             // Skip circles - they can't be rotated (rotation-invariant)
-            if (shape.constructor.name !== 'Circle' && shape.constructor.name !== 'Group') {
+            if (shape.constructor.name !== 'Circle') {
                 const center = shape.getCenterPoint();
-                if (Math.abs(x - center.x) < 7 && Math.abs(y - center.y) < 7) {
+                const guideLength=shape.getRotationLineLength(),angle=shape.rotation-Math.PI/2;
+                const tip={x:center.x+Math.cos(angle)*guideLength,y:center.y+Math.sin(angle)*guideLength};
+                if (Math.hypot(x-center.x,y-center.y)<7*handleScale || Math.hypot(x-tip.x,y-tip.y)<7*handleScale) {
                     // Start rotation
                     this.rotatingShape = shape;
                     this.shapeStartRotation = shape.rotation || 0;
@@ -555,8 +828,9 @@ class DrawingController extends Controller {
                     cp = shape.rotatePoint(cp.x, cp.y, center.x, center.y, rotation);
                 }
                 
-                if (Math.abs(x - cp.x) < 6 && Math.abs(y - cp.y) < 6) {
+                if (Math.abs(x - cp.x) < 6*handleScale && Math.abs(y - cp.y) < 6*handleScale) {
                     this.draggedPoint = { shape, type: 'control', index: i };
+                    this._pointDragOrigin={x,y};this._pointConstraint={};this._pointDragGeometry=null;
                     
                     // For rotated multi-point shapes, pick a reference point
                     if (rotation !== 0 && shape.points && shape.points.length > 1) {
@@ -590,8 +864,9 @@ class DrawingController extends Controller {
                     ep = shape.rotatePoint(ep.x, ep.y, center.x, center.y, rotation);
                 }
                 
-                if (Math.abs(x - ep.x) < 6 && Math.abs(y - ep.y) < 6) {
+                if (Math.abs(x - ep.x) < 6*handleScale && Math.abs(y - ep.y) < 6*handleScale) {
                     this.draggedPoint = { shape, type: 'endpoint', index: i };
+                    this._pointDragOrigin={x,y};this._pointConstraint={};this._pointDragGeometry=null;
                     
                     // For rotated multi-point shapes, pick a reference point
                     if (rotation !== 0 && shape.points && shape.points.length > 1) {
@@ -647,6 +922,7 @@ class DrawingController extends Controller {
                 this.selectedShape = clickedShape;
                 this.draggedShapes = this.drawing.getShapes().filter(shape => shape.selected);
                 this.shapeDragLastPosition = { x, y };
+                this.shapeDragOrigin={x,y};this._moveConstraint={};
                 this.shapeDragUndoSaved = false;
             }
         } else {
@@ -686,7 +962,6 @@ class DrawingController extends Controller {
         this.rubberBandEnd = { ...this.rubberBandStart };
         this.rubberBandActive = true;
         this.rubberBandPending = false;
-        this.rubberBandColorToggle = false;
         
         // Store initial selection states for all shapes (for toggle mode)
         const shapes = this.drawing.getShapes();
@@ -700,10 +975,7 @@ class DrawingController extends Controller {
             this.drawing.clearSelection();
         }
         
-        // Start timer to alternate colors every 125ms
-        this.rubberBandTimer = setInterval(() => {
-            this.rubberBandColorToggle = !this.rubberBandColorToggle;
-        }, 125);
+        this.backgroundView.startSelectionPulse();
     }
 
     updateRubberBandSelection(x, y) {
@@ -749,11 +1021,7 @@ class DrawingController extends Controller {
     finishRubberBandSelection() {
         if (!this.rubberBandActive) return;
         
-        // Stop the color toggle timer
-        if (this.rubberBandTimer) {
-            clearInterval(this.rubberBandTimer);
-            this.rubberBandTimer = null;
-        }
+        this.backgroundView.stopSelectionPulse();
         
         // Selection is already up-to-date from updateRubberBandSelection()
         // Just reset rubber-band state
@@ -765,10 +1033,20 @@ class DrawingController extends Controller {
         this.rubberBandInitialStates = null;
     }
 
-    updateDraggedPoint(x, y) {
+    updateDraggedPoint(x, y, shift=false) {
         if (!this.draggedPoint) return;
 
         const { shape, type, index } = this.draggedPoint;
+        // Recompute from the original geometry so releasing Shift restores
+        // unconstrained dimensions, including the oval's other radius.
+        const keys=['x','y','x2','y2','width','height','radius','radiusX','radiusY','points','controlPoints'];
+        if(!this._pointDragGeometry || this._pointDragGeometryShape!==shape) {
+            this._pointDragGeometryShape=shape;
+            this._pointDragGeometry=Object.fromEntries(keys.filter(key=>key in shape)
+                .map(key=>[key,JSON.parse(JSON.stringify(shape[key]))]));
+        }
+        for(const [key,value] of Object.entries(this._pointDragGeometry))
+            shape[key]=JSON.parse(JSON.stringify(value));
         const rotation = shape.rotation || 0;
         
         // Step 1: Update the dragged point in local space
@@ -780,6 +1058,17 @@ class DrawingController extends Controller {
             localY = rotated.y;
         }
 
+        if(shift && type==='endpoint') {
+            if(shape.constructor.name==='Rectangle') {
+                const anchor=shape.getEndpoints()[(index+2)%4];
+                const size=Math.max(Math.abs(localX-anchor.x),Math.abs(localY-anchor.y));
+                localX=anchor.x+Math.sign(localX-anchor.x || 1)*size;
+                localY=anchor.y+Math.sign(localY-anchor.y || 1)*size;
+            } else if(shape.constructor.name==='Line') {
+                const anchor=shape.getEndpoints()[index===0?1:0];
+                const snapped=linePoint(anchor,{x:localX,y:localY});localX=snapped.x;localY=snapped.y;
+            }
+        }
         // Step 2: Apply the change to the shape
         if (type === 'endpoint') {
             const endpoints = shape.getEndpoints();
@@ -810,6 +1099,10 @@ class DrawingController extends Controller {
             }
         }
         
+        if(shift && shape.constructor.name==='Oval') {
+            const radius=(index===0 || index===2)?shape.radiusY:shape.radiusX;
+            shape.radiusX=shape.radiusY=radius;
+        }
         // Step 3: For rotated multi-point shapes, compensate to keep reference point stable
         if (rotation !== 0 && this.dragReferencePointIndex !== null && this.dragReferencePointWorld && shape.points) {
             const refPoint = shape.points[this.dragReferencePointIndex];
@@ -838,9 +1131,12 @@ class DrawingController extends Controller {
         }
     }
 
-    updateDraggedShapes(x, y) {
+    updateDraggedShapes(x, y, shift=false) {
         if (!this.draggedShapes || !this.shapeDragLastPosition) return;
 
+        this.shapeDragOrigin ||= {...this.shapeDragLastPosition};this._moveConstraint ||= {};
+        const point=axisPoint(this.shapeDragOrigin,{x,y},this._moveConstraint,shift,6/this.navigation.camera.getZoom());
+        x=point.x;y=point.y;
         const dx = x - this.shapeDragLastPosition.x;
         const dy = y - this.shapeDragLastPosition.y;
         if (dx === 0 && dy === 0) return;
@@ -990,13 +1286,21 @@ class DrawingController extends Controller {
     }
 
     handleKeyUp(event) {
-        // No automatic tool switching on key release
+        if (event.keyCode===this.spaceKeyCode || event.unicode===32) { this.spaceHeld=false;this.updateCursor(); return true; }
         return false;
     }
 
     handleKeyPress(event) {
         // Get unicode value (used for both regular keys and arrow keys)
         const unicode = event && event.unicode;
+        if (unicode===32) { this.spaceHeld=true; this.spaceKeyCode=this.lastPhysicalKey;this.updateCursor(); return true; }
+        if (!(event.ctrl || event.meta || event.command || event.alt) && [90,122].includes(unicode)) {
+            this.navigation.zoomAt(event.shift ? 1/1.25 : 1.25,this.navigationAnchor());
+            return true;
+        }
+        if ((event.ctrl || event.meta || event.command) && unicode===48) {
+            this.navigation.reset(); return true;
+        }
    
         // Check for keyboard shortcuts with Cmd/Ctrl modifiers
         const cmdOrCtrl = event && (event.meta || event.ctrl);
@@ -1168,11 +1472,16 @@ class DrawingController extends Controller {
             key = String.fromCharCode(unicode).toUpperCase();
         }
 
+        // Match Illustrator's shifted tool shortcuts explicitly.
+        if(event.shift && ('Shift+'+key) in Tools.TOOL_SHORTCUTS)key='Shift+'+key;
         // Tool selection
         if (key in Tools.TOOL_SHORTCUTS) {
             console.log("handleKeyPress", key, Tools.TOOL_SHORTCUTS[key]);
             const tool = Tools.TOOL_SHORTCUTS[key];
             
+            if(tool===Tools.TOOLS.FONT) {
+                this.openFontPicker(Object.values(Tools.TOOLS).indexOf(tool)+1);return true;
+            }
             // Special handling for HELP - just toggle help, don't switch tools
             if (tool === Tools.TOOLS.HELP) {
                 this.toggleHelp();
@@ -1248,32 +1557,49 @@ class DrawingController extends Controller {
                 }
                 return true;
             case '\u001b': // Escape key
-                const currentTool = this.toolManager.getCurrentTool();
-                // For multi-point tools while drawing, finish in current state and switch to SELECT
-                if ((currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || 
-                     currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) 
-                    && this.toolManager.isCurrentlyDrawing()) {
-                    // Finish the shape in its current state
-                    const finishedShape = this.toolManager.finishMultiPointShape(false);
-                    if (finishedShape) {
-                        if (finishedShape.isQuad) finishedShape.isQuad = false;
-                        this.saveUndoState('add shape');
-                        this.drawing.addShape(finishedShape);
-                    }
-                    this.toolManager.finishCurrentDrawing();
-                    this.selectShape(null);
-                    this.toolManager.setTool(Tools.TOOLS.SELECT);
-                    this.updateToolSelection(Tools.TOOLS.SELECT);
-                } else {
-                    // For other tools or when not drawing, finish and switch to SELECT
-                    this.toolManager.finishCurrentDrawing();
-                    this.selectShape(null);
-                    this.toolManager.setTool(Tools.TOOLS.SELECT);
-                    this.updateToolSelection(Tools.TOOLS.SELECT);
-                }
+                this.escapeToSelect();
                 return true;
         }
         return true;
+    }
+
+    escapeToSelect() {
+        const editing = this.textEdit;
+        if (editing) this.commitTextEdit(true);
+        const tool = this.toolManager.getCurrentTool();
+        if ([Tools.TOOLS.SPLINE, Tools.TOOLS.BEZIER, Tools.TOOLS.POLY, Tools.TOOLS.QUAD].includes(tool)
+            && this.toolManager.isCurrentlyDrawing()) {
+            const shape = this.toolManager.finishMultiPointShape(false);
+            if (shape) {
+                if (shape.isQuad) shape.isQuad = false;
+                this.saveUndoState('add shape');
+                this.drawing.addShape(shape);
+            }
+        }
+        this.toolManager.setTool(Tools.TOOLS.SELECT);
+        this.updateToolSelection(Tools.TOOLS.SELECT);
+        this.selectShape(editing && !editing.isNew ? editing.shape : null);
+        this.resetCanvasGesture();
+    }
+
+    resetCanvasGesture() {
+        if(this.rotatingShape)delete this.rotatingShape._rotationGuideLength;
+        this.draggedPoint = this.draggedShapes = this.rotatingShape = this.panPosition = null;
+        this._pointDragGeometry=null;
+        this._pointDragOrigin=this._pointConstraint=this._moveConstraint=this.shapeDragOrigin=null;
+        this.shapeDragLastPosition = this.dragReferencePointWorld = null;
+        this.dragReferencePointIndex = null;
+        this.shapeDragUndoSaved = false;
+        this.rubberBandActive = this.rubberBandPending = false;
+        this.rubberBandStart = this.rubberBandEnd = null;
+        this.backgroundView.stopSelectionPulse();
+        this.cancelMousePress();
+    }
+
+    drawViews(port, frameNum) {
+        super.drawViews(port, frameNum);
+        if (this.showHelp) this.backgroundView.drawHelp(port, port.getDrawingArea());
+        else if(!this.activePicker())this.toolPaletteView.drawHover(port);
     }
 
     selectNextShape(reverse = false) {
@@ -1325,6 +1651,7 @@ class DrawingController extends Controller {
         if (this.toolPaletteView) {
             this.toolPaletteView.updateToolSelection(selectedToolId);
         }
+        this.updateCursor();
     }
 
     // ============================ Utility Methods ============================
@@ -1524,7 +1851,7 @@ class DrawingController extends Controller {
         }
         
         // Calculate toolbar position for popup
-        const toolSlotX = (toolPart - 1) * 50;
+        const toolSlotX = this.toolPaletteView.getViewArea().left+(toolPart-1)*this.toolPaletteView.slotWidth();
         console.log('DrawingController.openLineWidthPicker - toolSlotX:', toolSlotX);
         
         // Save state for undo
@@ -1614,7 +1941,7 @@ class DrawingController extends Controller {
         let initialLevel = this.toolManager.smoothnessLevel;
         
         // Calculate toolbar position for popup
-        const toolSlotX = (toolPart - 1) * 50;
+        const toolSlotX = this.toolPaletteView.getViewArea().left+(toolPart-1)*this.toolPaletteView.slotWidth();
         
         // Save state for undo
         this.smoothnessInitialState = {
@@ -1919,6 +2246,7 @@ class DrawingController extends Controller {
     }
 
     loadFile(filename) {
+        this.commitTextEdit(true);
         try {
             const fileData = fs.readFileSync(filename, 'utf8');
             const data = JSON.parse(fileData);
@@ -1944,6 +2272,7 @@ class DrawingController extends Controller {
     }
 
     saveFile() {
+        this.commitTextEdit();
         // Generate filename if not set
         if (!this.currentFilename) {
             const now = new Date();
@@ -1962,7 +2291,7 @@ class DrawingController extends Controller {
                 };
             });
             const data = {
-                fileFormat: 'skrbl-v0.0.3',
+                fileFormat: 'skrbl-v0.0.4',
                 imageData: imageRegistry.entries,
                 shapes,
                 recentColors: this.recentColors
@@ -1990,19 +2319,20 @@ class DrawingController extends Controller {
     
     showSaveMessage(message) {
         this.saveMessage = message;
-        
-        // Clear any existing timer
-        if (this.saveMessageTimer) {
-            clearTimeout(this.saveMessageTimer);
-        }
-        
-        // Clear message after 2 seconds
-        this.saveMessageTimer = setTimeout(() => {
-            this.saveMessage = null;
-            this.saveMessageTimer = null;
-        }, 2000);
+        this.backgroundView.showNotification(message);
     }
-    
+
+    destroy() {
+        this.cursors?.destroy();
+        if(this.fontPickerController)this.fontPickerController.cancel();
+        this.commitTextEdit(true);
+        if (this.removeBrowserWheel) this.removeBrowserWheel();
+        if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
+        if (this.reorderTimer) clearTimeout(this.reorderTimer);
+        for (const child of this.children.slice()) child.destroy();
+        super.destroy();
+    }
+
     getSaveMessage() {
         return this.saveMessage;
     }

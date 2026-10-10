@@ -2,6 +2,8 @@
 
 const TOOLS = {
     SELECT: 'select',
+    PAN: 'pan',
+    ZOOM: 'zoom',
     LINE: 'line',
     FREEHAND: 'freehand',
     SPLINE: 'spline',
@@ -12,6 +14,8 @@ const TOOLS = {
     QUAD: 'quad',
     POLY: 'poly',
     IMAGE: 'image',
+    TEXT: 'text',
+    FONT: 'font',
     FILL_COLOR: 'fillcolor',
     LINE_COLOR: 'linecolor',
     LINE_WIDTH: 'linewidth',
@@ -20,27 +24,35 @@ const TOOLS = {
 };
 
 const TOOL_SHORTCUTS = {
-    // Note: ESC key is handled specially in DrawingController.handleKeyPress
-    'L': TOOLS.LINE,
+    'V': TOOLS.SELECT,
+    'H': TOOLS.PAN,
+    '\\': TOOLS.LINE,
+    'N': TOOLS.FREEHAND,
     'S': TOOLS.SPLINE,
-    'B': TOOLS.BEZIER,
-    'C': TOOLS.CIRCLE,
-    'O': TOOLS.OVAL,
-    'R': TOOLS.RECT,
+    'P': TOOLS.BEZIER,
+    'Shift+L': TOOLS.CIRCLE,
+    'L': TOOLS.OVAL,
+    'M': TOOLS.RECT,
     'Q': TOOLS.QUAD,
-    'P': TOOLS.POLY,
-    'I': TOOLS.IMAGE,
-    'F': TOOLS.FREEHAND,
-    'M': TOOLS.FILL_COLOR,
-    'N': TOOLS.LINE_COLOR,
-    'W': TOOLS.LINE_WIDTH,
+    'Shift+P': TOOLS.POLY,
+    'Shift+I': TOOLS.IMAGE,
+    'T': TOOLS.TEXT,
+    'Shift+T': TOOLS.FONT,
+    'F': TOOLS.FILL_COLOR,
+    'Shift+F': TOOLS.LINE_COLOR,
+    'Shift+W': TOOLS.LINE_WIDTH,
     'U': TOOLS.SMOOTHNESS,
-    'H': TOOLS.HELP
+    '?': TOOLS.HELP
 };
 
 class Tools {
     static TOOL_SHORTCUTS = TOOL_SHORTCUTS;
     static TOOLS = TOOLS;
+    static TOOL_NAMES = {
+        select:'Select',pan:'Pan',zoom:'Magnifier',line:'Line',freehand:'Freehand',spline:'Cardinal Spline',
+        bezier:'Pen',circle:'Circle',oval:'Ellipse',rect:'Rectangle',quad:'Quad',poly:'Polygon',image:'Import image or drawing',
+        text:'Text',font:'Font & style',fillcolor:'Fill color',linecolor:'Stroke color',linewidth:'Line width',smoothness:'Smoothness',help:'Help'
+    };
 
     constructor(ShapeClasses) {
         this.ShapeClasses = ShapeClasses;
@@ -133,7 +145,7 @@ class Tools {
     }
 
     startDrawing(x, y) {
-        this.isDrawing = true;
+        this.isDrawing = true;this._axisConstraint=null;
         this.startPoint = { x, y };
         this.lastPoint = { x, y };
 
@@ -197,9 +209,26 @@ class Tools {
         }
     }
 
-    updateDrawing(x, y) {
+    updateDrawing(x, y, shift=false) {
         if (!this.currentShape) return;
 
+        if(shift) {
+            const origin=this.startPoint;
+            if(this.currentTool===TOOLS.RECT || this.currentTool===TOOLS.OVAL) {
+                const size=Math.max(Math.abs(x-origin.x),Math.abs(y-origin.y));
+                x=origin.x+Math.sign(x-origin.x || 1)*size;y=origin.y+Math.sign(y-origin.y || 1)*size;
+            } else if(this.currentTool===TOOLS.LINE) {
+                const point=require('./GestureConstraints').linePoint(origin,{x,y});x=point.x;y=point.y;
+            } else if([TOOLS.POLY,TOOLS.QUAD,TOOLS.BEZIER,TOOLS.SPLINE].includes(this.currentTool)) {
+                const points=this.currentShape.points;
+                const anchor=points[Math.max(0,points.length-(this.currentTool===TOOLS.SPLINE?3:2))] || origin;
+                const point=require('./GestureConstraints').linePoint(anchor,{x,y});x=point.x;y=point.y;
+            } else if(this.currentTool===TOOLS.FREEHAND) {
+                this._axisConstraint ||= {};
+                const point=require('./GestureConstraints').axisPoint(origin,{x,y},this._axisConstraint,true);
+                x=point.x;y=point.y;
+            }
+        } else this._axisConstraint=null;
         switch (this.currentTool) {
             case TOOLS.LINE:
                 this.currentShape.x2 = x;
@@ -401,10 +430,10 @@ class Tools {
         // Check if we have enough points to make a valid shape
         let minPoints = 2;
         if (this.currentTool === TOOLS.POLY) {
-            minPoints = 3;
+            minPoints = 4; // Three confirmed vertices plus the temporary preview.
         }
         if (this.currentTool === TOOLS.QUAD) {
-            minPoints = 4; // Quad needs exactly 4 points
+            minPoints = 5; // Four confirmed vertices plus the temporary preview.
         }
         if (this.currentTool === TOOLS.SPLINE) {
             // For double-click: need initial control, one endpoint, extra from double-click, preview = 4

@@ -1,12 +1,24 @@
 # Skrybble status
 
-Last reviewed: 2026-08-28
+Last reviewed: 2026-10-09
 
 ## Remaining work
 
 No features are currently tracked as unimplemented.
 
 ## Completed
+
+### PDG 1.1 / 1.2 adoption
+
+- [x] Retain vector artwork and update style/text through native element handles.
+- [x] Move nested groups with shared transforms; preserve translation in save/load and ungrouping.
+- [x] Route slider dragging through MVC pointer capture and use local clickable regions for picker choices.
+- [x] Replace selection and notification visual timers with animation schedules.
+- [x] Cache help/checkerboard artwork and render toolbar icons at twice their display size.
+- [x] Add a bounded 1024 × 1024 canvas, pointer-centered zoom, and pan navigation.
+- [x] Add editable text with undo/redo, clipboard, grouping, and persistence.
+- [x] Add native unit/pixel checks and repeatable browser integration tests.
+
 
 ### Image tool
 

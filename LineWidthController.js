@@ -106,15 +106,8 @@ class LineWidthController extends Controller {
     }
 
     doMouseUp(mouseInfo, view, id, part) {
-        // Check if we've been destroyed or closed
-        const parent = this.parentController || this.parent;
-        if (!parent || parent.lineWidthController !== this) {
-            return false;
-        }
-        
-        console.log('LineWidthController.doMouseUp called');
-        // Consume the event to prevent it from reaching parent
-        return true;
+        if (!view || part===-1) { this.cancel(); return true; }
+        return false;
     }
 
     doLeftClick(clickInfo, view, id, part) {
@@ -129,14 +122,14 @@ class LineWidthController extends Controller {
         const pos = this.getMousePosition(clickInfo);
         
         // Check if clicking outside the popup - cancel
-        if (!this.popupRect.contains(pos.x, pos.y)) {
+        if (!this.popupRect.contains(new pdg.Point(pos.x,pos.y))) {
             console.log('LineWidthController.doLeftClick - click outside popup, canceling');
             this.cancel();
             return true;
         }
         
         // Check if clicking on a width option
-        const clickedIndex = this.getClickedWidthIndex(pos);
+        const clickedIndex = part>=2 && part<=6 ? part-2 : -1;
         console.log('LineWidthController.doLeftClick - clickedIndex:', clickedIndex);
         if (clickedIndex !== -1) {
             this.selectedIndex = clickedIndex;
@@ -163,25 +156,7 @@ class LineWidthController extends Controller {
         return true;
     }
 
-    getClickedWidthIndex(pos) {
-        // Width options are drawn with 30px spacing, starting at y=50
-        const startY = this.popupRect.top + 50;
-        const lineSpacing = 30;
-        const lineHeight = 20; // Clickable area height
-        
-        if (pos.x < this.popupRect.left || pos.x > this.popupRect.right) {
-            return -1;
-        }
-        
-        for (let i = 0; i < 5; i++) {
-            const lineY = startY + i * lineSpacing;
-            if (pos.y >= lineY - lineHeight/2 && pos.y <= lineY + lineHeight/2) {
-                return i;
-            }
-        }
-        
-        return -1;
-    }
+
 
     doKeyPress(keyPressInfo, view, id, part) {
         // Check if we've been destroyed or closed
@@ -289,7 +264,8 @@ class LineWidthPickerView extends View {
         
         // Make the entire view area clickable
         const viewArea = this.getViewArea();
-        this.addClickablePart(viewArea, 1);
+        this.addClickablePart(new pdg.Rect(viewArea.width(),viewArea.height()), 1);
+        for(let i=0;i<5;i++) this.addClickablePart(new pdg.Rect(0,40+i*30,viewArea.width(),60+i*30),i+2);
     }
 
     drawSelf(port, frameNum) {

@@ -35,6 +35,9 @@ class ColorPickerController extends Controller {
         this.onCancel = onCancel;
         this.recentColors = recentColors;
         
+        for (const [slider,channel] of [[this.redSlider,'r'],[this.greenSlider,'g'],[this.blueSlider,'b'],[this.alphaSlider,'a']]) {
+            slider.onValueChanged=value=> { this.currentColor[channel]=value; this.updateColor(); };
+        }
         // Clean up temp variables
         delete ColorPickerController._tempInitialColor;
         delete ColorPickerController._tempCurrentColor;
@@ -239,56 +242,14 @@ class ColorPickerController extends Controller {
     }
 
     doMouseDown(mouseInfo, view, id, part) {
-        // Check if clicking on a slider
-        const sliders = [
-            { view: this.redSlider, name: 'r' },
-            { view: this.greenSlider, name: 'g' },
-            { view: this.blueSlider, name: 'b' },
-            { view: this.alphaSlider, name: 'a' }
-        ];
-        
-        for (const slider of sliders) {
-            if (view === slider.view) {
-                slider.view.isDragging = true;
-                const newValue = slider.view.mouseToValue(mouseInfo.mousePos.x);
-                slider.view.setValue(newValue);
-                this.currentColor[slider.name] = newValue;
-                this.updateColor();
-                return true;
-            }
+        if ([this.redSlider,this.greenSlider,this.blueSlider,this.alphaSlider].includes(view))
+            return view.doMouseDown(mouseInfo,id,part);
+        if (view===this.mainView && part>=2 && part<=11) {
+            this.selectRecentColor(part-2); return true;
         }
-        
-        // Check if clicking on a recent color
-        if (view === this.mainView) {
-            const recentColorIndex = this.getRecentColorAtPosition(mouseInfo.mousePos.x, mouseInfo.mousePos.y);
-            if (recentColorIndex !== -1) {
-                this.selectRecentColor(recentColorIndex);
-                return true;
-            }
-        }
-        
         return false;
     }
-    
-    getRecentColorAtPosition(x, y) {
-        // Calculate if click is on a recent color swatch
-        const swatchSize = 25;
-        const swatchSpacing = 5;
-        const startX = this.popupRect.left + 20;
-        const startY = this.popupRect.bottom - 80;
-        
-        for (let i = 0; i < this.recentColors.length && i < 10; i++) {
-            const swatchX = startX + i * (swatchSize + swatchSpacing);
-            const swatchY = startY;
-            
-            if (x >= swatchX && x <= swatchX + swatchSize && 
-                y >= swatchY && y <= swatchY + swatchSize) {
-                return i;
-            }
-        }
-        return -1;
-    }
-    
+
     selectRecentColor(index) {
         const colorStr = this.recentColors[index];
         this.currentColor = this.parseColor(colorStr);
@@ -302,35 +263,8 @@ class ColorPickerController extends Controller {
         this.updateColor();
     }
 
-    doMouseMove(mouseInfo, view, id, part) {
-        // Handle slider dragging
-        const sliders = [
-            { view: this.redSlider, name: 'r' },
-            { view: this.greenSlider, name: 'g' },
-            { view: this.blueSlider, name: 'b' },
-            { view: this.alphaSlider, name: 'a' }
-        ];
-        
-        for (const slider of sliders) {
-            if (slider.view && slider.view.isDragging) {
-                const newValue = slider.view.mouseToValue(mouseInfo.mousePos.x);
-                slider.view.setValue(newValue);
-                this.currentColor[slider.name] = newValue;
-                this.updateColor();
-                return true;
-            }
-        }
-        return false;
-    }
-
-    doMouseUp(mouseInfo, view, id, part) {
-        // Stop dragging all sliders
-        if (this.redSlider) this.redSlider.isDragging = false;
-        if (this.greenSlider) this.greenSlider.isDragging = false;
-        if (this.blueSlider) this.blueSlider.isDragging = false;
-        if (this.alphaSlider) this.alphaSlider.isDragging = false;
-        return false;
-    }
+    doMouseMove(info,view,id,part) { return view ? view.doMouseMove(info,id,part) : false; }
+    doMouseUp(info,view,id,part) { return view ? view.doMouseUp(info,id,part) : false; }
 
     doKeyPress(keyPressInfo, view, id, part) {
         // If we've been destroyed or closed, don't handle any keys
@@ -440,7 +374,12 @@ class ColorPickerView extends require('./index').View {
         
         // Make the entire view area clickable for recent colors
         const viewArea = this.getViewArea();
-        this.addClickablePart(viewArea, 1);
+        this.addClickablePart(new pdg.Rect(viewArea.width(),viewArea.height()), 1);
+        const colors=ColorPickerController._tempRecentColors || controller.recentColors || [];
+        for(let i=0;i<Math.min(10,colors.length);i++) {
+            const x=20+i*30,y=viewArea.height()-80;
+            this.addClickablePart(new pdg.Rect(x,y,x+25,y+25),i+2);
+        }
     }
 
     drawSelf(port, frameNum) {

@@ -140,7 +140,9 @@ class EditText extends View {
         // Calculate text position
         const textX = viewArea.left + LEFT_MARGIN;
         const textAttrs = this.getDrawingAttributes(new pdg.Attributes().textSize(this.fontSize).textStyle(this.style), true);
-        const textY = viewArea.top + viewArea.height() / 2 + textAttrs.getTextSize() / 2;
+        const font=port.getCurrentFont(this.style),size=textAttrs.getTextSize();
+        const ascent=font.getFontAscent(size,this.style),descent=font.getFontDescent(size,this.style);
+        const textY=viewArea.top+viewArea.height()/2+(ascent-descent)/2;
         
         // Draw text
         if (this.text) {
@@ -210,7 +212,7 @@ class EditText extends View {
      */
     doMouseDown(mouseInfo, id, part) {
         if (part === EditTextClickIDs.CLICK_ID_EDITBOXVIEW) {
-            this.setFocus(true);
+            this.setFocus(true);this._selectingText=true;
             
             // Calculate caret position based on click
             const localPoint = this.globalToLocal(mouseInfo.mousePos);
@@ -234,9 +236,11 @@ class EditText extends View {
      */
     doMouseUp(mouseInfo, id, part) {
         if (part === EditTextClickIDs.CLICK_ID_EDITBOXVIEW) {
+            this._selectingText=false;
             // Handle selection end
             const localPoint = this.globalToLocal(mouseInfo.mousePos);
-            this.highlightEndCharIndex = this.getCaretPositionFromPoint(localPoint);
+            this.caretPos=this.getCaretPositionFromPoint(localPoint);
+            this.highlightEndCharIndex=this.caretPos;
             
             return true;
         }
@@ -250,10 +254,11 @@ class EditText extends View {
      * @param {number} part - Clicked part
      */
     doMouseMove(mouseInfo, id, part) {
-        if (part === EditTextClickIDs.CLICK_ID_EDITBOXVIEW && this.mbHasFocus) {
+        if (part === EditTextClickIDs.CLICK_ID_EDITBOXVIEW && this.mbHasFocus && this._selectingText) {
             // Update selection during drag
             const localPoint = this.globalToLocal(mouseInfo.mousePos);
-            this.highlightEndCharIndex = this.getCaretPositionFromPoint(localPoint);
+            this.caretPos=this.getCaretPositionFromPoint(localPoint);
+            this.highlightEndCharIndex=this.caretPos;
         }
     }
 
@@ -282,44 +287,77 @@ class EditText extends View {
      * @returns {boolean} true if handled
      */
     doKeyPress(keyPressInfo, view, id, part) {
+        if(!this.mbHasFocus)return false;
+        const code=keyPressInfo.unicode,command=keyPressInfo.ctrl || keyPressInfo.meta || keyPressInfo.command;
+        this._editUndo ||= [];this._editRedo ||= [];
+        const snapshot=()=>({text:this.text,caretPos:this.caretPos,highlightStartCharIndex:this.highlightStartCharIndex,
+            highlightEndCharIndex:this.highlightEndCharIndex});
+        if(command && [90,122,89,121].includes(code)) {
+            const redo=keyPressInfo.shift || [89,121].includes(code);
+            const from=redo?this._editRedo:this._editUndo,to=redo?this._editUndo:this._editRedo;
+            if(from.length){to.push(snapshot());Object.assign(this,from.pop());}
+            this.mbShowCaret=true;this._caretElapsed=0;return true;
+        }
+        const before=snapshot(),handled=this.processKeyPress(keyPressInfo,view,id,part);
+        if(this.text!==before.text){this._editUndo.push(before);this._editRedo=[];}
+        return handled;
+    }
+
+    processKeyPress(keyPressInfo, view, id, part) {
         if (!this.mbHasFocus) return false;
         
-        const key = keyPressInfo.key;
-        const keyCode = keyPressInfo.keyCode;
-        
-        // Handle special keys
-        if (keyCode === 8) { // Backspace
-            this.handleBackspace();
-            return true;
-        } else if (keyCode === 46) { // Delete
-            this.handleDelete();
-            return true;
-        } else if (keyCode === 37) { // Left arrow
-            this.handleLeftArrow();
-            return true;
-        } else if (keyCode === 39) { // Right arrow
-            this.handleRightArrow();
-            return true;
-        } else if (keyCode === 36) { // Home
-            this.caretPos = 0;
-            this.clearSelection();
-            return true;
-        } else if (keyCode === 35) { // End
-            this.caretPos = this.text.length;
-            this.clearSelection();
-            return true;
-        } else if (keyCode === 13) { // Enter
-            // Handle enter key (could trigger validation or form submission)
+        // PDG KeyPress supplies Unicode characters and PDG control codes.
+        const legacy={37:28,39:29,38:30,40:31,36:2,35:3,46:127};
+        const code=keyPressInfo.unicode ?? (legacy[keyPressInfo.keyCode] ?? keyPressInfo.keyCode);
+        const modifier=keyPressInfo.ctrl || keyPressInfo.meta || keyPressInfo.command;
+        const shift=!!keyPressInfo.shift;
+        if(modifier && [65,97].includes(code)) {this.selectAll();return true;}
+        if(modifier && [67,99,88,120].includes(code)) {
+            EditText.clipboard=this.getSelectedText();
+            if([88,120].includes(code))this.deleteSelection();
             return true;
         }
-        
-        // Handle printable characters
-        if (this.isPrintableChar(key)) {
-            this.handlePrintableChar(key);
-            return true;
+        if(modifier && [86,118].includes(code)) {this.replaceSelection(EditText.clipboard || '');return true;}
+        if(code===8) {this.handleBackspace();return true;}
+        if(code===127) {this.handleDelete();return true;}
+        if([28,29,30,31,2,3].includes(code)) {
+            const left=code===28, right=code===29;
+            let target=this.caretPos;
+            if(left || right) {
+                if(this.hasSelection() && !shift && !modifier)
+                    target=(left?Math.min:Math.max)(this.highlightStartCharIndex,this.highlightEndCharIndex);
+                else if(modifier || keyPressInfo.alt) {
+                    const before=this.text.slice(0,this.caretPos),after=this.text.slice(this.caretPos);
+                    target=left ? before.replace(/\s*\S+\s*$/u,'').length
+                        : this.caretPos+(after.match(/^\s*\S+\s*/u)?.[0].length || after.length);
+                } else target=this.adjacentPosition(this.caretPos,left?-1:1);
+            } else target=(code===2 || code===30)?0:this.text.length;
+            this.moveCaret(target,shift);return true;
         }
-        
+        if(code===13) return true;
+        const key=keyPressInfo.key || (code>=32 && code<=0x10ffff?String.fromCodePoint(code):'');
+        if(!modifier && !keyPressInfo.alt && this.isPrintableChar(key)) {this.handlePrintableChar(key);return true;}
         return false;
+    }
+
+    positions() {
+        if(typeof Intl.Segmenter==='function') return [...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(this.text)]
+            .map(segment=>segment.index).concat(this.text.length);
+        const positions=[0];for(const char of this.text) positions.push(positions[positions.length-1]+char.length);
+        return positions;
+    }
+    adjacentPosition(position,direction) {
+        const positions=this.positions();
+        return direction<0 ? [...positions].reverse().find(index=>index<position) ?? 0
+            : positions.find(index=>index>position) ?? this.text.length;
+    }
+    moveCaret(position,extend=false) {
+        if(!extend) {this.caretPos=position;this.clearSelection();}
+        else {
+            if(!this.hasSelection())this.highlightStartCharIndex=this.caretPos;
+            this.caretPos=position;this.highlightEndCharIndex=position;
+        }
+        this.mbShowCaret=true;this._caretElapsed=0;
     }
 
     /**
@@ -329,8 +367,9 @@ class EditText extends View {
         if (this.hasSelection()) {
             this.deleteSelection();
         } else if (this.caretPos > 0) {
-            this.text = this.text.substring(0, this.caretPos - 1) + this.text.substring(this.caretPos);
-            this.caretPos--;
+            const previous=this.adjacentPosition(this.caretPos,-1);
+            this.text = this.text.substring(0, previous) + this.text.substring(this.caretPos);
+            this.caretPos=previous;this.clearSelection();
         }
     }
 
@@ -341,7 +380,8 @@ class EditText extends View {
         if (this.hasSelection()) {
             this.deleteSelection();
         } else if (this.caretPos < this.text.length) {
-            this.text = this.text.substring(0, this.caretPos) + this.text.substring(this.caretPos + 1);
+            this.text = this.text.substring(0, this.caretPos) + this.text.substring(this.adjacentPosition(this.caretPos,1));
+            this.clearSelection();
         }
     }
 
@@ -350,7 +390,7 @@ class EditText extends View {
      */
     handleLeftArrow() {
         if (this.caretPos > 0) {
-            this.caretPos--;
+            this.caretPos=this.adjacentPosition(this.caretPos,-1);
             this.clearSelection();
         }
     }
@@ -360,7 +400,7 @@ class EditText extends View {
      */
     handleRightArrow() {
         if (this.caretPos < this.text.length) {
-            this.caretPos++;
+            this.caretPos=this.adjacentPosition(this.caretPos,1);
             this.clearSelection();
         }
     }
@@ -376,7 +416,8 @@ class EditText extends View {
         }
         
         // Check maximum length
-        if (this.text.length >= this.maxChars) {
+        const selected=Math.abs(this.highlightEndCharIndex-this.highlightStartCharIndex);
+        if (this.text.length-selected+char.length > this.maxChars) {
             return;
         }
         
@@ -386,7 +427,8 @@ class EditText extends View {
         
         // Insert character
         this.text = this.text.substring(0, this.caretPos) + char + this.text.substring(this.caretPos);
-        this.caretPos++;
+        this.caretPos += char.length;
+        this.clearSelection();
     }
 
     /**
@@ -415,7 +457,7 @@ class EditText extends View {
      * @returns {boolean} true if printable
      */
     isPrintableChar(char) {
-        return char && char.length === 1 && char.charCodeAt(0) >= 32 && char.charCodeAt(0) <= 126;
+        return !!char && Array.from(char).every(value=>value.codePointAt(0)>=32 && !/[\r\n]/.test(value));
     }
 
     /**
@@ -446,9 +488,9 @@ class EditText extends View {
         
         // Find the closest character position
         let pos = 0;
-        for (let i = 0; i <= this.text.length; i++) {
+        for (const i of this.positions()) {
             const width = this.getTextWidth(this.text.substring(0, i));
-            if (clickX < width + this.getTextWidth(this.text[i] || '') / 2) {
+            if (clickX < width + this.getTextWidth(this.text.slice(i,this.adjacentPosition(i,1))) / 2) {
                 pos = i;
                 break;
             }
@@ -529,20 +571,16 @@ class EditText extends View {
      * @param {boolean} focus - Whether to have focus
      */
     setFocus(focus = true) {
-        if (this.mbHasFocus !== focus) {
-            this.mbHasFocus = focus;
-            
-            if (focus) {
-                // Start caret blinking timer
-                this.timerMgr.startTimer('EDIT_CARET_TIMER', 500, false); // oneShot = false (repeating), blink every 500ms
-                this.mbShowCaret = true;
-            } else {
-                // Stop caret blinking timer
-                this.timerMgr.cancelTimer('EDIT_CARET_TIMER');
-                this.mbShowCaret = false;
-                this.clearSelection();
-            }
+        this.mbHasFocus=focus;this.mbShowCaret=focus;this._caretElapsed=0;
+        if(!focus)this.clearSelection();
+    }
+    animate(seconds) {
+        const changed=super.animate(seconds);
+        if(this.mbHasFocus) {
+            this._caretElapsed=(this._caretElapsed || 0)+seconds;
+            while(this._caretElapsed>=.5) {this._caretElapsed-=.5;this.mbShowCaret=!this.mbShowCaret;}
         }
+        return changed;
     }
 
     /**
@@ -550,7 +588,9 @@ class EditText extends View {
      * @param {string} text - Text to set
      */
     setText(text) {
-        this.text = (text || '').substring(0, this.maxChars);
+        this.text=String(text || '');
+        this.text=this.text.slice(0,this.positions().filter(position=>position<=this.maxChars).pop() ?? 0);
+        this._editUndo=[];this._editRedo=[];
         this.caretPos = this.text.length;
         this.clearSelection();
     }
@@ -598,6 +638,7 @@ class EditText extends View {
         // Insert new text
         this.text = this.text.substring(0, this.caretPos) + newText + this.text.substring(this.caretPos);
         this.caretPos += newText.length;
+        this.clearSelection();
     }
 
     /**

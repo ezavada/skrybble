@@ -97,6 +97,7 @@ class Drawing {
                 shape.x += dx;
                 shape.y += dy;
                 break;
+            case 'Text':
             case 'Rectangle':
             case 'Image':
                 shape.x += dx;
@@ -148,7 +149,15 @@ class Drawing {
                 replacement.push(shape);
                 continue;
             }
+            const groupCenter=shape.getCenterPoint();
             for (const child of shape.children) {
+                this.moveShape(child,shape.x,shape.y);
+                if(shape.rotation) {
+                    const center=groupCenter,childCenter=child.getCenterPoint();
+                    const rotated=shape.rotatePoint(childCenter.x,childCenter.y,center.x,center.y,shape.rotation);
+                    this.moveShape(child,rotated.x-childCenter.x,rotated.y-childCenter.y);
+                    child.rotation=(child.rotation || 0)+shape.rotation;
+                }
                 child.selected = true;
                 replacement.push(child);
                 ungrouped.push(child);
@@ -202,60 +211,13 @@ class Drawing {
 
     duplicateShape(shape) {
         if (!shape) return null;
-
-        let newShape;
-        switch (shape.constructor.name) {
-            case 'Line':
-                newShape = new ShapeClasses.Line(
-                    shape.x + 10, shape.y + 10, 
-                    shape.x2 + 10, shape.y2 + 10,
-                    shape.strokeColor, shape.strokeWidth
-                );
-                break;
-            case 'Circle':
-                newShape = new ShapeClasses.Circle(
-                    shape.x + 10, shape.y + 10,
-                    shape.radius,
-                    shape.fillColor, shape.strokeColor, shape.strokeWidth
-                );
-                break;
-            case 'Oval':
-                newShape = new ShapeClasses.Oval(
-                    shape.x + 10, shape.y + 10,
-                    shape.radiusX, shape.radiusY,
-                    shape.fillColor, shape.strokeColor, shape.strokeWidth
-                );
-                break;
-            case 'Rectangle':
-                newShape = new ShapeClasses.Rectangle(
-                    shape.x + 10, shape.y + 10,
-                    shape.width, shape.height,
-                    shape.fillColor, shape.strokeColor, shape.strokeWidth
-                );
-                break;
-            case 'Polygon':
-                const newPoints = shape.points.map(p => ({ x: p.x + 10, y: p.y + 10 }));
-                newShape = new ShapeClasses.Polygon(
-                    newPoints,
-                    shape.fillColor, shape.strokeColor, shape.strokeWidth
-                );
-                break;
-            case 'Spline':
-                const newSplinePoints = shape.points.map(p => ({ x: p.x + 10, y: p.y + 10 }));
-                newShape = new ShapeClasses.Spline(
-                    newSplinePoints,
-                    shape.fillColor, shape.strokeColor, shape.strokeWidth
-                );
-                break;
-            default:
-                return null;
-        }
-
-        this.addShape(newShape);
-        return newShape;
+        const copy=this.deserializeShape(shape.constructor.name,this.serializeShape(shape));
+        if (!copy) return null;
+        this.moveShape(copy,10,10);
+        this.addShape(copy);
+        return copy;
     }
 
-    // Export/Import functionality
     exportShapes() {
         return JSON.stringify(this.shapes.map(shape => ({
             type: shape.constructor.name,
@@ -288,7 +250,7 @@ class Drawing {
     }
 
     deserializeDocument(data) {
-        if (!data || data.fileFormat !== 'skrbl-v0.0.3' ||
+        if (!data || !['skrbl-v0.0.3','skrbl-v0.0.4'].includes(data.fileFormat) ||
             !Array.isArray(data.imageData) || !Array.isArray(data.shapes)) {
             throw new Error('Unsupported or invalid file format');
         }
@@ -314,6 +276,10 @@ class Drawing {
         let data;
         
         switch (typeName) {
+            case 'Text':
+                data = {x:shape.x,y:shape.y,text:shape.text,fontSize:shape.fontSize,fontName:shape.fontName,textStyle:shape.textStyle,
+                    width:shape.width,height:shape.height,fillColor:shape.fillColor,rotation:shape.rotation};
+                break;
             case 'Line':
                 data = {
                     x: shape.x, y: shape.y,
@@ -402,6 +368,7 @@ class Drawing {
                 break;
             case 'Group':
                 data = {
+                    x: shape.x, y: shape.y,rotation:shape.rotation,
                     children: shape.children.map(child => this.serializeShape(child, imageRegistry))
                 };
                 break;
@@ -416,6 +383,10 @@ class Drawing {
         let shape = null;
         
         switch (type) {
+            case 'Text':
+                shape = new ShapeClasses.Text(data.x,data.y,data.text,data.fillColor,
+                    data.fontSize,data.width,data.height,data.fontName,data.textStyle);
+                break;
             case 'Line':
                 shape = new ShapeClasses.Line(
                     data.x, data.y, data.x2, data.y2,
@@ -489,6 +460,7 @@ class Drawing {
             default:
                 return null;
         }
+        if (type === 'Group') { shape.x=data.x || 0; shape.y=data.y || 0; }
         
         // Restore rotation if present
         if (shape && data.rotation !== undefined) {

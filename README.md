@@ -158,8 +158,7 @@ site is static and contains Skrybble, `libpdg.js`, `libpdg.wasm`, and PDG's
 license bundle. Browser Open/Image operations use the system file picker; Save
 downloads the selected `.skrbl` or `.pdgdrawing` format.
 
-The launchers prefer a built sibling `pdg-devel` checkout when available.
-Otherwise they cache the exact public PDG release under `.pdg/` and verify its
+The launchers cache the exact public PDG release under `.pdg/` and verify its
 SHA-256 before use. Set `PDG_CACHE_DIR` to share that cache between clones, or
 `PDG_EXECUTABLE` to test with an already installed runtime. Pass
 `--refresh-pdg` (or `-RefreshPdg` in PowerShell) to use and replace the cached release.
@@ -169,6 +168,42 @@ still have OpenGL line-width limits. For native development, build that checkout
 and launch with `PDG_EXECUTABLE=/path/to/pdg-devel/pdg ./skrybble`. For the browser,
 set `PDG_WASM_DIR` to its rebuilt WASM artifacts when running `tools/build-web.sh`.
 
+
+### Selecting a development PDG runtime
+
+Desktop launchers and browser builds use the pinned public release by default.
+To use an already built sibling `../pdg-devel` checkout:
+
+```bash
+PDG_SOURCE=devel ./skrybble
+PDG_SOURCE=devel ./tools/build-web.sh
+
+# Optional checkout location (paths containing spaces are supported).
+PDG_SOURCE=devel PDG_DEVEL_DIR="/path/to/pdg-devel" ./skrybble
+```
+
+In Windows PowerShell:
+
+```powershell
+$env:PDG_SOURCE = "devel"
+# Optional; defaults to the sibling pdg-devel checkout.
+$env:PDG_DEVEL_DIR = "C:\work\pdg-devel"
+.\skrybble.ps1
+# Return to the pinned release:
+$env:PDG_SOURCE = "release"
+```
+
+Build PDG first: native launchers expect `pdg` (`pdg.exe` on Windows) in the
+checkout root; web builds expect `libpdg.js` and `libpdg.wasm` under
+`build/wasm/wasm32/release`. Development selection never builds automatically
+or falls back to a release when those files are missing.
+
+`PDG_EXECUTABLE` (desktop) and `PDG_WASM_DIR` (web) take precedence over the
+selected source. `PDG_DEVEL_DIR` alone does not enable development mode.
+Use `PDG_SOURCE=release` or unset `PDG_SOURCE` to return to the pinned release.
+`--refresh-pdg` (`-RefreshPdg` in PowerShell) refreshes the release cache and
+is rejected in development mode. Runtime selection does not change vendored
+JavaScript framework sources.
 
 ### Keyboard Shortcuts
 
@@ -549,8 +584,8 @@ font files must be installed on the receiving system. Pose polygons stay fully
 editable. Other native drawings reopen as retained artwork that can be moved,
 rotated, duplicated and grouped, and can also be saved inside `.skrbl` documents.
 
-The launchers use a built sibling `pdg-devel` runtime when available; an explicit
-`PDG_EXECUTABLE` takes precedence and refreshing PDG uses the pinned release.
+Select `PDG_SOURCE=devel` to use a built sibling `pdg-devel` runtime; an explicit
+`PDG_EXECUTABLE` takes precedence.
 The pinned PDG 1.2 runtime supports polygon pose exchange. For complete native
 export/import on desktop, build `pdg-devel` or launch with
 `PDG_EXECUTABLE=/path/to/pdg-devel/pdg ./skrybble`. For the browser, rebuild with

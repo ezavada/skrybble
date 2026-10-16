@@ -16,10 +16,18 @@ if [ "$#" -ne 0 ]; then
     exit 2
 fi
 
-LOCAL_WASM_DIR="$PROJECT_DIR/../pdg-devel/build/wasm/wasm32/release"
-if [ -z "${PDG_WASM_DIR:-}" ] && [ "$REFRESH_PDG" -eq 0 ] &&
-   [ -f "$LOCAL_WASM_DIR/libpdg.js" ] && [ -f "$LOCAL_WASM_DIR/libpdg.wasm" ]; then
-    PDG_WASM_DIR="$LOCAL_WASM_DIR"
+PDG_SOURCE=${PDG_SOURCE:-release}
+case "$PDG_SOURCE" in
+    release|devel) ;;
+    *) echo "PDG_SOURCE must be release or devel" >&2; exit 2 ;;
+esac
+if [ "$PDG_SOURCE" = devel ] && [ "$REFRESH_PDG" -eq 1 ]; then
+    echo "--refresh-pdg requires PDG_SOURCE=release" >&2
+    exit 2
+fi
+if [ -z "${PDG_WASM_DIR:-}" ] && [ "$PDG_SOURCE" = devel ]; then
+    PDG_DEVEL_DIR=${PDG_DEVEL_DIR:-"$PROJECT_DIR/../pdg-devel"}
+    PDG_WASM_DIR="$PDG_DEVEL_DIR/build/wasm/wasm32/release"
 fi
 
 if [ -z "${PDG_WASM_DIR:-}" ]; then
@@ -46,7 +54,7 @@ if [ -z "${PDG_WASM_DIR:-}" ]; then
             exit 1
         }
 
-        TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/skrybble-pdg.XXXXXX")
+        TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pdg-web.XXXXXX")
         trap 'rm -rf "$TEMP_DIR"' EXIT HUP INT TERM
         PDG_ARCHIVE="$TEMP_DIR/$PDG_EMSCRIPTEN_WASM32_ASSET"
         PDG_DOWNLOAD_URL="$PDG_REPOSITORY/releases/download/$PDG_TAG/$PDG_EMSCRIPTEN_WASM32_ASSET"
@@ -92,6 +100,7 @@ if [ ! -f "$PDG_WASM_DIR/libpdg.js" ] || [ ! -f "$PDG_WASM_DIR/libpdg.wasm" ]; t
     echo "Set PDG_WASM_DIR to a directory containing libpdg.js and libpdg.wasm" >&2
     exit 1
 fi
+
 
 mkdir -p "$OUTPUT_DIR/vendor/pdg-mvc-app"
 cp "$PROJECT_DIR/web/index.html" "$PROJECT_DIR/web/skrybble-web.js" "$OUTPUT_DIR/"

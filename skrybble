@@ -5,11 +5,6 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=tools/pdg-release.env
 source "$ROOT_DIR/tools/pdg-release.env"
 
-if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
-    echo "Skrybble currently has a public PDG launcher for macOS arm64 and Windows x64 only." >&2
-    exit 1
-fi
-
 APP_SCRIPT="$ROOT_DIR/main.js"
 REFRESH=0
 if [[ ${1:-} == "--refresh-pdg" ]]; then
@@ -24,14 +19,33 @@ elif [[ ${1:-} == *.js ]]; then
     shift
 fi
 
+PDG_SOURCE=${PDG_SOURCE:-release}
+case "$PDG_SOURCE" in
+    release|devel) ;;
+    *) echo "PDG_SOURCE must be release or devel" >&2; exit 2 ;;
+esac
+if [[ "$PDG_SOURCE" == devel && $REFRESH -eq 1 ]]; then
+    echo "--refresh-pdg requires PDG_SOURCE=release" >&2
+    exit 2
+fi
+
 if [[ -n ${PDG_EXECUTABLE:-} ]]; then
     exec "$PDG_EXECUTABLE" "$APP_SCRIPT" "$@"
 fi
 
-# Source checkouts use the sibling development runtime when available.
-LOCAL_PDG="$ROOT_DIR/../pdg-devel/pdg"
-if [[ $REFRESH -eq 0 && -x "$LOCAL_PDG" ]]; then
+if [[ "$PDG_SOURCE" == devel ]]; then
+    PDG_DEVEL_DIR=${PDG_DEVEL_DIR:-"$ROOT_DIR/../pdg-devel"}
+    LOCAL_PDG="$PDG_DEVEL_DIR/pdg"
+    if [[ ! -x "$LOCAL_PDG" ]]; then
+        echo "Development PDG executable not found: $LOCAL_PDG. Build pdg-devel with make pdg or set PDG_EXECUTABLE." >&2
+        exit 1
+    fi
     exec "$LOCAL_PDG" "$APP_SCRIPT" "$@"
+fi
+
+if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
+    echo "Skrybble currently has a public PDG launcher for macOS arm64 and Windows x64 only." >&2
+    exit 1
 fi
 
 CACHE_ROOT="${PDG_CACHE_DIR:-$ROOT_DIR/.pdg}"

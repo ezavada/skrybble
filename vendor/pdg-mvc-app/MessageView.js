@@ -9,6 +9,7 @@
 // -----------------------------------------------
 
 const { View } = require('./View');
+const { layoutText, sameFont } = require('./TextLayout');
 
 /**
  * MessageView UI component that extends View
@@ -18,6 +19,8 @@ class MessageView extends View {
     constructor(controller, rect, message = '') {
         super(controller, rect);
         
+        this._textLayout = null;
+        this._textLayoutKey = [];
         this.message = message;
         this.textSize(12);
         this.textColor = new pdg.Color(0.0, 0.0, 0.0, 1.0);
@@ -55,104 +58,96 @@ class MessageView extends View {
      * Draw message text
      */
     drawMessageText() {
-        const port = this.getPort();
-        const viewArea = this.getViewArea();
-        
-        if (!this.message || this.message === '') {
-            return;
-        }
-        
-        // Calculate text area
-        const textArea = new pdg.Rect(
-            viewArea.left + this.margins.left,
-            viewArea.top + this.margins.top,
-            viewArea.width() - this.margins.left - this.margins.right,
-            viewArea.height() - this.margins.top - this.margins.bottom
-        );
-        
-        // Wrap text if needed
-        if (this.wordWrap) {
-            this.wrapText(textArea.width());
-        } else {
-            this.wrappedLines = [this.message];
-        }
-        
-        // Calculate line height
-        const lineHeight = super.getTextSize() + this.lineSpacing;
-        
-        // Draw lines
-        let y = textArea.top - this.scrollOffset;
-        const maxLines = this.maxLines > 0 ? Math.min(this.maxLines, this.wrappedLines.length) : this.wrappedLines.length;
-        
-        for (let i = 0; i < maxLines && y < textArea.bottom; i++) {
-            if (y + lineHeight >= textArea.top) {
-                const line = this.wrappedLines[i];
-                const x = this.getTextX(textArea, line);
-                
-                port.drawText(line, new pdg.Point(x, y + super.getTextSize()), this.getDrawingAttributes(new pdg.Attributes().textSize(super.getTextSize()).textStyle(super.getTextStyle()).fillColor(this.textColor), true));
+        const layout = this._ensureTextLayout(), port = this.getPort(), area = this.getViewArea();
+        const attrs = this._textAttributes();
+        // Alignment is baked into each retained x position.
+        attrs.textStyle(attrs.getTextStyle() & ~(pdg.textStyle_Centered | pdg.textStyle_RightJustified));
+        const saved = port.getClipRect();
+        const clip = new pdg.Rect(area.left + this.margins.left, area.top + this.margins.top,
+            area.left + this.margins.left + layout.width, area.top + this.margins.top + layout.height);
+        port.setClipRect(saved.intersection(clip));
+        try {
+            for (const line of layout.lines) {
+                const y = line.y - this.scrollOffset;
+                if (y + line.height <= this.margins.top || y >= this.margins.top + layout.height) continue;
+                port.drawText(line.text, new pdg.Point(area.left + line.x,
+                    area.top + line.baseline - this.scrollOffset), attrs);
             }
-            y += lineHeight;
-        }
+        } finally { port.setClipRect(saved); }
     }
 
-    /**
-     * Get X position for text based on alignment
-     * @param {Rect} textArea - Text area
-     * @param {string} line - Text line
-     * @returns {number} X position
-     */
+    _textAttributes() {
+        return this.getDrawingAttributes(new pdg.Attributes().textSize(super.getTextSize())
+            .textStyle(super.getTextStyle()).fillColor(this.textColor), true);
+    }
+
+    /** Reflow lazily, including direct field edits and inherited Animated appearance changes. */
+    _ensureTextLayout(widthOverride) {
+        const area = this.getViewArea(), attrs = this._textAttributes(), port = this.getPort();
+        const size = attrs.getTextSize(), style = attrs.getTextStyle();
+        const font = (typeof attrs.getFont === 'function' && attrs.getFont()) ||
+            (typeof port.getCurrentFont === 'function' ? port.getCurrentFont(style) : null);
+        const width = Math.max(0, widthOverride === undefined ? area.width() - this.margins.left - this.margins.right : widthOverride);
+        const height = Math.max(0, area.height() - this.margins.top - this.margins.bottom);
+        const key = [this.message, width, height, size, style, font, this.wordWrap,
+            this.maxLines, this.lineSpacing, this.textAlignment,
+            this.margins.left, this.margins.top];
+        if (!this._textLayout || key.some((value, i) => i === 5 ? !sameFont(value, this._textLayoutKey[i]) : value !== this._textLayoutKey[i])) {
+            const base = new pdg.Attributes().textSize(size).textStyle(style & ~(pdg.textStyle_Centered | pdg.textStyle_RightJustified));
+            const measure = (text) => this._measureText(text, base);
+            const measured = layoutText(this.message, width, this.wordWrap, measure);
+            const lineHeight = Math.max(1, (font ? font.getFontHeight(size, style) + font.getFontLeading(size, style) : size) + this.lineSpacing);
+            const ascent = font ? font.getFontAscent(size, style) : size;
+            const count = this.maxLines > 0 ? Math.min(Math.floor(this.maxLines), measured.length) : measured.length;
+            const alignment = typeof this.textAlignment === 'string' ? pdg[this.textAlignment] : this.textAlignment;
+            const lines = measured.slice(0, count).map((line, i) => ({ ...line,
+                x: this.margins.left + ((alignment & pdg.textStyle_Centered) ? (width - line.width) / 2 : (alignment & pdg.textStyle_RightJustified) ? width - line.width : 0),
+                y: this.margins.top + i * lineHeight,
+                baseline: this.margins.top + i * lineHeight + ascent, height: lineHeight }));
+            this._textLayout = { lines, width, height, lineHeight, contentHeight: count * lineHeight };
+            this._textLayoutKey = key;
+            this.wrappedLines = measured.map(line => line.text);
+        }
+        this.maxScrollOffset = Math.max(0, this._textLayout.contentHeight - height);
+        this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, this.maxScrollOffset));
+        return this._textLayout;
+    }
+
+    /** Return an independent layout snapshot, with local coordinates before scrolling. */
+    getTextLayout() {
+        const layout = this._ensureTextLayout();
+        return { ...layout, lines: layout.lines.map(line => ({ ...line,
+            offsets: [...line.offsets], advances: [...line.advances] })) };
+    }
+
+    /** Nearest character boundary in a visible line, or null outside text bounds.
+     * Input is in Port coordinates; the result uses source UTF-16 indices. */
+    getTextHit(screenPoint) {
+        const layout = this._ensureTextLayout(), point = this.globalToLocal(screenPoint);
+        if (!this.pointInViewVisibleArea(screenPoint) || point.y < this.margins.top ||
+            point.y >= this.margins.top + layout.height || point.x < this.margins.left ||
+            point.x >= this.margins.left + layout.width) return null;
+        const lineIndex = Math.floor((point.y + this.scrollOffset - this.margins.top) / layout.lineHeight);
+        const line = layout.lines[lineIndex];
+        if (!line || point.x < line.x || point.x > line.x + line.width) return null;
+        const x = point.x - line.x;
+        let index = 0;
+        while (index + 1 < line.advances.length && x >= (line.advances[index] + line.advances[index + 1]) / 2) ++index;
+        return { lineIndex, characterIndex: line.offsets[index] };
+    }
+
+    /** Get a line's horizontal position in the supplied Port rectangle. */
     getTextX(textArea, line) {
-        const port = this.getPort();
-        const textWidth = port.getTextWidth(line, super.getTextSize(), super.getTextStyle());
-        
-        switch (this.textAlignment) {
-            case 'textStyle_Centered':
-                return textArea.left + (textArea.width() - textWidth) / 2;
-            case 'textStyle_RightJustified':
-                return textArea.right - textWidth;
-            case 'textStyle_LeftJustified':
-            default:
-                return textArea.left;
-        }
+        const layout = this._ensureTextLayout();
+        const measured = layout.lines.find(item => item.text === line);
+        const width = measured ? measured.width : this._measureText(line, this._textAttributes());
+        const alignment = typeof this.textAlignment === 'string' ? pdg[this.textAlignment] : this.textAlignment;
+        return (alignment & pdg.textStyle_Centered) ? textArea.left + (textArea.width() - width) / 2 :
+            (alignment & pdg.textStyle_RightJustified) ? textArea.right - width : textArea.left;
     }
 
-    /**
-     * Wrap text to fit within width
-     * @param {number} width - Maximum width
-     */
-    wrapText(width) {
-        if (!this.message) {
-            this.wrappedLines = [];
-            return;
-        }
-        
-        const port = this.getPort();
-        const words = this.message.split(' ');
-        this.wrappedLines = [];
-        let currentLine = '';
-        
-        for (const word of words) {
-            const testLine = currentLine ? `${currentLine} ${word}` : word;
-            const testWidth = port.getTextWidth(testLine, super.getTextSize(), super.getTextStyle());
-            
-            if (testWidth <= width) {
-                currentLine = testLine;
-            } else {
-                if (currentLine) {
-                    this.wrappedLines.push(currentLine);
-                    currentLine = word;
-                } else {
-                    // Single word is too long, force it
-                    this.wrappedLines.push(word);
-                    currentLine = '';
-                }
-            }
-        }
-        
-        if (currentLine) {
-            this.wrappedLines.push(currentLine);
-        }
-    }
+    /** Retain wrapping for a supplied width; later queries use the current view bounds. */
+    wrapText(width) { this._ensureTextLayout(width); }
 
     /**
      * Set message text
@@ -160,7 +155,6 @@ class MessageView extends View {
      */
     setMessage(message) {
         this.message = message || '';
-        this.wrappedLines = [];
     }
 
     /**
@@ -177,7 +171,6 @@ class MessageView extends View {
      */
     setTextSize(size) {
         this.textSize(size);
-        this.wrappedLines = [];
     }
 
     /**
@@ -258,7 +251,6 @@ class MessageView extends View {
      */
     setWordWrap(wrap) {
         this.wordWrap = wrap;
-        this.wrappedLines = [];
     }
 
     /**
@@ -322,6 +314,7 @@ class MessageView extends View {
      * @returns {string[]} Array of wrapped lines
      */
     getWrappedLines() {
+        this._ensureTextLayout();
         return [...this.wrappedLines];
     }
 
@@ -330,6 +323,7 @@ class MessageView extends View {
      * @returns {number} Number of lines
      */
     getLineCount() {
+        this._ensureTextLayout();
         return this.wrappedLines.length;
     }
 
@@ -337,6 +331,7 @@ class MessageView extends View {
      * Scroll up
      */
     scrollUp() {
+        this._ensureTextLayout();
         if (this.scrollOffset > 0) {
             this.scrollOffset = Math.max(0, this.scrollOffset - 20);
         }
@@ -346,6 +341,7 @@ class MessageView extends View {
      * Scroll down
      */
     scrollDown() {
+        this._ensureTextLayout();
         if (this.scrollOffset < this.maxScrollOffset) {
             this.scrollOffset = Math.min(this.maxScrollOffset, this.scrollOffset + 20);
         }
@@ -356,6 +352,7 @@ class MessageView extends View {
      * @param {number} offset - Scroll offset
      */
     setScrollOffset(offset) {
+        this._ensureTextLayout();
         this.scrollOffset = Math.max(0, Math.min(offset, this.maxScrollOffset));
     }
 
@@ -364,6 +361,7 @@ class MessageView extends View {
      * @returns {number} Current scroll offset
      */
     getScrollOffset() {
+        this._ensureTextLayout();
         return this.scrollOffset;
     }
 
@@ -372,6 +370,7 @@ class MessageView extends View {
      * @returns {boolean} true if scrolling is needed
      */
     isScrollingNeeded() {
+        this._ensureTextLayout();
         return this.maxScrollOffset > 0;
     }
 
@@ -380,6 +379,7 @@ class MessageView extends View {
      * @returns {number} Scroll percentage (0.0 to 1.0)
      */
     getScrollPercentage() {
+        this._ensureTextLayout();
         if (this.maxScrollOffset === 0) return 0.0;
         return this.scrollOffset / this.maxScrollOffset;
     }
@@ -389,6 +389,7 @@ class MessageView extends View {
      * @param {number} percentage - Scroll percentage (0.0 to 1.0)
      */
     setScrollPercentage(percentage) {
+        this._ensureTextLayout();
         const offset = percentage * this.maxScrollOffset;
         this.setScrollOffset(offset);
     }
@@ -397,20 +398,7 @@ class MessageView extends View {
      * Update scroll limits
      */
     updateScrollLimits() {
-        const viewArea = this.getViewArea();
-        const textArea = new pdg.Rect(
-            viewArea.left + this.margins.left,
-            viewArea.top + this.margins.top,
-            viewArea.width() - this.margins.left - this.margins.right,
-            viewArea.height() - this.margins.top - this.margins.bottom
-        );
-        
-        const lineHeight = super.getTextSize() + this.lineSpacing;
-        const totalHeight = this.wrappedLines.length * lineHeight;
-        const visibleHeight = textArea.height();
-        
-        this.maxScrollOffset = Math.max(0, totalHeight - visibleHeight);
-        this.scrollOffset = Math.min(this.scrollOffset, this.maxScrollOffset);
+        this._ensureTextLayout();
     }
 
     /**
@@ -526,6 +514,7 @@ class MessageView extends View {
      * @returns {string} Text at line
      */
     getLine(lineIndex) {
+        this._ensureTextLayout();
         if (lineIndex >= 0 && lineIndex < this.wrappedLines.length) {
             return this.wrappedLines[lineIndex];
         }
@@ -574,6 +563,8 @@ class MessageView extends View {
     destroy() {
         super.destroy();
         this.message = '';
+        this._textLayout = null;
+        this._textLayoutKey = [];
         this.wrappedLines = [];
     }
 }

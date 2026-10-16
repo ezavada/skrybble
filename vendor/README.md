@@ -1,18 +1,17 @@
 # Vendored PDG MVC framework
 
-`pdg-mvc-app/` is the complete `src/js/mvc-app` directory from the
-public [PDG](https://github.com/ezavada/pdg) `v1.2.0` tag, commit
-`9d93b4070bd9df44984ec79c5286d3d420234a7c`.
+`pdg-mvc-app/` is the complete `src/js/mvc-app` directory from the local
+`pdg-devel` v1.3 candidate at commit
+`800271d8171af9bafb102c34421bde44c163ce99`.
+`pdg-defs.js` is the matching `src/js/pdg-defs.js` file. These source paths had
+no uncommitted changes when copied. No local framework patches are applied.
 
-`pdg-defs.js` is the matching `src/js/pdg-defs.js` file from that commit. It is
-included because the upstream MVC `Button.js` and `Checkbox.js` modules load
-it through `require('../pdg-defs')`.
-
-`EditText.js` includes local improvements mirrored in pdg-devel: PDG key events,
-Unicode-safe caret movement/deletion, Shift selection, drag selection, and
-frame-driven caret blinking. Preserve these changes when updating the dependency.
+This snapshot includes Scene-clock-based MVC animation and the Unicode editing
+improvements previously carried by Skrybble. It requires a PDG v1.3 runtime;
+use `PDG_SOURCE=devel ./skrybble` with a built sibling `pdg-devel` checkout.
 
 The files are distributed under `PDG-LICENSE`. To update the dependency,
-replace the whole MVC directory and `pdg-defs.js` from one public PDG tag,
-update `tools/pdg-release.env`, and run `./skrybble tests/smoke.js` from a
-fresh standalone clone.
+replace the whole MVC directory and `pdg-defs.js` from one PDG revision and
+record its provenance here. Once v1.3 is published, update
+`tools/pdg-release.env` with the final release commit, assets and hashes together.
+Run the smoke, unit and drawing suites against the matching runtime.

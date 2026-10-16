@@ -129,24 +129,30 @@ skrybble/
 ### Running the Application
 
 ```bash
-# macOS (Apple silicon): downloads and verifies PDG v1.2.0 on first run
-./skrybble
+# Current v1.3 candidate: use a built sibling pdg-devel checkout
+PDG_SOURCE=devel ./skrybble
 
 # Load an existing file
-./skrybble -- drawing.skrbl
+PDG_SOURCE=devel ./skrybble -- drawing.skrbl
 
 # Windows PowerShell
+$env:PDG_SOURCE = "devel"
 .\skrybble.ps1
 .\skrybble.ps1 -- drawing.skrbl
 ```
 
+The current application and vendored MVC framework require PDG v1.3. Until
+v1.3 is published, use `PDG_SOURCE=devel` (or an explicit `PDG_EXECUTABLE`).
+The release manifest still records v1.2.0; the launcher's default release mode
+is unsuitable for this candidate. Final v1.3 asset hashes will be pinned after
+release artifacts are available.
+
 ### Web build
 
-The web build downloads the pinned PDG `v1.2.0` Emscripten/Wasm32 release on
-first use, verifies its SHA-256, and caches it under `.pdg/`:
+For the v1.3 candidate, build with the local Emscripten/Wasm32 artifacts:
 
 ```bash
-./tools/build-web.sh
+PDG_SOURCE=devel ./tools/build-web.sh
 python3 -m http.server --directory dist 8080
 ```
 
@@ -171,7 +177,8 @@ set `PDG_WASM_DIR` to its rebuilt WASM artifacts when running `tools/build-web.s
 
 ### Selecting a development PDG runtime
 
-Desktop launchers and browser builds use the pinned public release by default.
+Desktop launchers and browser builds retain the pinned public release default;
+select development mode for this v1.3 candidate.
 To use an already built sibling `../pdg-devel` checkout:
 
 ```bash
@@ -446,17 +453,19 @@ Each shape implements:
 
 ## Dependencies
 
-- **PDG v1.2.0** - Pinned public runtime; downloaded by the portable launcher
-- **PDG MVC Framework** - Required public-tag sources are vendored with license and provenance
+- **PDG v1.3 candidate** - Use the local development runtime until final release assets are pinned
+- **PDG MVC Framework** - Matching v1.3 candidate sources are vendored with license and provenance
 - **Node.js APIs** - Supplied by the PDG runtime for filesystem operations and modules
 - **Native Graphics** - PDG provides cross-platform window and drawing
 
 ## Verification
 
 ```sh
-./skrybble tests/smoke.js
-./skrybble tests/unit.js
-./tools/build-web.sh
+PDG_SOURCE=devel ./skrybble tests/smoke.js
+PDG_SOURCE=devel ./skrybble tests/unit.js
+PDG_SOURCE=devel ./skrybble tests/pdg-drawing.js
+python3 tests/test_runtime_selection.py
+PDG_SOURCE=devel ./tools/build-web.sh
 node tests/browser.cjs
 ```
 

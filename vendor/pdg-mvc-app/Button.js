@@ -123,6 +123,7 @@ class Button extends View {
             .stateForeground(ControlState.Normal, new pdg.Color(1, 1, 1, 1))
             .stateForeground(ControlState.Pressed, new pdg.Color(1, 1, 1, 1))
             .stateForeground(ControlState.Disabled, new pdg.Color(0.7, 0.7, 0.7, 1));
+        this.defaultAttributes = new ControlAttributes().merge(this.attributes);
         this.attributes.merge(this.controller.getTopController()
             .getControlAttributes(ControlType.Button, this.styleId));
         if (this.imageNames) {
@@ -223,8 +224,13 @@ class Button extends View {
         this.attributes.clickSound(clickSound);
     }
 
-    setAttributes(attributes) {
+    updateAttributes(attributes) {
         this.attributes.merge(attributes);
+    }
+
+    resetAttributes(attributes) {
+        this.attributes = new ControlAttributes().merge(this.defaultAttributes).merge(attributes);
+        return this;
     }
 
     getAttributes() {

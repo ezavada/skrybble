@@ -21,6 +21,23 @@ The JavaScript Application Framework includes:
 - **Scrollable Views**: ScrollingView base class for scrollable content
 - **Control Theming**: State-based drawing, images, foreground colors, custom draw routines, and click behavior through `ControlAttributes`
 
+## Retained message text
+
+`MessageView` retains word wrapping, per-line alignment and font measurements.
+Text, bounds and appearance edits reflow on the next draw or layout query.
+`getTextLayout()` returns an independent snapshot of measured lines in local
+coordinates before scrolling. `getTextHit(portPoint)` maps a visible text point
+to `{lineIndex, characterIndex}` using those same measurements, or returns `null`.
+Character indices are UTF-16 source offsets; long words split at code point
+boundaries. Newlines and empty lines are preserved even with wrapping disabled.
+
+Scrolling and `maxLines` use the retained displayed height. The complete wrapped
+message remains available through `getWrappedLines()` and `getLineCount()`.
+JavaScript and TypeScript share this contract; C++ uses UTF-8 byte indices and
+`TextHit.lineIndex == -1` for a miss. See the
+[MVC guide](../../../docs/javascript/dox/mvc-framework.dox) for snapshot fields,
+defaults, limits and an example.
+
 ## File Structure
 
 ```
@@ -222,7 +239,7 @@ const themed = new ControlAttributes().stateDrawRoutine(ControlState.Normal,
         const base = new pdg.Attributes().fillColor('navy').roundedCorners(8);
         port.drawRect(area, base.withAppearance(state.drawing || new pdg.Attributes()));
     });
-button.setAttributes(themed);
+button.updateAttributes(themed);
 button.fillOpacity(1).changeFillOpacity(0.5, 0.8);
 button.rotateTo(0.12, 0.8);
 ```

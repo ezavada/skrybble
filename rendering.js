@@ -9,7 +9,7 @@ function drawingPort(drawing, elements = null, strokeScale = 1) {
         try {
             attrs.lineThickness(thickness * strokeScale);
             const element = elements ? elements[index++] : drawing[method](...args, attrs);
-            if (elements) element.setAttributes(attrs);
+            if (elements) element.resetAttributes(attrs);
             refs.push(element);
             return element;
         } finally {attrs.lineThickness(thickness);}

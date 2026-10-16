@@ -596,7 +596,22 @@ class View extends pdg.AnimatedAttributes {
      * @returns {boolean} Whether animation values changed.
      */
     animate(deltaSeconds) {
-        const changed = super.animate(deltaSeconds);
+        if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) throw new RangeError('Expected finite nonnegative elapsed seconds');
+        const before=sampleViewAnimation(this);
+        if (!this._animationScene) {
+            this._animationScene = new pdg.Scene();
+            this._animationScene.setManual(true);
+            this._animationScene.addAnimated(this);
+        }
+        // Scene admission caps a single update at .25 seconds.
+        let remaining=deltaSeconds;
+        do {
+            const step=Math.min(.25,remaining);
+            this._animationScene.advance(step);
+            remaining-=step;
+        } while(remaining>1e-12);
+        const after=sampleViewAnimation(this);
+        const changed=before.some((value,index)=>value!==after[index]);
         this._syncViewArea();
         return changed;
     }
@@ -853,6 +868,26 @@ class View extends pdg.AnimatedAttributes {
         this.maxWidth = maxWidth;
         this.maxHeight = maxHeight;
     }
+}
+
+// Capture animated channels as values; native wrappers are not value snapshots.
+function sampleViewAnimation(view) {
+    const values=Array.from(view.getTransform());
+    for(const name of ['getLocation','getScale','getCenterOffset','getMovement','getStretching','getPolarOffset','getLightOffset']) {
+        const value=view[name]();values.push(value.x,value.y);
+    }
+    for(const name of ['getLineColor','getFillColor','getAmbientLight','getGradientStartColor','getGradientEndColor','getRadialGradientCenterColor','getRadialGradientEndColor']) {
+        const value=view[name]();values.push(value.red,value.green,value.blue,value.alpha);
+    }
+    for(const name of ['getGradientStart','getGradientEnd','getRadialGradientCenter']) {
+        const value=view[name]();values.push(value.x,value.y);
+    }
+    const rect=view.getSubsection();values.push(rect.left,rect.top,rect.right,rect.bottom);
+    for(const name of ['getRotation','getWidth','getHeight','getSpin','getLineThickness','getLineOpacity','getFillOpacity','getGradientType','getRadialGradientRadius','getRoundedCornerRadius','getTextSize','getFrame','getSphereRotation'])values.push(view[name]());
+    for(const name of ['getLineStyle','getTextStyle','getBlendMode','getFitType','getClipOverflow','getTexture'])values.push(view[name]());
+    // Headless runtimes omit the graphics-only Font binding.
+    if(typeof view.getFont==='function')values.push(view.getFont());
+    return values;
 }
 
 function multiply(a,b) {

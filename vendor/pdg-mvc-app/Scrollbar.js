@@ -109,6 +109,7 @@ class Scrollbar extends View {
                 .lineStyle(pdg.lineStyle_Solid).lineColor(new pdg.Color(123/255,141/255,165/255,1)).roundedCorners(4))
             .stateAttributes(ControlState.Thumb, new pdg.Attributes().fillColor(new pdg.Color(124/255,144/255,170/255,1))
                 .lineStyle(pdg.lineStyle_Solid).lineColor(new pdg.Color(94/255,114/255,140/255,1)).roundedCorners(4));
+        this.defaultAttributes = new ControlAttributes().merge(this.attributes);
         this.attributes.merge(controller.getTopController()
             .getControlAttributes(ControlType.Scrollbar, orientation));
         
@@ -441,9 +442,14 @@ class Scrollbar extends View {
             : new pdg.Point(this.getViewArea().width(), Math.min(this.getViewArea().width(), this.sliderArea.height()));
     }
 
-    setAttributes(attributes) {
+    updateAttributes(attributes) {
         this.attributes.merge(attributes);
         this.calcClickableAreas();
+    }
+
+    resetAttributes(attributes) {
+        this.attributes = new ControlAttributes().merge(this.defaultAttributes).merge(attributes);
+        return this;
     }
 
     getAttributes() {

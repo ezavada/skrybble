@@ -34,6 +34,7 @@ class RadioButton extends View {
             .stateForeground(ControlState.Selected, new pdg.Color(0, 0, 0, 1))
             .stateForeground(ControlState.Disabled, new pdg.Color(0.7, 0.7, 0.7, 1))
             .stateForeground(ControlState.SelectedDisabled, new pdg.Color(0.7, 0.7, 0.7, 1));
+        this.defaultAttributes = new ControlAttributes().merge(this.attributes);
         this.attributes.merge(controller.getTopController()
             .getControlAttributes(ControlType.RadioButton));
         this.loadStrings(resourceTextID, numStrings);
@@ -446,9 +447,14 @@ class RadioButton extends View {
         this.attributes.clickSound(clickSound);
     }
 
-    setAttributes(attributes) {
+    updateAttributes(attributes) {
         this.attributes.merge(attributes);
         this.calcClickableAreas();
+    }
+
+    resetAttributes(attributes) {
+        this.attributes = new ControlAttributes().merge(this.defaultAttributes).merge(attributes);
+        return this;
     }
 
     getAttributes() {

@@ -10,6 +10,7 @@
 
 const { Dialog, DialogFlags } = require('./Dialog');
 const { View } = require('./View');
+const { MessageView } = require('./MessageView');
 const { Button } = require('./Button');
 
 /**
@@ -310,12 +311,11 @@ class MessageDialog extends Dialog {
 /**
  * MessageView for displaying text in MessageDialog
  */
-class MessageDialogView extends View {
+class MessageDialogView extends MessageView {
     constructor(controller, rect, message) {
-        super(controller, rect);
-        this.message = message;
-        this.textSize(12);
-        this.textColor = new pdg.Color(0.0, 0.0, 0.0, 1.0);
+        super(controller, rect, message);
+        this.setMargins({left: 10, right: 10, top: 10, bottom: 10});
+        this.setTextAlignment(pdg.textStyle_Centered);
     }
 
     /**
@@ -328,13 +328,7 @@ class MessageDialogView extends View {
         var backgroundAttrs = new pdg.Attributes().fillColor(new pdg.Color(1.0, 1.0, 1.0, 1.0));
         port.drawRect(viewArea, this.getDrawingAttributes(backgroundAttrs));
         
-        // Draw message text
-        const textPoint = new pdg.Point(
-            viewArea.left + 10,
-            viewArea.top + viewArea.height() / 2 + super.getTextSize() / 2
-        );
-        var textAttrs = new pdg.Attributes().textSize(super.getTextSize()).textStyle(pdg.textStyle_Centered).fillColor(this.textColor);
-        port.drawText(this.message, textPoint, this.getDrawingAttributes(textAttrs, true));
+        this.drawMessageText();
     }
 
     /**

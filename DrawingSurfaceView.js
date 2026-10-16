@@ -20,6 +20,12 @@ class DrawingSurfaceView extends View {
         super(controller, rect, binding);
         this.selectionAppearance = new pdg.AnimatedAttributes().lineColor(new pdg.Color('blue')).lineThickness(1);
         this.notificationAppearance = new pdg.AnimatedAttributes();
+        // MVC View.animate advances this manual Scene, including standalone styles.
+        this._animationScene = new pdg.Scene();
+        this._animationScene.setManual(true);
+        this._animationScene.addAnimated(this);
+        this._animationScene.addAnimated(this.selectionAppearance);
+        this._animationScene.addAnimated(this.notificationAppearance);
     }
 
     doScrollWheel(event) { return this.controller.doScrollWheel(event); }
@@ -45,13 +51,23 @@ class DrawingSurfaceView extends View {
     }
     animate(seconds) {
         const changed=super.animate(seconds);
-        this.selectionAppearance.animate(seconds);
-        this.notificationAppearance.animate(seconds);
         this.controller.textEdit?.editor.animate(seconds);
         if (this._notificationMessage && this.notificationAppearance.getFillOpacity()<=0) {
             this._notificationMessage=null; this.controller.saveMessage=null;
         }
         return changed;
+    }
+    destroy() {
+        if (this._animationScene) {
+            this.selectionAppearance.cancelSchedule();
+            this.notificationAppearance.cancelSchedule();
+            this._animationScene.removeAnimated(this.selectionAppearance);
+            this._animationScene.removeAnimated(this.notificationAppearance);
+            this._animationScene.removeAnimated(this);
+            this._animationScene.dispose();
+            this._animationScene = null;
+        }
+        super.destroy();
     }
     drawSelf(port, frameNum) {
         const area=this.getViewArea(), controller=this.controller;

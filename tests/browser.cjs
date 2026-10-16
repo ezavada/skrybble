@@ -1,11 +1,13 @@
 const fs=require('fs'),http=require('http'),path=require('path'),os=require('os'),{spawn}=require('child_process');
 const root=path.resolve(process.env.SKRYBBLE_WEB_ROOT || path.join(__dirname,'../dist'));
 const errors=[];
+// PDG debug builds write these informational directory banners to stderr.
+const directoryBanner=/^Using (Application|Data|Resource) directory \[[^\r\n]*\]$/;
 const server=http.createServer((req,res)=>{try{const p=path.join(root,new URL(req.url,'http://localhost').pathname);const file=p.endsWith('/')?p+'index.html':p;res.setHeader('Content-Type',file.endsWith('.wasm')?'application/wasm':file.endsWith('.js')?'text/javascript':'text/html');const content=fs.readFileSync(file);res.end(file.endsWith('/main.js') ? content.toString().replace('const app = new DrawingApp(process.argv);','const app = new DrawingApp(process.argv); window.__skrybbleTestApp=app;') : content);}catch(e){res.writeHead(404);res.end('Missing');}});
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'skrybble-smoke-'));
 const chrome=spawn(process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',['--headless=new','--enable-unsafe-swiftshader','--remote-debugging-pipe','--no-first-run','--user-data-dir='+profile,'about:blank'],{stdio:['ignore','ignore','ignore','pipe','pipe']});
 let seq=0,buffer='';const pending=new Map();
-chrome.stdio[4].on('data',b=>{buffer+=b;let n;while((n=buffer.indexOf('\0'))>=0){const m=JSON.parse(buffer.slice(0,n));buffer=buffer.slice(n+1);if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);if(m.method==='Runtime.consoleAPICalled' && m.params.type==='error'){const message=m.params.args.map(a=>a.value || a.description).join(' ');if(!/^(WARNING: using emscripten GL |glfwSetInputMode called with GLFW_STICKY_(KEYS|MOUSE_BUTTONS) mode not implemented)/.test(message))errors.push(message);}if(pending.has(m.id)){const {resolve,reject,timer}=pending.get(m.id);clearTimeout(timer);pending.delete(m.id);m.error?reject(Error(m.error.message)):resolve(m.result);}}});
+chrome.stdio[4].on('data',b=>{buffer+=b;let n;while((n=buffer.indexOf('\0'))>=0){const m=JSON.parse(buffer.slice(0,n));buffer=buffer.slice(n+1);if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);if(m.method==='Runtime.consoleAPICalled' && m.params.type==='error'){const message=m.params.args.map(a=>a.value || a.description).join(' ');if(!directoryBanner.test(message) && !/^(WARNING: using emscripten GL |glfwSetInputMode called with GLFW_STICKY_(KEYS|MOUSE_BUTTONS) mode not implemented)/.test(message))errors.push(message);}if(pending.has(m.id)){const {resolve,reject,timer}=pending.get(m.id);clearTimeout(timer);pending.delete(m.id);m.error?reject(Error(m.error.message)):resolve(m.result);}}});
 const send=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++seq;const timer=setTimeout(()=>reject(Error('Timeout '+method)),15000);pending.set(id,{resolve,reject,timer});chrome.stdio[3].write(JSON.stringify({id,method,params,sessionId})+'\0');});
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const {targetId}=await send('Target.createTarget',{url:'about:blank'});const {sessionId}=await send('Target.attachToTarget',{targetId,flatten:true});const call=(m,p)=>send(m,p,sessionId);const evalPage=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);return r.result.value;};
@@ -34,6 +36,7 @@ if(fs.existsSync(poseFile)) {
     console.log('PASS: browser native PDG pose import and byte-identical Save As');
 }
 if(!await evalPage(`(()=> {
+    FS.mkdirTree('/uploads');
     if(typeof pdg.Serializer.prototype.serializeDrawing!=='function')throw Error('Browser runtime lacks native drawing codec');
     const art=pdg.createDrawing();
     art.addText('Café 世界',new pdg.Rect(4,4,92,28),new pdg.Attributes().textSize(18).fillColor('red'));

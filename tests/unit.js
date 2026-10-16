@@ -13,6 +13,23 @@ function test(name,fn) { try {fn();passed++;console.log('PASS '+name);} catch(e)
 const near=(a,b)=>assert.ok(Math.abs(a-b)<.001,`${a} != ${b}`);
 const surface=pdg.gfx.createOffscreenPort(new pdg.Rect(900,700));
 const controller=new DrawingController({getEventManager:()=>pdg.evt},surface);
+// Exercise normalized PDG input, rather than duplicating platform keycode tables.
+function inputKey(c,code,down,modifiers=0) {
+    c.shortcuts.syncMode();
+    pdg.getInputManager().feed({kind:'key',code,down,modifiers});
+    return down?c.doKeyDown({keyCode:code}):c.doKeyUp({keyCode:code});
+}
+function pressShortcut(c,event) {
+    const char=String.fromCharCode(event.unicode).toUpperCase();
+    const code=event.code || ({27:'Escape',32:'Space',48:'Digit0',92:'Backslash',63:'Slash',
+        28:'ArrowLeft',29:'ArrowRight',30:'ArrowUp',31:'ArrowDown',9:'Tab',127:'Delete',8:'Backspace',43:'Equal',61:'Equal',45:'Minus'}[event.unicode] || 'Key'+char);
+    const mods=(event.shift?1:0)|(event.ctrl?2:0)|(event.alt?4:0)|(event.meta?8:0);
+    const keys=[[event.shift,'ShiftLeft'],[event.ctrl,'ControlLeft'],[event.alt,'AltLeft'],[event.meta,'MetaLeft']].filter(([held])=>held).map(([,key])=>key);
+    for(const key of keys)inputKey(c,key,true,mods);
+    inputKey(c,code,true,mods);c.doKeyPress(event);inputKey(c,code,false,mods);
+    for(const key of keys.reverse())inputKey(c,key,false,0);
+}
+
 
 test('camera round trips and pointer anchored zoom',()=> {
     const nav=new CanvasNavigation();nav.setViewport(new pdg.Rect(0,50,600,650));
@@ -45,7 +62,7 @@ test('all zoom inputs prioritize selected bounds, then cursor, then viewport cen
         pdg.gfx.getMouse=()=>cursor;
         controller.navigation.reset();
         for(const zoom of [()=>controller.doScrollWheel({ctrl:true,vertDelta:-2,mousePos:cursor}),
-            ()=>controller.handleKeyPress({unicode:122}),()=>controller.handleKeyPress({unicode:90,shift:true})]) {
+            ()=>pressShortcut(controller,{unicode:122}),()=>pressShortcut(controller,{unicode:90,shift:true})]) {
             const before=controller.navigation.toView(focus);zoom();
             const after=controller.navigation.toView(focus);near(after.x,before.x);near(after.y,before.y);
         }
@@ -117,13 +134,13 @@ test('desktop-sized windows pan through MVC capture even when the whole page fit
     try {
         for(const space of [false,true]) {
             c.navigation.reset();c.toolManager.setTool(space ? 'select' : 'pan');
-            if(space) {c.doKeyDown({keyCode:49});c.doKeyPress({unicode:32});}
+            if(space)inputKey(c,'Space',true);
             c.onMouseDown({mousePos:new pdg.Point(800,550),lastClickElapsed:1000});
             c.onMouseMove({mousePos:new pdg.Point(900,650)});
             c.onMouseUp({mousePos:new pdg.Point(900,650)});
             near(c.navigation.camera.getLocation().x,412);near(c.navigation.camera.getLocation().y,412);
             assert.strictEqual(c.panPosition,null);assert.strictEqual(c.drawing.getShapeCount(),0);
-            if(space)c.doKeyUp({keyCode:49});
+            if(space)inputKey(c,'Space',false);
         }
         c.navigation.reset();
         c.drawing.addShape(new Shape.Rectangle(500,500,24,24,'red',null,0));
@@ -168,9 +185,9 @@ test('browser wheel bridge suppresses duplicate native wheel navigation',()=> {
     } finally {controller.removeBrowserWheel=bridge;}
 });
 test('keyboard zoom works in both directions and reset restores the view',()=> {
-    controller.navigation.reset();controller.doKeyPress({unicode:122});near(controller.navigation.camera.getZoom(),1.25);
-    controller.doKeyPress({unicode:90,shift:true});near(controller.navigation.camera.getZoom(),1);
-    controller.navigation.pan(20,20);controller.doKeyPress({unicode:48,meta:true});
+    controller.navigation.reset();pressShortcut(controller,{unicode:122});near(controller.navigation.camera.getZoom(),1.25);
+    pressShortcut(controller,{unicode:90,shift:true});near(controller.navigation.camera.getZoom(),1);
+    controller.navigation.pan(20,20);pressShortcut(controller,{unicode:48,meta:true});
     near(controller.navigation.camera.getLocation().x,512);near(controller.navigation.camera.getZoom(),1);
 });
 test('group dragging retains artwork and child coordinates',()=> {
@@ -311,11 +328,9 @@ test('text and translated groups save/load, with legacy documents accepted',()=>
         near(restored.x,17);near(restored.y,19);assert.strictEqual(restored.children[0].text,'Portable text');
     } finally {if(fs.existsSync(file))fs.unlinkSync(file);controller.currentFilename=null;}
 });
-test('physical Space key releases on every runtime key code',()=> {
-    for(const keyCode of [49,32,44]) {
-        controller.doKeyDown({keyCode});controller.handleKeyPress({unicode:32});
-        assert.ok(controller.spaceHeld);controller.doKeyUp({keyCode});assert.ok(!controller.spaceHeld);
-    }
+test('normalized Space action releases without a KeyPress event',()=> {
+    inputKey(controller,'Space',true);assert.ok(controller.spaceHeld);
+    inputKey(controller,'Space',false);assert.ok(!controller.spaceHeld);
 });
 test('canvas gestures use world coordinates after zoom and pan',()=> {
     const Tools=require('../tools');controller.navigation.reset();
@@ -380,7 +395,7 @@ test('Escape cancels text, returns to Select, and leaves input usable',()=> {
     const Tools=require('../tools');controller.drawing.clearShapes();
     controller.toolManager.setTool(Tools.TOOLS.TEXT);
     controller.beginTextEdit(new Shape.Text(50,50,''),true);controller.handleTextKey({unicode:88});
-    controller.doKeyPress({unicode:27});assert.strictEqual(controller.textEdit,null);
+    pressShortcut(controller,{unicode:27});assert.strictEqual(controller.textEdit,null);
     assert.strictEqual(controller.toolManager.getCurrentTool(),Tools.TOOLS.SELECT);
     assert.strictEqual(controller.drawing.getShapeCount(),0);assert.strictEqual(controller.selectedShape,null);
     controller.toolManager.setTool(Tools.TOOLS.LINE);
@@ -392,10 +407,10 @@ test('Escape from an incomplete polygon cancels; a triangle finishes and renders
     const Tools=require('../tools');controller.drawing.clearShapes();
     const start=()=> {controller.toolManager.setTool(Tools.TOOLS.POLY);controller.toolManager.startDrawing(100,100);
         controller.toolManager.updateDrawing(200,100);controller.toolManager.addPointToShape(200,100);};
-    start();controller.doKeyPress({unicode:27});assert.strictEqual(controller.drawing.getShapeCount(),0);
+    start();pressShortcut(controller,{unicode:27});assert.strictEqual(controller.drawing.getShapeCount(),0);
     assert.strictEqual(controller.toolManager.getCurrentTool(),Tools.TOOLS.SELECT);
     start();controller.toolManager.updateDrawing(200,200);controller.toolManager.addPointToShape(200,200);
-    controller.doKeyPress({unicode:27});assert.strictEqual(controller.drawing.getShapeCount(),1);
+    pressShortcut(controller,{unicode:27});assert.strictEqual(controller.drawing.getShapeCount(),1);
     assert.strictEqual(controller.drawing.getShapes()[0].points.length,3);
     assert.ok(!controller.toolManager.isCurrentlyDrawing());controller.backgroundView.drawSelf(surface,100);
 });
@@ -542,7 +557,7 @@ test('Illustrator tool keys select tools and shifted keys resolve without collis
     controller.commitTextEdit(true);
     for(const [unicode,shift,tool] of [[86,false,'select'],[72,false,'pan'],[92,false,'line'],[78,false,'freehand'],
         [80,false,'bezier'],[80,true,'poly'],[76,false,'oval'],[76,true,'circle'],[77,false,'rect'],[84,false,'text']]) {
-        controller.doKeyPress({unicode,shift});assert.strictEqual(controller.toolManager.currentTool,tool);
+        pressShortcut(controller,{unicode,shift});assert.strictEqual(controller.toolManager.currentTool,tool);
     }
     controller.toolManager.setTool('select');
 });
@@ -606,8 +621,8 @@ test('handle hit areas remain six screen pixels through zoom',()=> {
 });
 test('stationary Shift press and release immediately constrain drawing, movement, rotation, and points',()=> {
     const port=pdg.gfx.createOffscreenPort(new pdg.Rect(900,700)),c=new DrawingController({getEventManager:()=>pdg.evt},port);
-    const down=()=>c.doKeyDown({keyCode:pdg.keyCode_LeftShift || 56});
-    const up=()=>c.doKeyUp({keyCode:pdg.keyCode_LeftShift || 56});
+    const down=()=>inputKey(c,'ShiftLeft',true,1);
+    const up=()=>inputKey(c,'ShiftLeft',false);
     const move=(x,y)=>c.handleMouseMove({mousePos:c.navigation.toView({x,y})});
     try {
         c.toolManager.setTool('rect');
@@ -728,12 +743,12 @@ test('magnifier zooms out once for right, Shift, Option and Control clicks throu
     controller.onMouseDown({mousePos:textPoint,lastClickElapsed:1000,rightButton:true,buttonNumber:1});
     controller.onMouseUp({mousePos:textPoint,rightButton:true,buttonNumber:1});near(controller.navigation.camera.getZoom(),.8);
     assert.strictEqual(controller.textEdit,null);controller.drawing.clearShapes();
-    for(const key of [pdg.keyCode_LeftShift,pdg.keyCode_LeftAlt,pdg.keyCode_LeftControl]) {
-        controller.navigation.reset();controller.doKeyDown({keyCode:key});
+    for(const key of ['ShiftLeft','AltLeft','ControlLeft']) {
+        controller.navigation.reset();inputKey(controller,key,true);
         assert.strictEqual(controller.updateCursor({mousePos:new pdg.Point(450,350)}),'zoom-out');
         controller.onMouseDown({mousePos:new pdg.Point(450,350),lastClickElapsed:1000});
         controller.onMouseUp({mousePos:new pdg.Point(450,350)});near(controller.navigation.camera.getZoom(),.8);
-        controller.doKeyUp({keyCode:key});
+        inputKey(controller,key,false);
         assert.strictEqual(controller.updateCursor({shift:false,alt:false,ctrl:false,rightButton:false}),'zoom-in');
     }
     controller.navigation.reset();controller.toolManager.setTool('select');controller.updateCursor();
@@ -794,6 +809,71 @@ test('toolbar hover and press produce distinct rendered backgrounds and release 
     controller.onMouseUp({mousePos:new pdg.Point(r.right+10,r.bottom+10)});assert.strictEqual(palette.pressedTool,null);
     assert.ok(!palette.hoverTool);controller.toolManager.setTool('select');controller.updateToolSelection('select');
 });
+
+function withInputController(fn) {
+    const port=pdg.gfx.createOffscreenPort(new pdg.Rect(900,700));
+    const c=new DrawingController({getEventManager:()=>pdg.evt},port);
+    try {fn(c);} finally {c.destroy();pdg.getInputManager().feed({kind:'focusLost'});pdg.gfx.closeGraphicsPort(port);}
+}
+test('input actions give command chords precedence and consume the matching Unicode event once',()=>withInputController(c=> {
+    const calls=[];
+    c.pasteShapes=()=>calls.push('paste');c.redo=()=>calls.push('redo');c.saveAs=()=>calls.push('saveAs');
+    pressShortcut(c,{unicode:86,ctrl:true});assert.strictEqual(c.toolManager.currentTool,'select');
+    pressShortcut(c,{unicode:90,meta:true,shift:true});pressShortcut(c,{unicode:83,ctrl:true,shift:true});
+    assert.deepStrictEqual(calls,['paste','redo','saveAs']);
+    near(c.navigation.camera.getZoom(),1);
+}));
+test('action-held keys aggregate both sides and focus loss clears pan and cursor state',()=>withInputController(c=> {
+    inputKey(c,'ShiftLeft',true,1);inputKey(c,'ShiftRight',true,1);inputKey(c,'ShiftLeft',false,1);
+    assert.ok(c.inputState.shift);inputKey(c,'ShiftRight',false);assert.ok(!c.inputState.shift);
+    inputKey(c,'Space',true);c.panPosition={x:200,y:200};
+    assert.ok(c.spaceHeld);pdg.getInputManager().feed({kind:'focusLost'});c.shortcuts.poll();
+    assert.ok(!c.spaceHeld);assert.strictEqual(c.panPosition,null);
+    assert.ok(!c.inputState.shift && !c.inputState.alt && !c.inputState.control);
+    inputKey(c,'Space',false);inputKey(c,'Space',true);assert.ok(c.spaceHeld);inputKey(c,'Space',false);
+}));
+test('text context preserves Unicode and Space without activating canvas shortcuts',()=>withInputController(c=> {
+    const shape=new Shape.Text(100,100,'x');c.beginTextEdit(shape,true);
+    inputKey(c,'Space',true);c.doKeyPress({unicode:32});assert.ok(!c.spaceHeld);
+    pressShortcut(c,{unicode:86});assert.ok(c.textEdit);assert.ok(shape.text.includes('V'));
+    c.commitTextEdit();c.shortcuts.poll();assert.ok(!c.spaceHeld);
+    inputKey(c,'Space',false);inputKey(c,'Space',true);assert.ok(c.spaceHeld);inputKey(c,'Space',false);
+}));
+test('picker context blocks tools, routes Escape, then rearms canvas shortcuts',()=>withInputController(c=> {
+    c.openFontPicker(14);c.shortcuts.syncMode();
+    pressShortcut(c,{unicode:77});assert.ok(c.fontPickerController);assert.strictEqual(c.toolManager.currentTool,'select');
+    pressShortcut(c,{unicode:27});assert.strictEqual(c.fontPickerController,null);
+    pressShortcut(c,{unicode:77});assert.strictEqual(c.toolManager.currentTool,'rect');
+}));
+test('focus loss while a shortcut opens a picker cannot swallow fresh picker text',()=>withInputController(c=> {
+    inputKey(c,'KeyF',true);c.doKeyPress({unicode:70});assert.ok(c.colorPickerController);
+    pdg.getInputManager().feed({kind:'focusLost'});c.shortcuts.poll();
+    let typed=0;c.colorPickerController.doKeyPress=()=>{typed++;return true;};
+    inputKey(c,'KeyF',false);inputKey(c,'KeyF',true);c.doKeyPress({unicode:70});
+    assert.strictEqual(typed,1);inputKey(c,'KeyF',false);c.colorPickerController.cancel();
+}));
+test('nudge actions preserve OS repeat and Shift precision without repeating on modifier changes',()=>withInputController(c=> {
+    const rect=new Shape.Rectangle(100,100,20,20);rect.selected=true;c.drawing.addShape(rect);
+    inputKey(c,'ArrowRight',true);near(rect.x,110);
+    inputKey(c,'ArrowRight',true);near(rect.x,120);
+    inputKey(c,'ShiftLeft',true,1);near(rect.x,120);
+    inputKey(c,'ArrowRight',true,1);near(rect.x,121);
+    inputKey(c,'ArrowRight',false,1);inputKey(c,'ShiftLeft',false);
+    assert.strictEqual(c.undoStack.length,1);
+}));
+test('held command shortcuts retain OS repeat without executing again on Unicode KeyPress',()=>withInputController(c=> {
+    let undone=0;c.undo=()=>undone++;
+    inputKey(c,'ControlLeft',true,2);inputKey(c,'KeyZ',true,2);c.doKeyPress({unicode:122,ctrl:true});
+    assert.strictEqual(undone,1);
+    inputKey(c,'KeyZ',true,2);c.doKeyPress({unicode:122,ctrl:true});assert.strictEqual(undone,2);
+    inputKey(c,'KeyZ',false,2);inputKey(c,'ControlLeft',false);
+}));
+test('adding a command modifier to a held zoom key does not invent an undo press',()=>withInputController(c=> {
+    let undone=0;c.undo=()=>undone++;
+    inputKey(c,'KeyZ',true);near(c.navigation.camera.getZoom(),1.25);
+    inputKey(c,'ControlLeft',true,2);assert.strictEqual(undone,0);
+    inputKey(c,'KeyZ',false,2);inputKey(c,'ControlLeft',false);
+}));
 
 controller.destroy();pdg.gfx.closeGraphicsPort(surface);
 console.log(`${passed} passed, ${failed} failed`);process.exit(failed ? 1 : 0);

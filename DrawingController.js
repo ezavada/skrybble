@@ -22,6 +22,7 @@ const pdgDrawingImport = require('./pdg-drawing-import.js');
 const chooseSaveDrawingFile = require('./save-drawing-file-picker.js');
 
 const CanvasNavigation = require('./CanvasNavigation');
+const EditorInput = require('./EditorInput');
 const ToolCursors=require('./ToolCursors');
 const CanvasTextEditor=require('./CanvasTextEditor');
 const FontPickerController=require('./FontPickerController');
@@ -114,6 +115,7 @@ class DrawingController extends Controller {
         
         // Save confirmation message
         this.saveMessage = null;
+        this.shortcuts = new EditorInput(this);
     }
     
     setupViews() {
@@ -150,34 +152,38 @@ class DrawingController extends Controller {
         finally {this._routingPicker=null;}
     }
     onMouseDown(event) {
-        // Toolbar input takes precedence over popup and canvas capture.
-        const palette=this.toolPaletteView;
-        if(this.active && palette.pointInViewArea(event.mousePos) && !event.rightButton) {
-            const part=palette.getPartClicked(event.mousePos);
-            if(part>0) {
-                this.activePicker()?.cancel();
-                this.commitTextEdit();
-                const tool=this.toolManager.getCurrentTool();
-                if([Tools.TOOLS.SPLINE,Tools.TOOLS.BEZIER,Tools.TOOLS.POLY,Tools.TOOLS.QUAD].includes(tool) && this.toolManager.isCurrentlyDrawing()) {
-                    const shape=this.toolManager.finishMultiPointShape(false);
-                    if(shape){if(shape.isQuad)shape.isQuad=false;this.saveUndoState('add shape');this.drawing.addShape(shape);}
+        try {
+            // Toolbar input takes precedence over popup and canvas capture.
+            const palette=this.toolPaletteView;
+            if(this.active && palette.pointInViewArea(event.mousePos) && !event.rightButton) {
+                const part=palette.getPartClicked(event.mousePos);
+                if(part>0) {
+                    this.activePicker()?.cancel();
+                    this.commitTextEdit();
+                    const tool=this.toolManager.getCurrentTool();
+                    if([Tools.TOOLS.SPLINE,Tools.TOOLS.BEZIER,Tools.TOOLS.POLY,Tools.TOOLS.QUAD].includes(tool) && this.toolManager.isCurrentlyDrawing()) {
+                        const shape=this.toolManager.finishMultiPointShape(false);
+                        if(shape){if(shape.isQuad)shape.isQuad=false;this.saveUndoState('add shape');this.drawing.addShape(shape);}
+                    }
+                    this.resetCanvasGesture();
+                    const chosen=Object.values(Tools.TOOLS)[part-1];
+                    if(chosen!==Tools.TOOLS.HELP)this.showHelp=false;
+                    this._toolbarPress=true;palette.pressedTool=chosen;palette.updateHover(event.mousePos);
+                    this.doLeftClick(event,palette,palette.getID(),part);
+                    this.updateCursor(event);return true;
                 }
-                this.resetCanvasGesture();
-                const chosen=Object.values(Tools.TOOLS)[part-1];
-                if(chosen!==Tools.TOOLS.HELP)this.showHelp=false;
-                this._toolbarPress=true;palette.pressedTool=chosen;palette.updateHover(event.mousePos);
-                this.doLeftClick(event,palette,palette.getID(),part);
-                this.updateCursor(event);return true;
             }
-        }
-        const result=this.routePickerInput('onMouseDown',event);this.updateCursor(event);return result;
+            const result=this.routePickerInput('onMouseDown',event);this.updateCursor(event);return result;
+        } finally { this.shortcuts?.syncMode(); }
     }
     onMouseUp(event) {
-        if(this._toolbarPress) {
-            this._toolbarPress=false;this.toolPaletteView.pressedTool=null;
-            this.toolPaletteView.updateHover(event.mousePos);this.updateCursor(event);return true;
-        }
-        const result=this.routePickerInput('onMouseUp',event);this.updateCursor(event);return result;
+        try {
+            if(this._toolbarPress) {
+                this._toolbarPress=false;this.toolPaletteView.pressedTool=null;
+                this.toolPaletteView.updateHover(event.mousePos);this.updateCursor(event);return true;
+            }
+            const result=this.routePickerInput('onMouseUp',event);this.updateCursor(event);return result;
+        } finally { this.shortcuts?.syncMode(); }
     }
     onMouseMove(event) {
         this.toolPaletteView.updateHover(event.mousePos);this.updateCursor(event);
@@ -187,22 +193,7 @@ class DrawingController extends Controller {
 
     zoomOut(event={}) {
         return !!(event.shift || event.alt || event.option || event.ctrl || event.control || event.rightButton ||
-            event.buttonNumber===1 || this._shiftKeys?.size || this._zoomModifierKeys?.size);
-    }
-
-    updateZoomModifiers(info,down) {
-        const browser=!!globalThis.skrybbleWeb;
-        const alt=browser?[18]:[pdg.keyCode_LeftAlt,pdg.keyCode_RightAlt,342,346];
-        const ctrl=browser?[17]:[pdg.keyCode_LeftControl,pdg.keyCode_RightControl,341,345];
-        if(!browser && process.platform==='win32'){alt.push(18,164,165);ctrl.push(17,162,163);}
-        if(!alt.includes(info.keyCode) && !ctrl.includes(info.keyCode))return false;
-        this._zoomModifierKeys ||= new Set();
-        if(down)this._zoomModifierKeys.add(info.keyCode);else this._zoomModifierKeys.delete(info.keyCode);
-        // MouseInfo may lag behind KeyInfo. Use the tracked physical keys for
-        // both the cursor and click action, so the minus always means zoom out.
-        if(alt.includes(info.keyCode))this._cursorAlt=down;
-        if(ctrl.includes(info.keyCode))this._cursorCtrl=down;
-        this.updateCursor();return true;
+            event.buttonNumber===1 || this.inputState?.shift || this.inputState?.alt || this.inputState?.control);
     }
 
     updateCursor(event={}) {
@@ -394,76 +385,37 @@ class DrawingController extends Controller {
         return false;
     }
 
-    doKeyDown(info) {
-        this.lastPhysicalKey=info.keyCode;
-        const zoomChanged=this.updateZoomModifiers(info,true);
-        return this.updateGestureShift(info,true) || zoomChanged;
+    doKeyDown(info) { return this.shortcuts.keyDown(info); }
+    doKeyUp(info) { return this.shortcuts.keyUp(info); }
+
+    onPortDraw(event) {
+        if (event?.port === this.port) this.shortcuts?.poll();
+        return super.onPortDraw(event);
     }
 
-    updateGestureShift(info,down) {
-        // Native KeyInfo has only a raw keyCode; mouse modifiers arrive later.
-        const keys=[pdg.keyCode_LeftShift,pdg.keyCode_RightShift,340,344];
-        if(globalThis.skrybbleWeb || process.platform==='win32')keys.push(16,160,161);
-        if(process.platform==='linux')keys.push(42,54,50,62);
-        if(!keys.includes(info.keyCode) && info.key!=='Shift')return false;
-        this._shiftKeys ||= new Set();
-        const before=this._shiftKeys.size>0;
-        if(down)this._shiftKeys.add(info.keyCode);else this._shiftKeys.delete(info.keyCode);
-        const shift=this._shiftKeys.size>0;
-        this.updateCursor({shift});
-        if(before===shift)return false;
-        if(this._gesturePointer && !this.textEdit && !this.activePicker() && !this.showHelp &&
+    applyHeldInput(state) {
+        const before=this.inputState || {};
+        this.inputState=state;
+        this.spaceHeld=state.pan;
+        this.updateCursor({shift:state.shift,alt:state.alt,ctrl:state.control});
+        if (state.cancelled) {
+            this.resetCanvasGesture();
+            return;
+        }
+        if (before.shift!==state.shift && this._gesturePointer && !this.textEdit &&
+            !this.activePicker() && !this.showHelp &&
             (this.panPosition || this.rotatingShape || this.draggedPoint || this.draggedShapes || this.toolManager.isCurrentlyDrawing())) {
-            this.handleMouseMove({mousePos:new pdg.Point(this._gesturePointer),shift});
-            return true;
+            this.handleMouseMove({mousePos:new pdg.Point(this._gesturePointer),shift:state.shift});
         }
-        return false;
     }
 
-    doKeyUp(keyUpInfo, view, id, part) {
-        const zoomChanged=this.updateZoomModifiers(keyUpInfo,false);
-        const changed=this.updateGestureShift(keyUpInfo,false);
-        return this.handleKeyUp(keyUpInfo) || changed || zoomChanged;
-    }
-
-    doKeyPress(keyPressInfo, view, id, part) {
-        if(this.fontPickerController)return this.fontPickerController.doKeyPress(keyPressInfo);
-        if (this.textEdit) return this.handleTextKey(keyPressInfo);
-        const unicode = keyPressInfo && keyPressInfo.unicode;
-        console.log('DrawingController.doKeyPress, unicode:', unicode, 'colorPickerController:', !!this.colorPickerController, 'showHelp:', this.showHelp);
-        
-        // If color picker is open, let it handle keys first
-        if (this.colorPickerController) {
-            console.log('DrawingController.doKeyPress - passing to color picker');
-            const handled = this.colorPickerController.doKeyPress(keyPressInfo, view, id, part);
-            console.log('DrawingController.doKeyPress - color picker handled:', handled, 'colorPickerController after:', !!this.colorPickerController);
-            // Color picker handles ESC and ENTER, so return handled value
-            return handled;
-        }
-        
-        // If line width picker is open, let it handle keys first
-        if (this.lineWidthController) {
-            const handled = this.lineWidthController.doKeyPress(keyPressInfo, view, id, part);
-            return handled;
-        }
-        
-        // If smoothness picker is open, let it handle keys first
-        if (this.smoothnessController) {
-            const handled = this.smoothnessController.doKeyPress(keyPressInfo, view, id, part);
-            return handled;
-        }
-        
-        // If help is showing, ESC should close it
-        if (this.showHelp) {
-            if (unicode === 27) { // ESC key
-                console.log('DrawingController.doKeyPress - closing help');
-                this.toggleHelp();
-                return true;
-            }
-        }
-        
-        console.log('DrawingController.doKeyPress - passing to handleKeyPress');
-        return this.handleKeyPress(keyPressInfo);
+    doKeyPress(info, view, id, part) {
+        if(this.shortcuts.suppressText){this.shortcuts.suppressText=false;return true;}
+        try {
+            if(this.textEdit)return this.handleTextKey(info);
+            const picker=this.activePicker();
+            return picker?picker.doKeyPress(info,view,id,part):false;
+        } finally {this.shortcuts.syncMode();}
     }
 
     // ============================ Input Handler Methods ============================
@@ -521,6 +473,7 @@ class DrawingController extends Controller {
         this.textEdit = {shape,isNew,before:shape.text,beforeWidth:shape.width,beforeHeight:shape.height,
             editor:new CanvasTextEditor(this,shape)};
         this.selectShape(shape);
+        this.shortcuts?.syncMode();
     }
 
     commitTextEdit(cancel=false) {
@@ -536,12 +489,13 @@ class DrawingController extends Controller {
         shape.layout(this.port);
         this.textEdit.editor.setFocus(false);delete shape._editing;
         this.textEdit=null;this.textSelecting=false;
+        this.shortcuts?.syncMode();
     }
 
     handleTextKey(event) {
         const code=event.unicode;
         if ((event.ctrl || event.meta || event.command) && [83,115].includes(code)) {
-            this.commitTextEdit(); return this.handleKeyPress(event);
+            this.commitTextEdit(); return this.executeShortcut(event.shift?'saveAs':'save');
         }
         if (code===27) this.escapeToSelect();
         else if (code===13) this.commitTextEdit();
@@ -598,6 +552,7 @@ class DrawingController extends Controller {
     }
 
     handleMouseMove(event) {
+        event={...event,shift:!!event.shift || !!this.inputState?.shift};
         this._gesturePointer={x:event.mousePos.x,y:event.mousePos.y};
         if(this.textSelecting && this.textEdit) {
             this.textEdit.editor.positionAt(this.getMousePosition(event),true);return true;
@@ -1287,280 +1242,146 @@ class DrawingController extends Controller {
         }
     }
 
-    handleKeyUp(event) {
-        if (event.keyCode===this.spaceKeyCode || event.unicode===32) { this.spaceHeld=false;this.updateCursor(); return true; }
+    executeShortcut(command, argument) {
+        const commands={
+            copy:()=>this.copySelectedShapes(), cut:()=>this.cutSelectedShapes(),
+            paste:()=>this.pasteShapes(), undo:()=>this.undo(), redo:()=>this.redo(),
+            save:()=>this.saveFile(), saveAs:()=>this.saveAs(), open:()=>this.openDrawingFile(),
+            group:()=>this.groupSelectedShapes(), ungroup:()=>this.ungroupSelectedShapes(),
+            resetZoom:()=>this.navigation.reset(),
+            zoom:()=>this.navigation.zoomAt(argument,this.navigationAnchor()),
+            nudge:()=>this.nudgeSelection(argument.direction,argument.shift),
+            reorder:()=>this.reorderSelection(argument.direction,argument.front),
+            tool:()=>this.selectToolShortcut(argument),
+            nextShape:()=>{this.selectNextShape(argument);this.toolManager.setTool(Tools.TOOLS.SELECT);this.updateToolSelection(Tools.TOOLS.SELECT);},
+            delete:()=>this.deleteSelectionOrPoint(),
+            escape:()=>this.showHelp?this.toggleHelp():this.escapeToSelect()
+        };
+        if (!commands[command]) return false;
+        commands[command]();
+        return true;
+    }
+
+    nudgeSelection(direction, shift) {
+        // Get all selected shapes
+        const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
+
+        if (selectedShapes.length > 0) {
+            const moveAmount = shift ? 1 : 10;
+            let dx = 0, dy = 0;
+
+            [dx,dy]=direction;
+            dx*=moveAmount;dy*=moveAmount;
+
+            // Save undo state only at the start of a nudge sequence
+            if (!this.isNudging) {
+                this.saveUndoState('move');
+                this.isNudging = true;
+            }
+
+            // Clear existing nudge timer
+            if (this.nudgeTimer) {
+                clearTimeout(this.nudgeTimer);
+            }
+
+            // Move all selected shapes
+            for (let shape of selectedShapes) {
+                this.drawing.moveShape(shape, dx, dy);
+            }
+
+            // Set timer to finalize nudge after 500ms of inactivity
+            this.nudgeTimer = setTimeout(() => {
+                this.isNudging = false;
+                this.nudgeTimer = null;
+            }, 500);
+
+            return true;
+        }
         return false;
     }
 
-    handleKeyPress(event) {
-        // Get unicode value (used for both regular keys and arrow keys)
-        const unicode = event && event.unicode;
-        if (unicode===32) { this.spaceHeld=true; this.spaceKeyCode=this.lastPhysicalKey;this.updateCursor(); return true; }
-        if (!(event.ctrl || event.meta || event.command || event.alt) && [90,122].includes(unicode)) {
-            this.navigation.zoomAt(event.shift ? 1/1.25 : 1.25,this.navigationAnchor());
+    reorderSelection(direction, front) {
+        const selected=this.drawing.getShapes().filter(shape=>shape.selected);
+        if (!selected.length) return false;
+        if (!this.isReordering) {this.saveUndoState('reorder');this.isReordering=true;}
+        if (this.reorderTimer) clearTimeout(this.reorderTimer);
+        for (const shape of selected) {
+            if(front) {
+                if(direction>0)this.drawing.moveShapeToFront(shape);
+                else this.drawing.moveShapeToBack(shape);
+            } else if(direction>0)this.drawing.moveShapeForward(shape,1);
+            else this.drawing.moveShapeBackward(shape,1);
+        }
+        this.reorderTimer=setTimeout(()=>{this.isReordering=false;this.reorderTimer=null;},500);
+        return true;
+    }
+
+    selectToolShortcut(tool) {
+        if(tool===Tools.TOOLS.FONT) {
+            this.openFontPicker(Object.values(Tools.TOOLS).indexOf(tool)+1);return true;
+        }
+        // Special handling for HELP - just toggle help, don't switch tools
+        if (tool === Tools.TOOLS.HELP) {
+            this.toggleHelp();
             return true;
         }
-        if ((event.ctrl || event.meta || event.command) && unicode===48) {
-            this.navigation.reset(); return true;
+
+        // Special handling for color picker tools
+        if (tool === Tools.TOOLS.FILL_COLOR || tool === Tools.TOOLS.LINE_COLOR) {
+            this.openColorPicker(tool);
+            return true;
         }
-   
-        // Check for keyboard shortcuts with Cmd/Ctrl modifiers
-        const cmdOrCtrl = event && (event.meta || event.ctrl);
-        
-        if (cmdOrCtrl && unicode) {
-            const key = String.fromCharCode(unicode).toUpperCase();
-            
-            switch (key) {
-                case 'C': // Copy
-                    this.copySelectedShapes();
-                    return true;
-                case 'X': // Cut
-                    this.cutSelectedShapes();
-                    return true;
-                case 'V': // Paste
-                    this.pasteShapes();
-                    return true;
-                case 'Z': // Undo or Redo
-                    if (event.shift) {
-                        this.redo();
-                    } else {
-                        this.undo();
-                    }
-                    return true;
-                case 'S': // Save
-                    if (event.shift) this.saveAs(); else this.saveFile();
-                    return true;
-                case 'O': // Open
-                    this.openDrawingFile();
-                    return true;
-                case 'G': // Group or ungroup
-                    if (event.shift) {
-                        this.ungroupSelectedShapes();
-                    } else {
-                        this.groupSelectedShapes();
-                    }
-                    return true;
-            }
+        // Check for line width tool shortcut
+        if (tool === Tools.TOOLS.LINE_WIDTH) {
+            // Find the toolbar part index for line width tool
+            const toolNames = Object.values(Tools.TOOLS);
+            const toolIndex = toolNames.indexOf(Tools.TOOLS.LINE_WIDTH) + 1;
+            this.openLineWidthPicker(toolIndex);
+            return true;
         }
-        
-        // Check for arrow keys (unicode values 28-31)
-        if (unicode >= 28 && unicode <= 31) {
-            // Get all selected shapes
+        // Check for smoothness tool shortcut
+        if (tool === Tools.TOOLS.SMOOTHNESS) {
+            // Find the toolbar part index for smoothness tool
+            const toolNames = Object.values(Tools.TOOLS);
+            const toolIndex = toolNames.indexOf(Tools.TOOLS.SMOOTHNESS) + 1;
+            this.openSmoothnessPicker(toolIndex);
+            return true;
+        }
+        if (tool === Tools.TOOLS.IMAGE) {
+            this.activateImageTool();
+            return true;
+        }
+
+        // If another tool is selected while a picker is open, cancel the picker
+        if (this.lineWidthController) {
+            this.lineWidthController.cancel();
+        }
+        if (this.smoothnessController) {
+            this.smoothnessController.cancel();
+        }
+
+        this.toolManager.setTool(tool);
+        this.updateToolSelection(tool);
+        return true;
+    }
+
+    deleteSelectionOrPoint() {
+        const currentToolForDelete = this.toolManager.getCurrentTool();
+        // For multi-point tools while drawing, remove last point
+        if ((currentToolForDelete === Tools.TOOLS.SPLINE || currentToolForDelete === Tools.TOOLS.BEZIER ||
+             currentToolForDelete === Tools.TOOLS.POLY || currentToolForDelete === Tools.TOOLS.QUAD)
+            && this.toolManager.isCurrentlyDrawing()) {
+            this.toolManager.removeLastPoint();
+        } else {
+            // Delete all selected shapes when not drawing
             const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
-            
             if (selectedShapes.length > 0) {
-                const moveAmount = event.shift ? 1 : 10;
-                let dx = 0, dy = 0;
-                
-                switch (unicode) {
-                    case 28: // Left arrow (pdg.key_LeftArrow)
-                        dx = -moveAmount;
-                        break;
-                    case 29: // Right arrow (pdg.key_RightArrow)
-                        dx = moveAmount;
-                        break;
-                    case 30: // Up arrow (pdg.key_UpArrow)
-                        dy = -moveAmount;
-                        break;
-                    case 31: // Down arrow (pdg.key_DownArrow)
-                        dy = moveAmount;
-                        break;
-                }
-                
-                // Save undo state only at the start of a nudge sequence
-                if (!this.isNudging) {
-                    this.saveUndoState('move');
-                    this.isNudging = true;
-                }
-                
-                // Clear existing nudge timer
-                if (this.nudgeTimer) {
-                    clearTimeout(this.nudgeTimer);
-                }
-                
-                // Move all selected shapes
+                this.saveUndoState('delete');
                 for (let shape of selectedShapes) {
-                    this.drawing.moveShape(shape, dx, dy);
+                    this.drawing.removeShape(shape);
                 }
-                
-                // Set timer to finalize nudge after 500ms of inactivity
-                this.nudgeTimer = setTimeout(() => {
-                    this.isNudging = false;
-                    this.nudgeTimer = null;
-                }, 500);
-                
-                return true;
+                this.selectedShape = null;
             }
-            return false;
-        }
-        
-        // Check for draw order keys (+/- to move forward/backward, Ctrl/Cmd +/- to move to front/back)
-        if (unicode) {
-            const key = String.fromCharCode(unicode);
-            const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
-            
-            // Handle + (plus) or = (as synonym for plus) to move forward
-            if ((key === '+' || key === '=') && selectedShapes.length > 0) {
-                // Save undo state only at the start of a reorder sequence
-                if (!this.isReordering) {
-                    this.saveUndoState('reorder');
-                    this.isReordering = true;
-                }
-                
-                // Clear existing reorder timer
-                if (this.reorderTimer) {
-                    clearTimeout(this.reorderTimer);
-                }
-                
-                if (cmdOrCtrl) {
-                    // Ctrl/Cmd + Plus: move to front
-                    for (let shape of selectedShapes) {
-                        this.drawing.moveShapeToFront(shape);
-                    }
-                } else {
-                    // Plus alone: move forward by 1
-                    for (let shape of selectedShapes) {
-                        this.drawing.moveShapeForward(shape, 1);
-                    }
-                }
-                
-                // Set timer to finalize reorder after 500ms of inactivity
-                this.reorderTimer = setTimeout(() => {
-                    this.isReordering = false;
-                    this.reorderTimer = null;
-                }, 500);
-                
-                return true;
-            }
-            
-            // Handle - (minus) to move backward
-            if (key === '-' && selectedShapes.length > 0) {
-                // Save undo state only at the start of a reorder sequence
-                if (!this.isReordering) {
-                    this.saveUndoState('reorder');
-                    this.isReordering = true;
-                }
-                
-                // Clear existing reorder timer
-                if (this.reorderTimer) {
-                    clearTimeout(this.reorderTimer);
-                }
-                
-                if (cmdOrCtrl) {
-                    // Ctrl/Cmd + Minus: move to back
-                    for (let shape of selectedShapes) {
-                        this.drawing.moveShapeToBack(shape);
-                    }
-                } else {
-                    // Minus alone: move backward by 1
-                    for (let shape of selectedShapes) {
-                        this.drawing.moveShapeBackward(shape, 1);
-                    }
-                }
-                
-                // Set timer to finalize reorder after 500ms of inactivity
-                this.reorderTimer = setTimeout(() => {
-                    this.isReordering = false;
-                    this.reorderTimer = null;
-                }, 500);
-                
-                return true;
-            }
-        }
-        
-        // Handle key press events for color and tool selection
-        let key = '';
-        if (unicode) {
-            key = String.fromCharCode(unicode).toUpperCase();
-        }
-
-        // Match Illustrator's shifted tool shortcuts explicitly.
-        if(event.shift && ('Shift+'+key) in Tools.TOOL_SHORTCUTS)key='Shift+'+key;
-        // Tool selection
-        if (key in Tools.TOOL_SHORTCUTS) {
-            console.log("handleKeyPress", key, Tools.TOOL_SHORTCUTS[key]);
-            const tool = Tools.TOOL_SHORTCUTS[key];
-            
-            if(tool===Tools.TOOLS.FONT) {
-                this.openFontPicker(Object.values(Tools.TOOLS).indexOf(tool)+1);return true;
-            }
-            // Special handling for HELP - just toggle help, don't switch tools
-            if (tool === Tools.TOOLS.HELP) {
-                this.toggleHelp();
-                return true;
-            }
-            
-            // Special handling for color picker tools
-            if (tool === Tools.TOOLS.FILL_COLOR || tool === Tools.TOOLS.LINE_COLOR) {
-                this.openColorPicker(tool);
-                return true;
-            }
-            // Check for line width tool shortcut
-            if (tool === Tools.TOOLS.LINE_WIDTH) {
-                // Find the toolbar part index for line width tool
-                const toolNames = Object.values(Tools.TOOLS);
-                const toolIndex = toolNames.indexOf(Tools.TOOLS.LINE_WIDTH) + 1;
-                this.openLineWidthPicker(toolIndex);
-                return true;
-            }
-            // Check for smoothness tool shortcut
-            if (tool === Tools.TOOLS.SMOOTHNESS) {
-                // Find the toolbar part index for smoothness tool
-                const toolNames = Object.values(Tools.TOOLS);
-                const toolIndex = toolNames.indexOf(Tools.TOOLS.SMOOTHNESS) + 1;
-                this.openSmoothnessPicker(toolIndex);
-                return true;
-            }
-            if (tool === Tools.TOOLS.IMAGE) {
-                this.activateImageTool();
-                return true;
-            }
-            
-            // If another tool is selected while a picker is open, cancel the picker
-            if (this.lineWidthController) {
-                this.lineWidthController.cancel();
-            }
-            if (this.smoothnessController) {
-                this.smoothnessController.cancel();
-            }
-            
-            this.toolManager.setTool(tool);
-            this.updateToolSelection(tool);
-            return true;
-        }
-
-        switch (key) {
-            case '\t': // Tab key
-                // Check if shift is pressed for reverse direction
-                const shiftPressed = event && event.shift;
-                this.selectNextShape(shiftPressed);
-                // Switch to SELECT mode when using TAB to navigate shapes
-                this.toolManager.setTool(Tools.TOOLS.SELECT);
-                this.updateToolSelection(Tools.TOOLS.SELECT);
-                return true;
-            case '\u007f': // Delete key
-            case '\b': // Backspace key
-                const currentToolForDelete = this.toolManager.getCurrentTool();
-                // For multi-point tools while drawing, remove last point
-                if ((currentToolForDelete === Tools.TOOLS.SPLINE || currentToolForDelete === Tools.TOOLS.BEZIER || 
-                     currentToolForDelete === Tools.TOOLS.POLY || currentToolForDelete === Tools.TOOLS.QUAD) 
-                    && this.toolManager.isCurrentlyDrawing()) {
-                    this.toolManager.removeLastPoint();
-                } else {
-                    // Delete all selected shapes when not drawing
-                    const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
-                    if (selectedShapes.length > 0) {
-                        this.saveUndoState('delete');
-                        for (let shape of selectedShapes) {
-                            this.drawing.removeShape(shape);
-                        }
-                        this.selectedShape = null;
-                    }
-                }
-                return true;
-            case '\u001b': // Escape key
-                this.escapeToSelect();
-                return true;
         }
         return true;
     }
@@ -2358,6 +2179,7 @@ class DrawingController extends Controller {
     }
 
     destroy() {
+        this.shortcuts?.destroy();
         this.cursors?.destroy();
         if(this.fontPickerController)this.fontPickerController.cancel();
         this.commitTextEdit(true);

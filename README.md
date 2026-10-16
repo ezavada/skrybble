@@ -214,6 +214,14 @@ JavaScript framework sources.
 
 ### Keyboard Shortcuts
 
+Shortcuts and held canvas controls use PDG v1.3 input actions with normalized
+physical keys. Space pans, Shift constrains gestures, and Shift/Option/Control
+reverse the magnifier. Command chords take precedence over tool shortcuts.
+Text editing and picker controls retain MVC Unicode input. Their modal input
+context suppresses canvas shortcuts and rearms held controls after release;
+focus loss clears held state. Shortcuts, including arrow nudging, reordering
+and deletion, retain OS key repeat.
+
 #### Tool Selection
 
 Common tool shortcuts follow [Adobe Illustrator](https://helpx.adobe.com/illustrator/using/default-keyboard-shortcuts.html).

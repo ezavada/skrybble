@@ -304,6 +304,68 @@ await shot();
 if(!await evalPage('!__skrybbleTestApp.drawingController.spaceHeld && !__skrybbleTestApp.drawingController.panPosition'))throw Error('Browser focus loss left pan held');
 await call('Input.dispatchKeyEvent',{type:'keyUp',key:' ',code:'Space',windowsVirtualKeyCode:32});
 console.log('PASS: browser command precedence and focus-loss cancellation of held input');
+// A tall imported page must accept a drag below the old 1024-pixel ceiling.
+const endpoints=JSON.parse(await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;
+    c.drawing.clearShapes();c.navigation.setCanvas(1600,2000);c.toolManager.setTool('line');c.updateToolSelection('line');
+    const area=c.port.getDrawingArea(),rect=document.querySelector('canvas').getBoundingClientRect();
+    const screen=point=>({x:rect.left+(point.x-area.left)*rect.width/area.width(),y:rect.top+(point.y-area.top)*rect.height/area.height()});
+    return JSON.stringify({start:screen(c.navigation.toView(new pdg.Point(200,300))),end:screen(c.navigation.toView(new pdg.Point(1500,1700)))});})()`));
+await call('Input.dispatchMouseEvent',{type:'mouseMoved',...endpoints.start});
+await call('Input.dispatchMouseEvent',{type:'mousePressed',...endpoints.start,button:'left',clickCount:1});
+await call('Input.dispatchMouseEvent',{type:'mouseMoved',...endpoints.end,button:'left',buttons:1});
+await call('Input.dispatchMouseEvent',{type:'mouseReleased',...endpoints.end,button:'left',clickCount:1});
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,line=c.drawing.getShapes().at(-1);
+    const tolerance=1/c.navigation.camera.getZoom();
+    if(!line || Math.abs(line.x2-1500)>tolerance || Math.abs(line.y2-1700)>tolerance)return false;
+    c.selectShape(line);return true;})()`))throw Error('Tall document drag was truncated '+JSON.stringify(endpoints)+': '+await evalPage(`JSON.stringify({shapes:__skrybbleTestApp.drawingController.drawing.getShapes().map(s=>({type:s.constructor.name,x:s.x,y:s.y,x2:s.x2,y2:s.y2})),tool:__skrybbleTestApp.drawingController.toolManager.currentTool})`));
+const measurements=await shot();
+if(process.env.SKRYBBLE_MEASURE_SCREENSHOT)fs.writeFileSync(process.env.SKRYBBLE_MEASURE_SCREENSHOT,Buffer.from(measurements,'base64'));
+console.log('PASS: tall document line drag and selected-entity measurement rendering');
+// Point selections use real Option/Shift input and remain active after release.
+const pointFixture=async()=>JSON.parse(await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses();
+    c.pointEditor.clear();c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];c.navigation.setCanvas(600,400);
+    const shape=new S.Polygon([{x:150,y:100},{x:300,y:100},{x:300,y:250},{x:150,y:250}],'#f8fafc','#334155',2);
+    shape.selected=true;c.drawing.addShape(shape);c.toolManager.setTool('select');c.updateToolSelection('select');
+    const area=c.port.getDrawingArea(),rect=document.querySelector('canvas').getBoundingClientRect();
+    const screen=p=>{const v=c.navigation.toView(new pdg.Point(p));return {x:rect.left+(v.x-area.left)*rect.width/area.width(),y:rect.top+(v.y-area.top)*rect.height/area.height()};};
+    return JSON.stringify({first:screen({x:150,y:100}),second:screen({x:300,y:100}),edge:screen({x:225,y:100}),start:screen({x:225,y:60}),end:screen({x:225,y:280})});})()`));
+const clickAt=async(p,modifiers=0)=>{
+    await call('Input.dispatchMouseEvent',{type:'mouseMoved',...p,modifiers});
+    await call('Input.dispatchMouseEvent',{type:'mousePressed',...p,button:'left',clickCount:1,modifiers});
+    await call('Input.dispatchMouseEvent',{type:'mouseReleased',...p,button:'left',clickCount:1,modifiers});
+};
+const ctrlCommand=async letter=>{
+    await call('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'Control',code:'ControlLeft',windowsVirtualKeyCode:17,modifiers:2});
+    await call('Input.dispatchKeyEvent',{type:'keyDown',key:letter,code:'Key'+letter,windowsVirtualKeyCode:letter.charCodeAt(0),text:letter,modifiers:2});
+    await call('Input.dispatchKeyEvent',{type:'keyUp',key:letter,code:'Key'+letter,windowsVirtualKeyCode:letter.charCodeAt(0),modifiers:2});
+    await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Control',code:'ControlLeft',windowsVirtualKeyCode:17});
+};
+const pointPositions=await pointFixture();
+await call('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'Alt',code:'AltLeft',windowsVirtualKeyCode:18,modifiers:1});
+await clickAt(pointPositions.first,1);
+await call('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'Shift',code:'ShiftLeft',windowsVirtualKeyCode:16,modifiers:9});
+await clickAt(pointPositions.second,9);
+await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Shift',code:'ShiftLeft',windowsVirtualKeyCode:16,modifiers:1});
+await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Alt',code:'AltLeft',windowsVirtualKeyCode:18});
+if(!await evalPage('__skrybbleTestApp.drawingController.pointEditor.active && __skrybbleTestApp.drawingController.pointEditor.count()===2'))throw Error('Option point selection did not persist');
+const pointImage=await shot();
+if(process.env.SKRYBBLE_POINTS_SCREENSHOT)fs.writeFileSync(process.env.SKRYBBLE_POINTS_SCREENSHOT,Buffer.from(pointImage,'base64'));
+await ctrlCommand('C');await ctrlCommand('V');
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes().at(-1);
+    return c.drawing.getShapeCount()===2 && s.constructor.name==='BezierSpline' && s.points.length===2 && !s.fillColor;})()`))throw Error('Partial points did not paste as an open fragment');
+const scissorsPositions=await pointFixture();await key('c','KeyC',67);
+if(!await evalPage('__skrybbleTestApp.drawingController.toolManager.currentTool==="scissors"'))throw Error('C did not select scissors');
+await clickAt(scissorsPositions.edge);
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];return c.undoStack.length===1 && s.constructor.name==='BezierSpline' && s.points.length===4;})()`))throw Error('Scissors click did not remove one polygon edge');
+await ctrlCommand('Z');
+await evalPage('__skrybbleTestApp.drawingController.selectShape(__skrybbleTestApp.drawingController.drawing.getShapes()[0]); true');
+await call('Input.dispatchMouseEvent',{type:'mousePressed',...scissorsPositions.start,button:'left',clickCount:1});
+await call('Input.dispatchMouseEvent',{type:'mouseMoved',...scissorsPositions.end,button:'left',buttons:1});
+await call('Input.dispatchMouseEvent',{type:'mouseReleased',...scissorsPositions.end,button:'left',clickCount:1});
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;return c.undoStack.length===1 && c.drawing.getShapeCount()===2 && c.drawing.getShapes().every(s=>s.constructor.name==='BezierSpline' && s.points.length===2);})()`))throw Error('Scissors drag did not remove both crossed edges');
+console.log('PASS: Option point selection, partial Copy/Paste, scissors click/drag and undo');
+
+
 await shot();if(errors.length)throw Error(errors.join('\n'));
 if(process.env.SKRYBBLE_SCREENSHOT) fs.writeFileSync(process.env.SKRYBBLE_SCREENSHOT,Buffer.from(pan,'base64'));
 console.log('PASS: browser startup, drawing, text caret editing, font picker, Illustrator shortcuts, unmodified wheel zoom, magnifier and contextual cursors, Pen shortcut, keyboard zoom, wide strokes, stationary Shift transitions, pan including a fully visible page, picker, freehand handle alignment, Escape recovery, window-sized help, and no runtime errors');

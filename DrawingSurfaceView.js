@@ -8,6 +8,7 @@
 
 const View = require('./index').View;
 const {cameraPort} = require('./rendering');
+const selectionReadout = require('./selection-readout');
 
 // -----------------------------------------------
 // Drawing Surface View
@@ -84,6 +85,7 @@ class DrawingSurfaceView extends View {
             for (const shape of controller.getDrawing().getShapes()) shape.draw(canvas);
             const current=controller.getToolManager().getCurrentShape();
             if (current) current.draw(canvas);
+            controller.pointEditor.draw(canvas);
             if (controller.textEdit && controller.textEdit.isNew) controller.textEdit.shape.draw(canvas);
             if (controller.textEdit) controller.textEdit.editor.drawOverlay(canvas);
             if (controller.rubberBandActive) {
@@ -113,6 +115,11 @@ class DrawingSurfaceView extends View {
             for (const attrs of this._notificationStyles) attrs.fillOpacity(this.notificationAppearance.getFillOpacity());
             port.drawDrawing(this._notificationDrawing,new pdg.Point(0,0),new pdg.Attributes());
         }
+        const selected=controller.textEdit ? [controller.textEdit.shape]
+            : controller.getDrawing().getShapes().filter(shape=>shape.selected);
+        const readout=controller.pointEditor.active?`${selectionReadout(selected)} · ${controller.pointEditor.count()} points selected`:selectionReadout(selected);
+        if(readout)port.drawText(readout,new pdg.Point(area.left+8,area.bottom-26),
+            new pdg.Attributes().textSize(12).fillColor(new pdg.Color('#475569')));
         port.drawText(controller.textEdit ? 'Type text · Enter to accept · Esc to cancel' : `${Math.round(controller.navigation.camera.getZoom()*100)}% · ${controller.navigation.width} × ${controller.navigation.height}`,
             new pdg.Point(area.left+8,area.bottom-8),new pdg.Attributes().textSize(12).fillColor(new pdg.Color('#475569')));
     }

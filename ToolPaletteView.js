@@ -39,6 +39,9 @@ class ToolPaletteView extends View {
             case Tools.TOOLS.ZOOM:
                 drawing.addEllipse(point(21,21),10,10,line);segment(29,29,40,40);
                 segment(16,21,26,21);segment(21,16,21,26);break;
+            case Tools.TOOLS.SCISSORS:
+                drawing.addEllipse(point(15,33),5,5,line);drawing.addEllipse(point(35,33),5,5,line);
+                segment(18,29,37,10);segment(32,29,13,10);break;
             case Tools.TOOLS.LINE: segment(10,37,40,12);break;
             case Tools.TOOLS.CIRCLE: drawing.addEllipse(point(25,25),14,14,line);break;
             case Tools.TOOLS.OVAL: drawing.addEllipse(point(25,25),18,11,line);break;

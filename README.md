@@ -29,6 +29,7 @@ undo/redo, draw-order control, and persistent `.skrbl` documents.
 - **Help Tool** (`?`) - Display keyboard shortcuts
 
 ### Canvas Navigation
+- The canvas overlay shows the selected entity type and dimensions in document pixels: line length, circle radius, or original width × height. Multiple selections show their count and combined bounds.
 - New documents use a **1024 × 1024** logical canvas; imported PDG drawings retain their canvas dimensions. 100% zoom is 1:1.
 - Use the **Pan tool** (`H`) or hold **Space** while dragging to pan.
 - Scroll the mouse wheel/trackpad to zoom in and out; no modifier is required.
@@ -211,6 +212,29 @@ Use `PDG_SOURCE=release` or unset `PDG_SOURCE` to return to the pinned release.
 `--refresh-pdg` (`-RefreshPdg` in PowerShell) refreshes the release cache and
 is rejected in development mode. Runtime selection does not change vendored
 JavaScript framework sources.
+
+### Partial point selection and scissors
+
+In Select mode, Option-click a point or Option-drag a marquee to select points
+within already-selected polygons, cardinal/freehand paths or Bézier paths.
+Shift+Option adds points; Control+Option toggles them. Selected points turn blue
+and remain selected after Option is released. A normal selection click returns
+to whole-object selection. Two-point Line objects and primitive resize/radius
+handles do not participate.
+
+Copy/Cut requires at least two adjacent anchors; curve handles travel with the
+selected segments. Disconnected runs paste as separate editable fragments.
+Partial polygon copies are open and stroke-only; copying all vertices keeps the
+closed, filled polygon. Option+Cmd+C/X (Option+Ctrl+C/X on Windows/Linux) closes
+polygon fragments with at least three anchors. Cut reconnects surviving anchors,
+removing the source if too few remain. Isolated anchors and tangent-only
+selections can be nudged, but cannot be copied or cut as drawable fragments.
+
+The Scissors tool (**C**) operates on already-selected paths, excluding two-point
+Line objects and primitive shapes. Click an edge/curve segment to remove it, or
+drag a straight cutting line to remove every crossed segment. Surviving runs
+become open, editable paths; each gesture is one undo step. Curve fragments retain
+their geometry, including when cardinal paths become cubic Bézier fragments.
 
 ### Keyboard Shortcuts
 
@@ -471,6 +495,7 @@ Each shape implements:
 ```sh
 PDG_SOURCE=devel ./skrybble tests/smoke.js
 PDG_SOURCE=devel ./skrybble tests/unit.js
+PDG_SOURCE=devel ./skrybble tests/points.js
 PDG_SOURCE=devel ./skrybble tests/pdg-drawing.js
 python3 tests/test_runtime_selection.py
 PDG_SOURCE=devel ./tools/build-web.sh

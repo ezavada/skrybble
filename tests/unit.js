@@ -875,5 +875,53 @@ test('adding a command modifier to a held zoom key does not invent an undo press
     inputKey(c,'KeyZ',false,2);inputKey(c,'ControlLeft',false);
 }));
 
+test('selection readout shows intrinsic dimensions, line length and circle radius without mutating geometry',()=> {
+    const readout=require('../selection-readout');
+    assert.strictEqual(readout([]),'');
+    const line=new Shape.Line(1,2,4,6);line.rotation=1;
+    assert.strictEqual(readout([line]),'Line · length 5 px');
+    assert.strictEqual(readout([new Shape.Circle(20,20,12.25)]),'Circle · radius 12.3 px');
+    const rect=new Shape.Rectangle(40,50,80,30);rect.rotation=Math.PI/4;
+    assert.strictEqual(readout([rect]),'Rectangle · W 80 × H 30 px');
+    near(rect.rotation,Math.PI/4);rect.width=90.25;
+    assert.strictEqual(readout([rect]),'Rectangle · W 90.3 × H 30 px');
+    const oval=new Shape.Oval(50,50,20,10);oval.rotation=Math.PI/3;
+    assert.strictEqual(readout([oval]),'Oval · W 40 × H 20 px');
+    const group=new Shape.Group([new Shape.Rectangle(0,0,20,10)]);group.rotation=Math.PI/2;
+    assert.strictEqual(readout([group]),'Group · W 20 × H 10 px');
+    assert.strictEqual(readout([new Shape.Rectangle(0,0,20,10),new Shape.Rectangle(30,40,20,10)]),
+        '2 entities · W 50 × H 50 px');
+});
+test('selection measurements render above the zoom readout and remain unchanged by navigation',()=>withInputController(c=> {
+    const rect=new Shape.Rectangle(100,100,80,30);rect.selected=true;c.drawing.addShape(rect);
+    const texts=[];
+    const port=new Proxy(c.port,{get:(target,key)=>key==='drawText'?(text,...args)=>{
+        texts.push({text,point:args[0]});return target.drawText(text,...args);
+    }:typeof target[key]==='function'?target[key].bind(target):target[key]});
+    for(const zoom of [.5,2]) {
+        c.navigation.camera.setZoom(zoom);c.navigation.pan(20,30);
+        texts.length=0;c.backgroundView.drawSelf(port,0);
+        const measure=texts.find(item=>item.text==='Rectangle · W 80 × H 30 px');
+        assert.ok(measure);assert.strictEqual(measure.point.y,c.backgroundView.getViewArea().bottom-26);
+        assert.ok(texts.some(item=>item.text.includes('1024 × 1024')));
+    }
+}));
+test('line drags use actual document dimensions on tall, wide and smaller canvases after zoom and pan',()=>withInputController(c=> {
+    for(const [width,height] of [[1600,2000],[600,800]]) {
+        c.navigation.setCanvas(width,height);
+        for(const zoom of [.25,1,2]) {
+            c.navigation.camera.setZoom(zoom);c.navigation.pan(20,30);
+            c.toolManager.setTool('line');
+            c.handleMouseDown({mousePos:c.navigation.toView({x:100,y:100})});
+            c.handleMouseMove({mousePos:c.navigation.toView({x:width-10,y:height-10})});
+            near(c.toolManager.currentShape.x2,width-10);near(c.toolManager.currentShape.y2,height-10);
+            c.handleMouseMove({mousePos:c.navigation.toView({x:width+100,y:height+100})});
+            near(c.toolManager.currentShape.x2,width);near(c.toolManager.currentShape.y2,height);
+            c.handleMouseUp({mousePos:c.navigation.toView({x:width,y:height})});
+            const line=c.drawing.getShapes().at(-1);near(line.x2,width);near(line.y2,height);
+        }
+    }
+}));
+
 controller.destroy();pdg.gfx.closeGraphicsPort(surface);
 console.log(`${passed} passed, ${failed} failed`);process.exit(failed ? 1 : 0);

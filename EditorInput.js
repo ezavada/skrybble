@@ -46,7 +46,7 @@ class EditorInput {
     shortcut(code,state) {
         const command=state.control || state.meta,shift=state.shift;
         if(command) {
-            if(commandKeys[code])return [commandKeys[code]];
+            if(commandKeys[code])return [commandKeys[code],{closePolygon:!!state.alt}];
             if(code==='KeyZ')return [shift?'redo':'undo'];
             if(code==='KeyS')return [shift?'saveAs':'save'];
             if(code==='KeyG')return [shift?'ungroup':'group'];

@@ -23,6 +23,7 @@ const chooseSaveDrawingFile = require('./save-drawing-file-picker.js');
 
 const CanvasNavigation = require('./CanvasNavigation');
 const EditorInput = require('./EditorInput');
+const PointEditor = require('./PointEditor');
 const ToolCursors=require('./ToolCursors');
 const CanvasTextEditor=require('./CanvasTextEditor');
 const FontPickerController=require('./FontPickerController');
@@ -115,6 +116,7 @@ class DrawingController extends Controller {
         
         // Save confirmation message
         this.saveMessage = null;
+        this.pointEditor = new PointEditor(this);
         this.shortcuts = new EditorInput(this);
     }
     
@@ -212,7 +214,7 @@ class DrawingController extends Controller {
                 const textHit=this.drawing.findShapeAt(world.x,world.y)?.constructor.name==='Text';
                 if(tool===Tools.TOOLS.TEXT || (this.textEdit && this.textEdit.shape.contains(world.x,world.y)) ||
                     (tool===Tools.TOOLS.SELECT && textHit))cursor='text';
-                else if([Tools.TOOLS.LINE,Tools.TOOLS.FREEHAND,Tools.TOOLS.SPLINE,Tools.TOOLS.BEZIER,
+                else if([Tools.TOOLS.SCISSORS,Tools.TOOLS.LINE,Tools.TOOLS.FREEHAND,Tools.TOOLS.SPLINE,Tools.TOOLS.BEZIER,
                     Tools.TOOLS.CIRCLE,Tools.TOOLS.OVAL,Tools.TOOLS.RECT,Tools.TOOLS.QUAD,Tools.TOOLS.POLY,Tools.TOOLS.IMAGE].includes(tool))cursor='crosshair';
             }
         }
@@ -520,6 +522,9 @@ class DrawingController extends Controller {
             this._panOrigin={...this.panPosition};this._panConstraint={};return true;
         }
         if (!this.navigation.contains(pos)) return true;
+        if(currentTool===Tools.TOOLS.SCISSORS) {
+            this.pointEditor.clear();this.pointEditor.cutter={start:pos,end:pos};return true;
+        }
         if(this.textEdit && this.textEdit.shape.contains(pos.x,pos.y)) {
             this.textEdit.editor.positionAt(pos,!!event.shift);this.textSelecting=true;return true;
         }
@@ -552,6 +557,7 @@ class DrawingController extends Controller {
     }
 
     handleMouseMove(event) {
+        if(this.pointEditor.move(this.getMousePosition(event)))return true;
         event={...event,shift:!!event.shift || !!this.inputState?.shift};
         this._gesturePointer={x:event.mousePos.x,y:event.mousePos.y};
         if(this.textSelecting && this.textEdit) {
@@ -564,7 +570,8 @@ class DrawingController extends Controller {
         }
         const pos = this.getMousePosition(event);
         if(!this.rotatingShape) {
-            pos.x=Math.max(0,Math.min(1024,pos.x));pos.y=Math.max(0,Math.min(1024,pos.y));
+            pos.x=Math.max(0,Math.min(this.navigation.width,pos.x));
+            pos.y=Math.max(0,Math.min(this.navigation.height,pos.y));
         }
 
         if (this.toolManager.isCurrentlyDrawing()) {
@@ -605,6 +612,7 @@ class DrawingController extends Controller {
     }
 
     handleMouseUp(event) {
+        if(this.pointEditor.end(this.getMousePosition(event)))return true;
         if(this.textSelecting) {this.textSelecting=false;return true;}
         this._pointDragGeometry=null;
         this._pointDragOrigin=null;this._pointConstraint=null;this._moveConstraint=null;this.shapeDragOrigin=null;
@@ -738,9 +746,13 @@ class DrawingController extends Controller {
         return false;
     }
 
-    handleSelectMode(x, y, event) {
+    handleSelectMode(x, y, event={}) {
+        if(event.alt || event.option || this.inputState?.alt) {
+            this.pointEditor.begin({x,y},{shift:event.shift || this.inputState?.shift,ctrl:event.ctrl || this.inputState?.control});return;
+        }
+        this.pointEditor.clear();
         const shiftKey = event && event.shift;
-        const toggleKey = event && (event.ctrl || event.alt || event.command);
+        const toggleKey = event && (event.ctrl || event.command || event.meta);
         const handleScale=1/this.navigation.camera.getZoom();
         
         // Check if clicking on an endpoint or control point
@@ -897,6 +909,7 @@ class DrawingController extends Controller {
     }
 
     selectShape(shape, additive = false, toggle = false) {
+        this.pointEditor?.clear();
         if (!additive && !toggle) {
             // Clear previous selections for normal selection
             this.drawing.clearSelection();
@@ -1244,7 +1257,7 @@ class DrawingController extends Controller {
 
     executeShortcut(command, argument) {
         const commands={
-            copy:()=>this.copySelectedShapes(), cut:()=>this.cutSelectedShapes(),
+            copy:()=>this.copySelectedShapes(argument?.closePolygon), cut:()=>this.cutSelectedShapes(argument?.closePolygon),
             paste:()=>this.pasteShapes(), undo:()=>this.undo(), redo:()=>this.redo(),
             save:()=>this.saveFile(), saveAs:()=>this.saveAs(), open:()=>this.openDrawingFile(),
             group:()=>this.groupSelectedShapes(), ungroup:()=>this.ungroupSelectedShapes(),
@@ -1263,6 +1276,7 @@ class DrawingController extends Controller {
     }
 
     nudgeSelection(direction, shift) {
+        if(this.pointEditor.active)return this.pointEditor.nudge(direction[0]*(shift?1:10),direction[1]*(shift?1:10));
         // Get all selected shapes
         const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
 
@@ -1317,6 +1331,7 @@ class DrawingController extends Controller {
     }
 
     selectToolShortcut(tool) {
+        this.pointEditor.clear();
         if(tool===Tools.TOOLS.FONT) {
             this.openFontPicker(Object.values(Tools.TOOLS).indexOf(tool)+1);return true;
         }
@@ -1366,6 +1381,7 @@ class DrawingController extends Controller {
     }
 
     deleteSelectionOrPoint() {
+        if(this.pointEditor.active)return this.pointEditor.copy(true,false,false);
         const currentToolForDelete = this.toolManager.getCurrentTool();
         // For multi-point tools while drawing, remove last point
         if ((currentToolForDelete === Tools.TOOLS.SPLINE || currentToolForDelete === Tools.TOOLS.BEZIER ||
@@ -1387,6 +1403,7 @@ class DrawingController extends Controller {
     }
 
     escapeToSelect() {
+        this.pointEditor.clear();
         const editing = this.textEdit;
         if (editing) this.commitTextEdit(true);
         const tool = this.toolManager.getCurrentTool();
@@ -1406,6 +1423,7 @@ class DrawingController extends Controller {
     }
 
     resetCanvasGesture() {
+        if(this.pointEditor){this.pointEditor.gesture=null;this.pointEditor.cutter=null;}
         if(this.rotatingShape)delete this.rotatingShape._rotationGuideLength;
         this.draggedPoint = this.draggedShapes = this.rotatingShape = this.panPosition = null;
         this._pointDragGeometry=null;
@@ -1841,7 +1859,8 @@ class DrawingController extends Controller {
         return children.length > 0;
     }
 
-    copySelectedShapes() {
+    copySelectedShapes(closePolygon=false) {
+        if(this.pointEditor.active)return this.pointEditor.copy(false,closePolygon);
         const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
         if (selectedShapes.length === 0) return;
         
@@ -1851,7 +1870,8 @@ class DrawingController extends Controller {
         this.pasteCount = 0;
     }
 
-    cutSelectedShapes() {
+    cutSelectedShapes(closePolygon=false) {
+        if(this.pointEditor.active)return this.pointEditor.copy(true,closePolygon);
         const selectedShapes = this.drawing.getShapes().filter(shape => shape.selected);
         if (selectedShapes.length === 0) return;
         
@@ -1869,6 +1889,7 @@ class DrawingController extends Controller {
     }
 
     pasteShapes() {
+        this.pointEditor.clear();
         if (!this.clipboard || this.clipboard.length === 0) return;
         
         // Save state for undo
@@ -1950,6 +1971,7 @@ class DrawingController extends Controller {
     }
 
     undo() {
+        this.pointEditor.clear();
         if (this.undoStack.length === 0) return;
         
         // Finalize any ongoing nudge sequence
@@ -1989,6 +2011,7 @@ class DrawingController extends Controller {
     }
 
     redo() {
+        this.pointEditor.clear();
         if (this.redoStack.length === 0) return;
         
         // Finalize any ongoing nudge sequence
@@ -2069,6 +2092,7 @@ class DrawingController extends Controller {
     }
 
     loadFile(filename) {
+        this.pointEditor.clear();
         this.commitTextEdit(true);
         try {
             const data = pdgDrawingImport.readDocument(filename);

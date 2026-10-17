@@ -392,6 +392,21 @@ if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,b=c.drawin
     return sprite.getPartCount()===3 && b.asset.getBoneDefinition('forearm').parent==='root' &&
         c.toolPaletteView.constructor && c.toolPaletteView.clickableParts.length===Object.keys(c.toolManager.constructor.TOOLS).length;
 })()`))throw Error('Bone rename or native rig round trip failed: '+await evalPage(`JSON.stringify({edit:__skrybbleTestApp.drawingController.textEdit?.shape.text,names:__skrybbleTestApp.drawingController.drawing.boneEditor.asset.getBoneNames(),parts:__skrybbleTestApp.drawingController.drawing.boneEditor.getSprite().getPartCount()})`));
+await key('v','KeyV',86);
+const ikTarget=JSON.parse(await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,area=c.port.getDrawingArea(),r=document.querySelector('canvas').getBoundingClientRect(),v=c.navigation.toView(new pdg.Point(100,200));return JSON.stringify({x:r.left+(v.x-area.left)*r.width/area.width(),y:r.top+(v.y-area.top)*r.height/area.height()});})()`));
+await call('Input.dispatchMouseEvent',{type:'mousePressed',...bonePoints.middle,button:'left',clickCount:1});
+await call('Input.dispatchMouseEvent',{type:'mouseMoved',...ikTarget,button:'left',buttons:1});
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,e=c.drawing.boneEditor,p=e.gesture?.preview;
+    return p && Math.abs(p[0].tip.x-100)<2 && Math.abs(p[0].tip.y-300)<2 &&
+        Math.abs(p[1].root.y-200)<2 && Math.abs(e.bones[0].tip.x-300)<2 &&
+        Math.abs(e.getShapesForDisplay()[0].getCenterPoint().x-85)<2;
+})()`))throw Error('Immediate-parent IK or artwork preview failed: '+await evalPage(`JSON.stringify({tool:__skrybbleTestApp.drawingController.toolManager.currentTool,preview:__skrybbleTestApp.drawingController.drawing.boneEditor.gesture?.preview,bones:__skrybbleTestApp.drawingController.drawing.boneEditor.bones,art:__skrybbleTestApp.drawingController.drawing.boneEditor.getShapesForDisplay()[0].getCenterPoint()})`));
+await shot();
+await call('Input.dispatchMouseEvent',{type:'mouseReleased',...ikTarget,button:'left',clickCount:1});
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,e=c.drawing.boneEditor;
+    return !e.gesture && Math.abs(e.bones[1].root.y-200)<2 && Math.abs(c.drawing.getShapes()[0].getCenterPoint().x-85)<2;
+})()`))throw Error('IK commit did not match preview');
+console.log('PASS: immediate-parent IK and attached artwork preview/commit');
 await shot();
 if(process.env.SKRYBBLE_BONES_SCREENSHOT)fs.writeFileSync(process.env.SKRYBBLE_BONES_SCREENSHOT,Buffer.from(await shot(),'base64'));
 console.log('PASS: Bone shortcut, midpoint child creation, artwork binding, inline naming and native rig round trip');

@@ -86,7 +86,7 @@ class DrawingSurfaceView extends View {
         port.setClipRect(pageClip);
         try {
             canvas.drawRect(page,new pdg.Attributes().fillColor(new pdg.Color('white')));
-            for (const shape of controller.getDrawing().getShapes()) shape.draw(canvas);
+            for (const shape of controller.getDrawing().boneEditor.getShapesForDisplay()) shape.draw(canvas);
             const current=controller.getToolManager().getCurrentShape();
             if (current) current.draw(canvas);
             this.selectionOverlay.draw(port,area,controller.navigation.camera,controlShapes,controller.pointEditor);

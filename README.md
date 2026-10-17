@@ -659,7 +659,12 @@ Save as **.skrbl** to preserve the native serialized `AnimationRig`, editable
 artwork, and Part bindings. Rig documents use `skrbl-v0.0.5`; drawings without
 bones retain v0.0.4. **.pdgdrawing** exports contain artwork only. Skeletons, bone
 names, and endpoint handles are editor overlays and are excluded from exports.
-Endpoint edits adjust the skeleton's bind pose while leaving artwork in place.
+Dragging a connected endpoint applies IK only to its immediate parent, keeping
+that parent's root fixed and preserving lengths and attachment positions. The
+parent's descendants and their artwork follow its rotation during the preview
+and after release; ancestors stay fixed. An unreachable target projects onto
+the attachment's reachable circle. Unconnected endpoints remain editable for
+changing bone lengths. Attached artwork follows endpoint edits without scaling.
 
 Bone authoring requires a PDG runtime containing `AnimationRig`; use
 `PDG_SOURCE=devel ./skrybble` or set `PDG_EXECUTABLE` to that development build.

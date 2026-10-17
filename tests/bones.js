@@ -50,6 +50,64 @@ test('grouping mixed bone artwork retains bindings, transforms and rename/delete
     d.boneEditor.deleteSelected(()=>{});assert.strictEqual(b.rigBone,undefined);
     assert.strictEqual(a.rigBone,'root');
 });
+test('connected root drag solves only immediate parent and previews artwork without mutation',()=>{
+    const d=new Drawing(),editor=d.boneEditor;
+    drag(editor,{x:20,y:100},{x:120,y:100});
+    drag(editor,{x:120,y:100},{x:220,y:100});
+    const art=new Shapes.Rectangle(215,95,10,10);art.selected=true;d.addShape(art);
+    drag(editor,{x:220,y:100},{x:270,y:100});
+    const ancestor=JSON.stringify(editor.bones[0]),original=JSON.stringify(d.serializeShape(art));
+    editor.begin({x:220,y:100},7,true);editor.move({x:120,y:300});
+    const preview=editor.gesture.preview;
+    assert.strictEqual(JSON.stringify(editor.bones[0]),ancestor);
+    near(preview[1].root.x,120);near(preview[1].root.y,100);
+    near(preview[1].tip.x,120);near(preview[1].tip.y,200);
+    near(preview[2].root.x,120);near(preview[2].root.y,200);
+    near(preview[2].tip.x,120);near(preview[2].tip.y,250);
+    const displayed=editor.getShapesForDisplay()[0];near(displayed.getCenterPoint().x,120);near(displayed.getCenterPoint().y,200);
+    assert.strictEqual(JSON.stringify(d.serializeShape(art)),original);
+    let undo=0;editor.finish(()=>undo++);assert.strictEqual(undo,1);
+    assert.strictEqual(JSON.stringify(editor.bones[0]),ancestor);
+    near(art.getCenterPoint().x,120);near(art.getCenterPoint().y,200);near(art.rotation,Math.PI/2);
+    near(editor.asset.getBoneDefinition('bone1').length,100);
+    near(editor.asset.getBoneDefinition('bone2').length,50);
+    const restored=new Drawing();restored.boneEditor.restore(editor.snapshot());
+    near(restored.boneEditor.bones[2].root.y,200);
+});
+test('mid-bone attachment, siblings, parent-tip selection, zero-radius and cancellation',()=>{
+    const d=new Drawing(),e=d.boneEditor;
+    drag(e,{x:100,y:100},{x:200,y:100});
+    drag(e,{x:150,y:100},{x:150,y:150});
+    drag(e,{x:175,y:100},{x:175,y:50});
+    drag(e,{x:150,y:100},{x:100,y:300},true);
+    near(e.bones[0].tip.x,100);near(e.bones[0].tip.y,200);
+    near(e.bones[1].root.x,100);near(e.bones[1].root.y,150);
+    near(e.bones[2].root.x,100);near(e.bones[2].root.y,175);
+    // The parent tip has no child endpoint on it, but still carries its attached children.
+    drag(e,{x:100,y:200},{x:0,y:100},true);
+    near(e.bones[0].tip.x,0);near(e.bones[1].root.x,50);
+    const before=JSON.stringify(e.bones);
+    e.begin({x:50,y:100},7,true);e.move({x:100,y:0});e.gesture=null;
+    assert.strictEqual(JSON.stringify(e.bones),before);
+    const z=new Drawing();drag(z.boneEditor,{x:20,y:20},{x:120,y:20});
+    drag(z.boneEditor,{x:20,y:20},{x:20,y:80});
+    const initial=JSON.stringify(z.boneEditor.bones);let undo=0;
+    z.boneEditor.begin({x:20,y:20},7,true);z.boneEditor.move({x:80,y:80});z.boneEditor.finish(()=>undo++);
+    assert.strictEqual(JSON.stringify(z.boneEditor.bones),initial);assert.strictEqual(undo,0);
+});
+test('IK keeps rotated mixed-binding group frames stable',()=>{
+    const d=new Drawing(),e=d.boneEditor;
+    const a=new Shapes.Rectangle(30,90,20,10),b=new Shapes.Rectangle(180,90,20,10);
+    d.addShape(a);d.addShape(b);a.selected=true;drag(e,{x:20,y:100},{x:120,y:100});
+    b.selected=true;drag(e,{x:120,y:100},{x:220,y:100});drag(e,{x:220,y:100},{x:270,y:100});
+    const group=d.groupShapes([a,b]);group.x=15;group.y=10;group.rotation=.4;
+    const center=rect=>({x:(rect.left+rect.right)/2,y:(rect.top+rect.bottom)/2});
+    const sprite=e.getSprite(),fixed=center(sprite.getPart(3).getContentBounds(1)),moving=center(sprite.getPart(4).getContentBounds(1));
+    drag(e,{x:220,y:100},{x:120,y:200},true);
+    const next=e.getSprite(),fixedAfter=center(next.getPart(3).getContentBounds(1)),movingAfter=center(next.getPart(4).getContentBounds(1));
+    near(fixedAfter.x,fixed.x);near(fixedAfter.y,fixed.y);
+    near(movingAfter.x,120-(moving.y-100));near(movingAfter.y,100+(moving.x-120));
+});
 test('tiny drag cancels without touching history or artwork',()=>{
     const d=new Drawing();let undo=0;
     d.boneEditor.begin({x:10,y:10},7);d.boneEditor.move({x:11,y:11});d.boneEditor.finish(()=>undo++);
@@ -89,6 +147,18 @@ try {
         c.drawing.boneEditor.selected='arm';c.beginBoneNameEdit();c.textEdit.shape.text='root';
         c.handleTextKey({unicode:13});assert.ok(c.textEdit);assert.ok(c.drawing.boneEditor.asset.getBoneNames().includes('arm'));
         c.handleTextKey({unicode:27});assert.strictEqual(c.textEdit,null);
+    });
+    test('IK artwork and skeleton undo and redo as one operation',()=>{
+        c.commitTextEdit(true);c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];
+        const art=new Shapes.Rectangle(195,95,10,10);c.drawing.addShape(art);art.selected=true;
+        const e=c.drawing.boneEditor;drag(e,{x:100,y:100},{x:200,y:100});
+        drag(e,{x:200,y:100},{x:250,y:100});
+        e.begin({x:200,y:100},7,true);e.move({x:100,y:200});e.finish(action=>c.saveUndoState(action));
+        near(art.getCenterPoint().x,100);near(art.getCenterPoint().y,200);
+        assert.strictEqual(c.undoStack.length,1);c.undo();
+        near(c.drawing.getShapes()[0].getCenterPoint().x,200);near(c.drawing.boneEditor.bones[1].root.x,200);
+        c.redo();near(c.drawing.getShapes()[0].getCenterPoint().y,200);near(c.drawing.boneEditor.bones[1].root.y,200);
+        c.backgroundView.drawSelf(surface,0);
     });
     test('Help stays last even when tools are appended',()=>{
         Tools.TOOLS.TEST='test';

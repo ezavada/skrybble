@@ -29,15 +29,85 @@ class BoneEditor {
         }
         return true;
     }
-    move(point) { if(this.gesture)this.gesture.point?this.gesture.point={...point}:this.gesture.tip={...point}; }
+    move(point) {
+        const g=this.gesture;if(!g)return;
+        if(g.edit) {
+            g.point={...point};g.preview=this.solveEndpoint(g.edit,point);
+            g.shapes=this.drawing.getShapes().map(shape=>{
+                const data=JSON.parse(JSON.stringify(this.drawing.serializeShape(shape)));
+                const copy=this.drawing.deserializeShape(data.type,data);copy.selected=shape.selected;return copy;
+            });
+            this.moveArtwork(g.shapes,this.bones,g.preview);
+        } else g.tip={...point};
+    }
+    solveEndpoint(hit,target) {
+        const bones=this.bones.map(b=>({...b,root:{...b.root},tip:{...b.tip}}));
+        const original=hit.bone,parent=this.bones.find(b=>b.name===original.parent);
+        const pivotBone=hit.end==='root' && parent ? parent : original;
+        const connected=!!parent && hit.end==='root' || hit.end==='tip' && this.bones.some(b=>b.parent===original.name);
+        if(connected) {
+            const pivot=pivotBone.root,endpoint=original[hit.end];
+            const dx=endpoint.x-pivot.x,dy=endpoint.y-pivot.y;
+            // Analytic one-bone IK: preserve the attachment radius and rotate
+            // only this parent. No ancestor chain is inferred or solved.
+            if(Math.hypot(dx,dy)<1e-8 || Math.hypot(target.x-pivot.x,target.y-pivot.y)<1e-8)return bones;
+            const angle=Math.atan2(target.y-pivot.y,target.x-pivot.x)-Math.atan2(dy,dx);
+            const c=Math.cos(angle),s=Math.sin(angle),moving=new Set([pivotBone.name]);
+            for(const b of bones) {
+                if(moving.has(b.parent))moving.add(b.name);
+                if(!moving.has(b.name))continue;
+                for(const end of ['root','tip']) {
+                    const x=b[end].x-pivot.x,y=b[end].y-pivot.y;
+                    b[end]={x:pivot.x+c*x-s*y,y:pivot.y+s*x+c*y};
+                }
+            }
+        } else {
+            const b=bones.find(b=>b.name===original.name),other=hit.end==='root'?'tip':'root';
+            if(Math.hypot(target.x-b[other].x,target.y-b[other].y)>=3)b[hit.end]={...target};
+        }
+        return bones;
+    }
+    moveArtwork(shapes,before,after) {
+        const angle=b=>Math.atan2(b.tip.y-b.root.y,b.tip.x-b.root.x);
+        // Group frames contain only rigid transforms. Convert the bone's world
+        // movement into each bound editor element's parent frame before baking it.
+        const visit=(shape,frame)=>{
+            const old=before.find(b=>b.name===shape.rigBone),next=after.find(b=>b.name===shape.rigBone);
+            if(old && next) {
+                const turn=angle(next)-angle(old),c=Math.cos(turn),s=Math.sin(turn);
+                const center=shape.getCenterPoint(),fc=Math.cos(frame.angle),fs=Math.sin(frame.angle);
+                const wx=frame.x+fc*center.x-fs*center.y,wy=frame.y+fs*center.x+fc*center.y;
+                const x=next.root.x+c*(wx-old.root.x)-s*(wy-old.root.y)-frame.x;
+                const y=next.root.y+s*(wx-old.root.x)+c*(wy-old.root.y)-frame.y;
+                this.drawing.moveShape(shape,fc*x+fs*y-center.x,-fs*x+fc*y-center.y);
+                shape.rotation=(shape.rotation || 0)+turn;
+            } else if(shape.children) {
+                const center=shape.getCenterPoint(),a=shape.rotation || 0,c=Math.cos(a),s=Math.sin(a);
+                const x=center.x+c*(shape.x-center.x)-s*(shape.y-center.y);
+                const y=center.y+s*(shape.x-center.x)+c*(shape.y-center.y);
+                const fc=Math.cos(frame.angle),fs=Math.sin(frame.angle);
+                const childFrame={x:frame.x+fc*x-fs*y,y:frame.y+fs*x+fc*y,angle:frame.angle+a};
+                for(const child of shape.children)visit(child,childFrame);
+                // Child edits change a Group's bounds center. Compensate its
+                // translation so that its rotation frame stays fixed.
+                const nextCenter=shape.getCenterPoint();
+                const shiftX=x-(nextCenter.x+c*(shape.x-nextCenter.x)-s*(shape.y-nextCenter.y));
+                const shiftY=y-(nextCenter.y+s*(shape.x-nextCenter.x)+c*(shape.y-nextCenter.y));
+                shape.x+=shiftX;shape.y+=shiftY;
+            }
+        };
+        for(const shape of shapes)visit(shape,{x:0,y:0,angle:0});
+    }
+    getShapesForDisplay() {return this.gesture?.shapes || this.drawing.getShapes();}
     finish(saveUndo) {
         const g=this.gesture;if(!g)return false;
         this.gesture=null;
         if(g.edit) {
-            if(Math.hypot(g.point.x-g.edit.bone[g.edit.end].x,g.point.y-g.edit.bone[g.edit.end].y)<.001)return true;
-            const other=g.edit.end==='root'?'tip':'root';
-            if(Math.hypot(g.point.x-g.edit.bone[other].x,g.point.y-g.edit.bone[other].y)<3)return true;
-            saveUndo('edit bone');g.edit.bone[g.edit.end]={...g.point};
+            const preview=g.preview || this.solveEndpoint(g.edit,g.point);
+            if(!preview.some((bone,i)=>['root','tip'].some(end=>Math.hypot(bone[end].x-this.bones[i][end].x,bone[end].y-this.bones[i][end].y)>.001)))return true;
+            saveUndo('edit bone');
+            this.moveArtwork(this.drawing.getShapes(),this.bones,preview);
+            this.bones=preview;
         } else {
             if(Math.hypot(g.tip.x-g.root.x,g.tip.y-g.root.y)<3)return true;
             saveUndo('add bone');
@@ -153,8 +223,7 @@ class BoneEditor {
         if(!this.bones.length && !this.gesture)return;
         const port=canvas.controls || canvas,attrs=new pdg.Attributes().lineColor(new pdg.Color('#b45309')).lineThickness(2);
         const draw=(bone,selected)=> {
-            const g=this.gesture,root=g?.edit?.bone===bone && g.edit.end==='root'?g.point:bone.root;
-            const tip=g?.edit?.bone===bone && g.edit.end==='tip'?g.point:bone.tip;
+            const root=bone.root,tip=bone.tip;
             attrs.lineColor(new pdg.Color(selected?'#2563eb':'#b45309'));
             const dx=tip.x-root.x,dy=tip.y-root.y,len=Math.hypot(dx,dy)||1;
             const side={x:root.x+dx*.22-dy/len*4,y:root.y+dy*.22+dx/len*4};
@@ -163,7 +232,7 @@ class BoneEditor {
             port.drawLine(new pdg.Point(side),new pdg.Point(tip),attrs);
             port.drawCircle(new pdg.Point(root),4,attrs);port.drawCircle(new pdg.Point(tip),3,attrs);
         };
-        for(const bone of this.bones) {
+        for(const bone of this.gesture?.preview || this.bones) {
             draw(bone,bone.name===this.selected);
             canvas.drawText(bone.name,new pdg.Point(bone.root.x+8,bone.root.y-8),
                 new pdg.Attributes().textSize(12).fillColor(new pdg.Color('#92400e')));

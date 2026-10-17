@@ -9,6 +9,7 @@
 const View = require('./index').View;
 const {cameraPort} = require('./rendering');
 const selectionReadout = require('./selection-readout');
+const SelectionOverlay = require('./SelectionOverlay');
 
 // -----------------------------------------------
 // Drawing Surface View
@@ -21,6 +22,7 @@ class DrawingSurfaceView extends View {
         super(controller, rect, binding);
         this.selectionAppearance = new pdg.AnimatedAttributes().lineColor(new pdg.Color('blue')).lineThickness(1);
         this.notificationAppearance = new pdg.AnimatedAttributes();
+        this.selectionOverlay=new SelectionOverlay();
         // MVC View.animate advances this manual Scene, including standalone styles.
         this._animationScene = new pdg.Scene();
         this._animationScene.setManual(true);
@@ -59,6 +61,7 @@ class DrawingSurfaceView extends View {
         return changed;
     }
     destroy() {
+        this.selectionOverlay.destroy();
         if (this._animationScene) {
             this.selectionAppearance.cancelSchedule();
             this.notificationAppearance.cancelSchedule();
@@ -74,7 +77,8 @@ class DrawingSurfaceView extends View {
         const area=this.getViewArea(), controller=this.controller;
         controller.navigation.setViewport(area);
         port.drawRect(area,new pdg.Attributes().fillColor(new pdg.Color('#d8dce2')));
-        const canvas=cameraPort(port,controller.navigation.camera);
+        const canvas=cameraPort(port,controller.navigation.camera),controlShapes=[];
+        canvas.drawShapeControls=shape=>controlShapes.push(shape);
         const page=new pdg.Rect(0,0,controller.navigation.width,controller.navigation.height);
         const savedClip=port.getClipRect();
         const a=controller.navigation.toView({x:0,y:0}), b=controller.navigation.toView({x:controller.navigation.width,y:controller.navigation.height});
@@ -85,7 +89,8 @@ class DrawingSurfaceView extends View {
             for (const shape of controller.getDrawing().getShapes()) shape.draw(canvas);
             const current=controller.getToolManager().getCurrentShape();
             if (current) current.draw(canvas);
-            controller.pointEditor.draw(canvas);
+            this.selectionOverlay.draw(port,area,controller.navigation.camera,controlShapes,controller.pointEditor);
+            controller.pointEditor.draw(canvas,true);
             controller.getDrawing().boneEditor.draw(canvas);
             if (controller.textEdit && controller.textEdit.isNew) controller.textEdit.shape.draw(canvas);
             if (controller.textEdit) controller.textEdit.editor.drawOverlay(canvas);

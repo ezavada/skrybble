@@ -879,7 +879,7 @@ test('selection readout shows intrinsic dimensions, line length and circle radiu
     const readout=require('../selection-readout');
     assert.strictEqual(readout([]),'');
     const line=new Shape.Line(1,2,4,6);line.rotation=1;
-    assert.strictEqual(readout([line]),'Line · length 5 px');
+    assert.strictEqual(readout([line]),'Line · 2pts · length 5 px');
     assert.strictEqual(readout([new Shape.Circle(20,20,12.25)]),'Circle · radius 12.3 px');
     const rect=new Shape.Rectangle(40,50,80,30);rect.rotation=Math.PI/4;
     assert.strictEqual(readout([rect]),'Rectangle · W 80 × H 30 px');
@@ -921,6 +921,30 @@ test('line drags use actual document dimensions on tall, wide and smaller canvas
             const line=c.drawing.getShapes().at(-1);near(line.x2,width);near(line.y2,height);
         }
     }
+}));
+
+test('path readouts count vertices and curve anchors without tangent handles',()=> {
+    const readout=require('../selection-readout');
+    const polygon=new Shape.Polygon([{x:0,y:0},{x:38,y:0},{x:38,y:23}]);
+    assert.strictEqual(readout([polygon]),'Polygon · 3pts · W 38 × H 23 px');
+    const points=[{x:0,y:0},{x:10,y:10},{x:20,y:0}];
+    assert.ok(readout([new Shape.Spline([points[0],...points,points.at(-1)])]).startsWith('Spline · 3pts ·'));
+    assert.ok(readout([new Shape.BezierSpline(points)]).startsWith('Bezier spline · 3pts ·'));
+});
+test('selection overlay reuses idle handles and refreshes their pixels after edits, navigation and point selection',()=>withInputController(c=> {
+    const shape=new Shape.Polygon([{x:400,y:300},{x:550,y:300},{x:550,y:450}]);
+    shape.selected=true;c.drawing.addShape(shape);
+    let draws=0;const draw=shape.drawEndpoints;shape.drawEndpoints=function(port){draws++;return draw.call(this,port);};
+    const frame=()=>c.backgroundView.drawSelf(c.port,0);
+    frame();assert.strictEqual(draws,1);frame();assert.strictEqual(draws,1);
+    const point=c.navigation.toView(shape.points[0]),image=new pdg.Image(c.port,pdg.CopyPixels);
+    const pixel=image.getPixel(Math.round(point.x),Math.round(point.y));assert.ok(pixel.red>.8 && pixel.green<.2);
+    shape.points[0].x+=40;frame();assert.strictEqual(draws,2);
+    const after=new pdg.Image(c.port,pdg.CopyPixels).getPixel(Math.round(point.x),Math.round(point.y));
+    assert.ok(after.green>.2 || after.red<.8);
+    c.navigation.zoomAt(1.25,new pdg.Point(450,350));frame();assert.strictEqual(draws,3);
+    c.pointEditor.active=true;c.pointEditor.selection.set(shape,new Set(['a:0']));frame();assert.strictEqual(draws,4);
+    frame();assert.strictEqual(draws,4);
 }));
 
 controller.destroy();pdg.gfx.closeGraphicsPort(surface);

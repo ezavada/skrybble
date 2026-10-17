@@ -22,6 +22,7 @@ class Shape {
         if (port.drawRetained) port.drawRetained(artwork);
         else port.drawDrawing(artwork,new pdg.Point(0,0),new pdg.Attributes());
         if (!this._editing && (this.selected || (this.underConstruction && !this.freehand))) {
+            if(port.drawShapeControls){port.drawShapeControls(this);return;}
             const controls=port.controls || port;
             if (this.drawEndpoints) this.drawEndpoints(controls);
             if (this.drawControlPoints) this.drawControlPoints(controls);

@@ -128,13 +128,18 @@ class PointEditor {
         }
         this.selection.clear();this.active=false;
     }
-    draw(canvas){
+    drawHighlights(controls){
         this.prune();
-        const controls=canvas.controls;
-        for(const path of this.paths())for(const ref of this.points(path)) {
-            if(this.selection.get(path.shape)?.has(ref.key))controls.drawCircle(ref.point,5,
-                new pdg.Attributes().fillColor(new pdg.Color('#2563eb')).lineColor(new pdg.Color('white')).lineThickness(1));
+        for(const [shape,keys] of this.selection){
+            if(!keys.size)continue;
+            const path=Geometry.pathGeometry(shape);if(!path)continue;
+            const attrs=new pdg.Attributes().fillColor(new pdg.Color('#2563eb')).lineColor(new pdg.Color('white')).lineThickness(1);
+            for(const ref of this.points(path))if(keys.has(ref.key))controls.drawCircle(ref.point,5,attrs);
         }
+    }
+    draw(canvas,skipHighlights=false){
+        const controls=canvas.controls;
+        if(!skipHighlights)this.drawHighlights(controls);
         if(this.gesture?.marquee){
             const {start,end}=this.gesture;
             canvas.drawRect(new pdg.Rect(Math.min(start.x,end.x),Math.min(start.y,end.y),Math.max(start.x,end.x),Math.max(start.y,end.y)),

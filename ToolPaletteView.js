@@ -31,8 +31,6 @@ class ToolPaletteView extends View {
         const line=new pdg.Attributes().lineColor(new pdg.Color('#334155')).lineThickness(2);
         const point=(x,y)=>new pdg.Point(x,y);
         const segment=(x,y,a,b,attrs=line)=>drawing.addLine(point(x,y),point(a,b),attrs);
-        const label=value=>drawing.addText(value,new pdg.Rect(5,9,45,43),
-            new pdg.Attributes().textSize(26).textStyle(pdg.textStyle_Centered).fillColor(new pdg.Color('#334155')));
         switch(tool) {
             case Tools.TOOLS.SELECT:
                 segment(15,10,15,37);segment(15,10,35,29);segment(15,37,23,29);segment(23,29,35,29);break;
@@ -85,7 +83,14 @@ class ToolPaletteView extends View {
                 [1,2,3.5,5].forEach((n,i)=>segment(12,13+i*8,38,13+i*8,new pdg.Attributes().lineColor(new pdg.Color('#334155')).lineThickness(n)));break;
             case Tools.TOOLS.SMOOTHNESS:
                 for(let x=10;x<40;x+=2) segment(x,25+5*Math.sin(x*.4),x+2,25+5*Math.sin((x+2)*.4));break;
-            case Tools.TOOLS.HELP:label('?');break;
+            case Tools.TOOLS.HELP: {
+                const hook=new pdg.Spline(pdg.spline_CubicBezier);
+                hook.addSegment(point(16,18),point(16,7),point(36,7),point(36,18));
+                hook.addSegment(point(36,18),point(36,25),point(25,25),point(25,32));
+                drawing.addSpline(hook,line);
+                drawing.addEllipse(point(25,39),1.8,1.8,new pdg.Attributes().fillColor(new pdg.Color('#334155')));
+                break;
+            }
         }
         const surface=pdg.gfx.createOffscreenPort(new pdg.Rect(100,100));
         if (!surface) throw new Error('Cannot create toolbar rendering surface');

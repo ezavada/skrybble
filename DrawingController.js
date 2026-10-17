@@ -399,7 +399,9 @@ class DrawingController extends Controller {
         const before=this.inputState || {};
         this.inputState=state;
         this.spaceHeld=state.pan;
-        this.updateCursor({shift:state.shift,alt:state.alt,ctrl:state.control});
+        if(before.pan!==state.pan || before.shift!==state.shift || before.alt!==state.alt ||
+            before.control!==state.control || before.meta!==state.meta || state.cancelled)
+            this.updateCursor({shift:state.shift,alt:state.alt,ctrl:state.control});
         if (state.cancelled) {
             this.resetCanvasGesture();
             return;
@@ -1550,7 +1552,7 @@ class DrawingController extends Controller {
     }
 
     activateImageTool(filename = null) {
-        const selectedFilename = filename || chooseImageFile();
+        const selectedFilename = filename || this.chooseFileWithVisibleCursor(chooseImageFile);
         if (selectedFilename && typeof selectedFilename.then === 'function') {
             selectedFilename.then(selected => {
                 if (selected) this.activateImageTool(selected);
@@ -2101,8 +2103,22 @@ class DrawingController extends Controller {
         this.currentFilename = filename;
     }
 
+    chooseFileWithVisibleCursor(choose) {
+        this.cursors.suspend();
+        const restore=()=>{
+            this.cursors.resume();
+            this.updateCursor({mousePos:pdg.gfx.getMouse()});
+        };
+        let result;
+        try {result=choose();}
+        catch(error){restore();throw error;}
+        if(result && typeof result.then==='function')return Promise.resolve(result).finally(restore);
+        restore();
+        return result;
+    }
+
     openDrawingFile(filename = null) {
-        const selectedFilename = filename || chooseDrawingFile();
+        const selectedFilename = filename || this.chooseFileWithVisibleCursor(chooseDrawingFile);
         if (selectedFilename && typeof selectedFilename.then === 'function') {
             selectedFilename.then(selected => {
                 if (selected) this.openDrawingFile(selected);
@@ -2175,7 +2191,7 @@ class DrawingController extends Controller {
     saveAs(filename = null) {
         const suggested=this.drawing.boneEditor.asset ? path.basename(this.currentFilename || 'drawing.skrbl').replace(/\.pdgdrawing$/i,'.skrbl')
             : path.basename(this.currentFilename || 'drawing.skrbl').replace(/\.skrbl$/i,'.pdgdrawing');
-        const selected=filename || chooseSaveDrawingFile(suggested);
+        const selected=filename || this.chooseFileWithVisibleCursor(()=>chooseSaveDrawingFile(suggested));
         if (selected && typeof selected.then === 'function') {
             selected.then(name => { if (name) this.saveAs(name); }).catch(error => this.showSaveMessage(`Save failed: ${error.message}`));
             return true;

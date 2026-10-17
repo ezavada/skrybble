@@ -12,11 +12,13 @@ module.exports=function selectionReadout(shapes) {
             right:Math.max(...bounds.map(b=>b.right)),bottom:Math.max(...bounds.map(b=>b.bottom))})}`;
     }
     const shape=shapes[0],type=shape.constructor.name;
-    if(type==='Line')return `Line · length ${number(Math.hypot(shape.x2-shape.x,shape.y2-shape.y))} px`;
+    if(type==='Line')return `Line · 2pts · length ${number(Math.hypot(shape.x2-shape.x,shape.y2-shape.y))} px`;
     if(type==='Circle')return `Circle · radius ${number(shape.radius)} px`;
     // Borrow geometry without changing the live shape or its retained artwork.
     const unrotated=Object.create(shape);
     unrotated.rotation=0;
     const label=shape.isQuad?'Quadrilateral':({BezierSpline:'Bezier spline',NativeDrawing:'Drawing'}[type] || type);
-    return `${label} · ${dimensions(getShapeBounds(unrotated))}`;
+    const count=type==='Spline'?Math.max(0,shape.points.length-2)
+        :['Polygon','BezierSpline'].includes(type)?shape.points.length:null;
+    return `${label} · ${count===null?'':`${count}pts · `}${dimensions(getShapeBounds(unrotated))}`;
 };

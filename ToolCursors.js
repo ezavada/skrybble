@@ -1,8 +1,8 @@
 // Native cursors use PDG images; browsers use their standard system cursors.
 class ToolCursors {
-    constructor(port) {this.port=port;this.images=new Map();this.current='default';}
-    set(kind) {
-        if(kind===this.current)return;
+    constructor(port) {this.port=port;this.images=new Map();this.current='default';this.suspended=0;}
+    set(kind,force=false) {
+        if(this.suspended || (!force && kind===this.current))return;
         if(globalThis.skrybbleWeb?.setCanvasCursor)globalThis.skrybbleWeb.setCanvasCursor(kind);
         else if(kind==='default')this.port.resetCursor();
         else {
@@ -10,6 +10,14 @@ class ToolCursors {
             const cursor=this.images.get(kind);this.port.setCursor(cursor.image,cursor.hotspot);
         }
         this.current=kind;
+    }
+    suspend() {
+        if(!this.suspended)this.set('default',true);
+        this.suspended++;
+    }
+    resume() {
+        if(this.suspended)this.suspended--;
+        if(!this.suspended)this.current=null; // Reapply even if the tool is unchanged.
     }
     create(kind) {
         if(kind==='grab' || kind==='grabbing')return this.createHand(kind==='grabbing');

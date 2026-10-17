@@ -303,6 +303,36 @@ test('Escape dismisses success and error messages, and replacement messages rest
     assert.strictEqual(controller.getSaveMessage(),null);assert.ok(controller.textEdit);
     controller.commitTextEdit(true);
 });
+test('polygon transparency survives slider preview, accept, reopen, cancel, undo, clipboard and drawing formats',()=>withInputController(c=> {
+    const Tools=require('../tools'),Colors=require('../colors'),importer=require('../pdg-drawing-import');
+    const shape=new Shape.Polygon([{x:100,y:100},{x:240,y:100},{x:240,y:240},{x:100,y:240}],'red','blue',2);
+    shape.selected=true;c.drawing.addShape(shape);
+    c.openColorPicker(Tools.TOOLS.FILL_COLOR);let picker=c.colorPickerController;
+    picker.alphaSlider.onValueChanged(.5);assert.strictEqual(shape.fillColor,'#ff000080');
+    picker.drawViews(c.port,0); // Includes the alpha knob and color label.
+    picker.accept();assert.strictEqual(shape.fillColor,'#ff000080');assert.ok(c.recentColors.includes('#ff000080'));
+    const port=pdg.gfx.createOffscreenPort(new pdg.Rect(300,300));
+    try {
+        const pixel=()=>{port.clear();port.drawRect(new pdg.Rect(300,300),new pdg.Attributes().fillColor('blue'));
+            shape.selected=false;shape.draw(port);shape.selected=true;return new pdg.Image(port).getPixel(170,170);};
+        const half=pixel();near(half.red,128/255);near(half.blue,127/255);
+        c.openColorPicker(Tools.TOOLS.FILL_COLOR);picker=c.colorPickerController;near(picker.currentColor.a,128/255);
+        picker.alphaSlider.onValueChanged(0);near(pixel().blue,1);picker.cancel();assert.strictEqual(shape.fillColor,'#ff000080');
+        c.copySelectedShapes();c.pasteShapes();assert.strictEqual(c.drawing.getShapes().at(-1).fillColor,'#ff000080');
+        c.undo();c.undo();assert.strictEqual(c.drawing.getShapes()[0].fillColor,'red');
+        c.redo();assert.strictEqual(c.drawing.getShapes()[0].fillColor,'#ff000080');
+        for(const [fillColor,strokeColor] of [['#ff000080','#0000ff40'],['#00000000','#00000000']]) {
+            const original=new Shape.Polygon(shape.points,fillColor,strokeColor,2);
+            const data=c.drawing.serializeShape(original),restored=c.drawing.deserializeShape(data.type,JSON.parse(JSON.stringify(data)));
+            assert.strictEqual(restored.fillColor,fillColor);assert.strictEqual(restored.strokeColor,strokeColor);
+            const bytes=importer.exportBinary([original]),document=importer.fromBinary(bytes);
+            assert.strictEqual(document.shapes[0].type,'Polygon');assert.strictEqual(document.shapes[0].data.fillColor,fillColor);
+            assert.strictEqual(document.shapes[0].data.strokeColor,strokeColor);
+            const native=importer.decodeNative(bytes).getElement(0).getAttributes();
+            near(native.getFillColor().alpha,Colors.toColor(fillColor).alpha);near(native.getLineColor().alpha,Colors.toColor(strokeColor).alpha);
+        }
+    } finally {pdg.gfx.closeGraphicsPort(port);}
+}));
 test('notifications use natural-size text, red errors, green success and wrapped long messages',()=> {
     const view=controller.backgroundView,port=pdg.gfx.createOffscreenPort(new pdg.Rect(600,300));
     try {

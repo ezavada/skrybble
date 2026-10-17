@@ -1,3 +1,4 @@
+const {toColor}=require('./colors');
 const View = require('./index').View;
 const Tools = require('./tools');
 
@@ -77,8 +78,8 @@ class ToolPaletteView extends View {
                     segment(x,y,a,b);segment(x,y,c,d);
                 }break;
             case Tools.TOOLS.FILL_COLOR:
-                drawing.addRect(new pdg.Rect(12,12,38,38),new pdg.Attributes().fillColor(new pdg.Color(color)).lineColor(new pdg.Color('#334155')).lineThickness(1));break;
-            case Tools.TOOLS.LINE_COLOR: segment(10,25,40,25,new pdg.Attributes().lineColor(new pdg.Color(color)).lineThickness(4));break;
+                drawing.addRect(new pdg.Rect(12,12,38,38),new pdg.Attributes().fillColor(toColor(color)).lineColor(new pdg.Color('#334155')).lineThickness(1));break;
+            case Tools.TOOLS.LINE_COLOR: segment(10,25,40,25,new pdg.Attributes().lineColor(toColor(color)).lineThickness(4));break;
             case Tools.TOOLS.LINE_WIDTH:
                 [1,2,3.5,5].forEach((n,i)=>segment(12,13+i*8,38,13+i*8,new pdg.Attributes().lineColor(new pdg.Color('#334155')).lineThickness(n)));break;
             case Tools.TOOLS.SMOOTHNESS:

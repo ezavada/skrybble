@@ -1,3 +1,4 @@
+const {toColor}=require('./colors');
 // Base Shape class and all shape implementations
 
 const fs = require('fs');
@@ -213,7 +214,7 @@ class Line extends Shape {
         }
         
         port.drawLine(new pdg.Point(p1.x, p1.y), new pdg.Point(p2.x, p2.y), 
-            new pdg.Attributes().lineColor(new pdg.Color(this.strokeColor)).lineThickness(this.strokeWidth));
+            new pdg.Attributes().lineColor(toColor(this.strokeColor)).lineThickness(this.strokeWidth));
 
         if (this.selected) {
             this.drawEndpoints(port);
@@ -367,11 +368,11 @@ class Circle extends Shape {
         const center = new pdg.Point(this.x, this.y);
         const attrs = new pdg.Attributes();
         
-        attrs.lineColor(new pdg.Color(this.strokeColor))
+        attrs.lineColor(toColor(this.strokeColor))
              .lineThickness(this.strokeWidth)
              .lineStyle(pdg.lineStyle_Solid);
         if (this.fillColor) {
-            attrs.fillColor(new pdg.Color(this.fillColor));
+            attrs.fillColor(toColor(this.fillColor));
         }
         port.drawCircle(center, this.radius, attrs);
 
@@ -447,11 +448,11 @@ class Rectangle extends Shape {
     drawArtwork(port) {
         const attrs = new pdg.Attributes();
         
-        attrs.lineColor(new pdg.Color(this.strokeColor))
+        attrs.lineColor(toColor(this.strokeColor))
              .lineThickness(this.strokeWidth)
              .lineStyle(pdg.lineStyle_Solid);
         if (this.fillColor) {
-            attrs.fillColor(new pdg.Color(this.fillColor));
+            attrs.fillColor(toColor(this.fillColor));
         }
         
         // If rotation is applied, draw as a rotated polygon
@@ -624,11 +625,11 @@ class Spline extends Shape {
         
         // Draw the spline
         const attrs = new pdg.Attributes();
-        attrs.lineColor(new pdg.Color(this.strokeColor))
+        attrs.lineColor(toColor(this.strokeColor))
              .lineThickness(this.strokeWidth)
              .lineStyle(pdg.lineStyle_Solid);
         if (this.fillColor) {
-            attrs.fillColor(new pdg.Color(this.fillColor));
+            attrs.fillColor(toColor(this.fillColor));
         }
         port.drawSpline(spline, attrs);
 
@@ -961,7 +962,7 @@ class BezierSpline extends Shape {
             // Splines draw strokes only. Keep a separate retained fill element
             // even when transparent so style edits retain the element layout.
             port.drawPolygon(new pdg.Polygon(vertices.map(p=>new pdg.Point(p))),new pdg.Attributes()
-                .fillColor(this.fillColor || 'white').fillOpacity(this.fillColor?1:0).lineStyle(pdg.lineStyle_None));
+                .fillColor(toColor(this.fillColor || 'white')).fillOpacity(this.fillColor?1:0).lineStyle(pdg.lineStyle_None));
         }
         for (let i = 0; i < this.points.length - 1; i++) {
             let p1 = this.points[i];
@@ -986,11 +987,11 @@ class BezierSpline extends Shape {
         
         // Draw the spline
         const attrs = new pdg.Attributes();
-        if(this.strokeColor && this.strokeWidth>0)attrs.lineColor(new pdg.Color(this.strokeColor))
+        if(this.strokeColor && this.strokeWidth>0)attrs.lineColor(toColor(this.strokeColor))
              .lineThickness(this.strokeWidth).lineStyle(pdg.lineStyle_Solid);
         else attrs.lineStyle(pdg.lineStyle_None);
         if (this.fillColor) {
-            attrs.fillColor(new pdg.Color(this.fillColor));
+            attrs.fillColor(toColor(this.fillColor));
         }
         port.drawSpline(spline, attrs);
 
@@ -1228,11 +1229,11 @@ class Oval extends Shape {
         const center = new pdg.Point(this.x, this.y);
         const attrs = new pdg.Attributes();
         
-        attrs.lineColor(new pdg.Color(this.strokeColor))
+        attrs.lineColor(toColor(this.strokeColor))
              .lineThickness(this.strokeWidth)
              .lineStyle(pdg.lineStyle_Solid);
         if (this.fillColor) {
-            attrs.fillColor(new pdg.Color(this.fillColor));
+            attrs.fillColor(toColor(this.fillColor));
         }
         port.drawEllipse(center, this.radiusX, this.radiusY, attrs);
 
@@ -1371,11 +1372,11 @@ class Polygon extends Shape {
         // Draw the polygon
         const attrs = new pdg.Attributes();
         if (this.strokeColor && this.strokeWidth > 0) {
-            attrs.lineColor(new pdg.Color(this.strokeColor))
+            attrs.lineColor(toColor(this.strokeColor))
                 .lineThickness(this.strokeWidth).lineStyle(pdg.lineStyle_Solid);
         } else attrs.lineStyle(pdg.lineStyle_None);
         if (this.fillColor) {
-            attrs.fillColor(new pdg.Color(this.fillColor));
+            attrs.fillColor(toColor(this.fillColor));
         }
         port.drawPolygon(polygon, attrs);
 
@@ -1768,7 +1769,7 @@ class Text extends Shape {
     drawArtwork(port) {
         this.layout();
         port.drawText(this.text,this.textRect(),new pdg.Attributes().font(this.getFont())
-            .textStyle(this.textStyle).textSize(this.fontSize).fillColor(new pdg.Color(this.fillColor)));
+            .textStyle(this.textStyle).textSize(this.fontSize).fillColor(toColor(this.fillColor)));
     }
     getArtwork(strokeScale = 1) {
         this.layout();

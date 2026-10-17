@@ -399,6 +399,28 @@ if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawin
     return c.drawing.getShapeCount()===1 && s.constructor.name==='BezierSpline' && s.points.length<61 && s.fillColor==='red';})()`))throw Error('Ctrl+J without selected points did not replace the whole path');
 console.log('PASS: Ctrl+J selected-point curve fitting and undo');
 
+const alphaPoint=JSON.parse(await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses();
+    c.pointEditor.clear();c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];c.navigation.setCanvas(600,400);
+    c.drawing.addShape(new S.Rectangle(100,80,400,220,'blue',null,0));
+    const poly=new S.Polygon([{x:200,y:100},{x:350,y:100},{x:350,y:250},{x:200,y:250}],'red',null,0);
+    poly.selected=true;c.drawing.addShape(poly);c.openColorPicker('fillcolor');
+    const slider=c.colorPickerController.alphaSlider.getViewArea(),area=c.port.getDrawingArea(),r=document.querySelector('canvas').getBoundingClientRect();
+    return JSON.stringify({x:r.left+(slider.centerPoint().x-area.left)*r.width/area.width(),
+        y:r.top+(slider.centerPoint().y-area.top)*r.height/area.height()});})()`));
+await clickAt(alphaPoint);
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,color=c.drawing.getShapes()[1].fillColor;
+    window.polygonAlpha=typeof color==='string' && color.length===9?parseInt(color.slice(7),16)/255:1;
+    return Math.abs(window.polygonAlpha-.5)<.01;})()`))throw Error('Alpha slider discarded polygon transparency: '+await evalPage('JSON.stringify({color:__skrybbleTestApp.drawingController.drawing.getShapes()[1].fillColor,current:__skrybbleTestApp.drawingController.colorPickerController?.currentColor})'));
+await key('\r','Enter',13);await shot();
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,port=pdg.gfx.createOffscreenPort(c.port.getDrawingArea());
+    try {c.backgroundView.drawSelf(port,0);const v=c.navigation.toView(new pdg.Point(270,170)),pixel=new pdg.Image(port).getPixel(Math.round(v.x),Math.round(v.y));
+        return !c.colorPickerController && Math.abs(pixel.red-window.polygonAlpha)<.02 && Math.abs(pixel.blue-(1-window.polygonAlpha))<.02;
+    } finally {pdg.gfx.closeGraphicsPort(port);}})()`))throw Error('Polygon transparency was not rendered after accepting picker');
+await evalPage('__skrybbleTestApp.drawingController.openColorPicker("fillcolor");true');
+if(!await evalPage('Math.abs(__skrybbleTestApp.drawingController.colorPickerController.currentColor.a-window.polygonAlpha)<.001'))throw Error('Reopened alpha picker lost polygon transparency');
+await evalPage('__skrybbleTestApp.drawingController.colorPickerController.cancel();true');
+console.log('PASS: alpha slider, translucent polygon rendering, accept, reopen and cancel');
+
 
 // Bone authoring uses real pointer and keyboard input in the browser runtime.
 const bonePoints=JSON.parse(await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses();

@@ -8,6 +8,7 @@
 
 const Controller = require('./index').Controller;
 const SliderView = require('./SliderView');
+const Colors = require('./colors');
 
 class ColorPickerController extends Controller {
     constructor(parentController, initialColor, colorType, targetShape, onAccept, onCancel, recentColors = []) {
@@ -28,6 +29,7 @@ class ColorPickerController extends Controller {
         // Now assign the actual instance properties
         this.parentController = parentController; // Explicitly save parent controller reference
         this.initialColor = ColorPickerController._tempInitialColor;
+        this.initialColorValue = initialColor;
         this.currentColor = ColorPickerController._tempCurrentColor;
         this.colorType = colorType;
         this.targetShape = targetShape;
@@ -55,7 +57,7 @@ class ColorPickerController extends Controller {
         
         try {
             // Use PDG's built-in color parsing
-            const pdgColor = new pdg.Color(colorStr);
+            const pdgColor = Colors.toColor(colorStr);
             
             return {
                 r: pdgColor.red || 0,
@@ -77,7 +79,7 @@ class ColorPickerController extends Controller {
         
         try {
             // Use PDG's built-in color parsing
-            const pdgColor = new pdg.Color(colorStr);
+            const pdgColor = Colors.toColor(colorStr);
             
             const result = {
                 r: pdgColor.red || 0,
@@ -94,10 +96,7 @@ class ColorPickerController extends Controller {
     }
 
     colorToHex() {
-        const r = Math.round(this.currentColor.r * 255).toString(16).padStart(2, '0');
-        const g = Math.round(this.currentColor.g * 255).toString(16).padStart(2, '0');
-        const b = Math.round(this.currentColor.b * 255).toString(16).padStart(2, '0');
-        return `#${r}${g}${b}`;
+        return Colors.toHex(this.currentColor);
     }
 
     colorToString() {
@@ -306,7 +305,7 @@ class ColorPickerController extends Controller {
 
     cancel() {
         // Restore original color to target shape or default colors
-        const originalColor = this.colorToHexFromObj(this.initialColor);
+        const originalColor = this.initialColorValue;
         
         if (this.targetShape) {
             if (this.colorType === 'fill') {
@@ -332,10 +331,7 @@ class ColorPickerController extends Controller {
     }
 
     static colorToHexFromObj(colorObj) {
-        const r = Math.round(colorObj.r * 255).toString(16).padStart(2, '0');
-        const g = Math.round(colorObj.g * 255).toString(16).padStart(2, '0');
-        const b = Math.round(colorObj.b * 255).toString(16).padStart(2, '0');
-        return `#${r}${g}${b}`;
+        return Colors.toHex(colorObj);
     }
     
     colorToHexFromObj(colorObj) {

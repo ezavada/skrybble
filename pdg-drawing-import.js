@@ -3,6 +3,7 @@
 // local pose converter. Binary decoding is independent of native bindings so
 // the same files work in desktop PDG and the browser's uploaded-file filesystem.
 const fs = require('fs');
+const Colors = require('./colors');
 const LAYERS = ['light', 'midtone', 'shadow', 'ink'];
 const LIMIT = 1000000;
 
@@ -77,8 +78,7 @@ class Reader {
     color() {
         const alpha = this.flag() ? this.byte() : 255;
         const rgb = [this.byte(),this.byte(),this.byte()];
-        if (alpha !== 0 && alpha !== 255) throw new Error('Translucent PDG polygon colors are not supported');
-        return alpha ? '#' + rgb.map(n => n.toString(16).padStart(2,'0')).join('') : null;
+        return Colors.toHex({r:rgb[0]/255,g:rgb[1]/255,b:rgb[2]/255,a:alpha/255});
     }
 }
 
@@ -188,13 +188,18 @@ class Writer {
         this.flag(isInt(x));this.flag(isInt(y));
         for (const n of point) isInt(n) ? this.uint(n) : this.float(n);
     }
-    color(rgb) { this.flag(false);for (const byte of rgb) this.byte(byte); }
+    color(rgb) {
+        const alpha=rgb.length===4?rgb[3]:255;
+        this.flag(alpha!==255);if(alpha!==255)this.byte(alpha);
+        for(const byte of rgb.slice(0,3))this.byte(byte);
+    }
 }
 
 function colorBytes(value) {
-    const color = new pdg.Color(value);
-    if (color.alpha !== 1) throw new Error('Use .skrbl for translucent polygon colors');
-    return [color.red,color.green,color.blue].map(n => Math.round(n*255));
+    const color = Colors.toColor(value);
+    const bytes=[color.red,color.green,color.blue].map(n => Math.round(n*255));
+    if(color.alpha!==1)bytes.push(Math.round(color.alpha*255));
+    return bytes;
 }
 function exportPolygonBinary(shapes) {
     const polygons = [];
@@ -223,7 +228,7 @@ function exportPolygonBinary(shapes) {
     const body=new Writer();body.byte(5);body.uint(polygons.length);
     for (const item of polygons) {
         body.byte(6);body.flag(true);
-        const changedStroke=item.stroke && item.stroke.some(n=>n!==0);
+        const changedStroke=item.stroke && (item.stroke.length===4 || item.stroke.some(n=>n!==0));
         body.flag(changedStroke);if (changedStroke) body.color(item.stroke);
         body.flag(Boolean(item.fill));if (item.fill) body.color(item.fill);
         for (let i=0;i<5;++i) body.flag(false);

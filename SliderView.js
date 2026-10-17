@@ -7,6 +7,7 @@
 // -----------------------------------------------
 
 const View = require('./index').View;
+const {toColor}=require('./colors');
 
 class SliderView extends View {
     constructor(controller, rect, label, value, color, gradient) {
@@ -103,7 +104,7 @@ class SliderView extends View {
         
         // Draw knob (circle with current color)
         const knobFillAttrs = new pdg.Attributes()
-            .fillColor(new pdg.Color(this.color));
+            .fillColor(toColor(this.color));
         port.drawCircle(new pdg.Point(knobX, knobY), knobRadius, knobFillAttrs);
         
         // Draw knob border (white or black based on contrast)

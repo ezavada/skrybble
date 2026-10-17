@@ -1678,7 +1678,11 @@ class DrawingController extends Controller {
     onColorPickerAccept(finalColor) {
         // Only save undo state if a shape was modified
         if (this.colorPickerInitialState && this.colorPickerInitialState.shape) {
-            this.saveUndoState('change color');
+            const {shape,colorType,initialColor}=this.colorPickerInitialState;
+            const key=colorType==='fill'?'fillColor':'strokeColor',preview=shape[key];
+            shape[key]=initialColor;
+            try {this.saveUndoState('change color');}
+            finally {shape[key]=preview;}
         }
         
         // Add to recent colors

@@ -50,19 +50,21 @@ test('page-edge zoom preserves focus through repeated zoom, viewport sync and li
         assert.strictEqual(nav.contains({x:1025,y:512}),false);
     }
 });
-test('all zoom inputs prioritize selected bounds, then cursor, then viewport center',()=> {
+test('zoom outside selected bounds focuses selection, then falls back to cursor and viewport center',()=> {
     const getMouse=pdg.gfx.getMouse;
     const original=controller.drawing;
     try {
         controller.drawing=new Drawing();
-        const a=new Shape.Rectangle(50,100,80,40),b=new Shape.Rectangle(900,850,100,60);
+        const a=new Shape.Rectangle(300,300,80,40),b=new Shape.Rectangle(600,600,100,60);
         a.selected=b.selected=true;
         controller.drawing.addShape(a);controller.drawing.addShape(b);
-        const focus={x:525,y:505},cursor=new pdg.Point(200,200);
+        const focus={x:500,y:480},cursor=new pdg.Point(200,200);
         pdg.gfx.getMouse=()=>cursor;
+        controller.navigation.setViewport(controller.backgroundView.getViewArea());
         controller.navigation.reset();
         for(const zoom of [()=>controller.doScrollWheel({ctrl:true,vertDelta:-2,mousePos:cursor}),
             ()=>pressShortcut(controller,{unicode:122}),()=>pressShortcut(controller,{unicode:90,shift:true})]) {
+            controller.navigation.reset();
             const before=controller.navigation.toView(focus);zoom();
             const after=controller.navigation.toView(focus);near(after.x,before.x);near(after.y,before.y);
         }
@@ -73,6 +75,50 @@ test('all zoom inputs prioritize selected bounds, then cursor, then viewport cen
         const center=controller.backgroundView.getViewArea().centerPoint();
         const anchor=controller.navigationAnchor(new pdg.Point(0,0));near(anchor.x,center.x);near(anchor.y,center.y);
     } finally {controller.drawing=original;pdg.gfx.getMouse=getMouse;controller.navigation.reset();}
+});
+test('magnifier always anchors the clicked point outside selected bounds, including zoom out',()=> {
+    const original=controller.drawing,tool=controller.toolManager.getCurrentTool();
+    try {
+        controller.drawing=new Drawing();
+        const shape=new Shape.Rectangle(500,500,100,100);shape.selected=true;controller.drawing.addShape(shape);
+        controller.toolManager.setTool('zoom');
+        for(const flags of [{},{shift:true},{alt:true},{ctrl:true},{rightButton:true,buttonNumber:1}]) {
+            controller.navigation.setViewport(controller.backgroundView.getViewArea());controller.navigation.reset();
+            const point=new pdg.Point(200,200),world=controller.navigation.toWorld(point);
+            controller.onMouseDown({mousePos:point,...flags});controller.onMouseUp({mousePos:point,...flags});
+            const after=controller.navigation.toView(world);near(after.x,point.x);near(after.y,point.y);
+            near(controller.navigation.camera.getZoom(),Object.keys(flags).length ? .8 : 1.25);
+        }
+    } finally {
+        controller.drawing=original;controller.toolManager.setTool(tool);controller.navigation.reset();
+        controller.updateCursor({shift:false,alt:false,ctrl:false,rightButton:false});
+    }
+});
+test('wheel, magnifier and keyboard zoom follow the cursor inside single and combined selection bounds',()=> {
+    const getMouse=pdg.gfx.getMouse,original=controller.drawing;
+    const tool=controller.toolManager.getCurrentTool();
+    try {
+        for(const multiple of [false,true]) {
+            controller.drawing=new Drawing();
+            const a=new Shape.Rectangle(300,300,300,300);a.rotation=.3;a.selected=true;
+            controller.drawing.addShape(a);
+            if(multiple){const b=new Shape.Rectangle(650,400,50,50);b.selected=true;controller.drawing.addShape(b);}
+            for(const zoom of [point=>controller.doScrollWheel({vertDelta:-2,mousePos:point}),
+                point=>{controller.toolManager.setTool('zoom');controller.handleMouseDown({mousePos:point});controller.handleMouseUp({mousePos:point});},
+                ()=>pressShortcut(controller,{unicode:122}),()=>pressShortcut(controller,{unicode:90,shift:true})]) {
+                controller.navigation.reset();controller.navigation.pan(20,-15);
+                // For multiple selections this point is in the gap between objects.
+                const focus=multiple?{x:625,y:450}:{x:400,y:420};
+                const cursor=controller.navigation.toView(focus);pdg.gfx.getMouse=()=>cursor;
+                assert.ok(controller.backgroundView.pointInViewArea(cursor));
+                zoom(cursor);const after=controller.navigation.toView(focus);
+                near(after.x,cursor.x);near(after.y,cursor.y);
+            }
+        }
+    } finally {
+        controller.drawing=original;pdg.gfx.getMouse=getMouse;
+        controller.toolManager.setTool(tool);controller.navigation.reset();
+    }
 });
 test('camera drawing restores reusable attributes, including when rendering throws',()=> {
     const nav=new CanvasNavigation();nav.setViewport(new pdg.Rect(900,700));

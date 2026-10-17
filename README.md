@@ -34,10 +34,11 @@ undo/redo, draw-order control, and persistent `.skrbl` documents.
 - New documents use a **1024 × 1024** logical canvas; imported PDG drawings retain their canvas dimensions. 100% zoom is 1:1.
 - Use the **Pan tool** (`H`) or hold **Space** while dragging to pan.
 - Scroll the mouse wheel/trackpad to zoom in and out; no modifier is required.
-- The **Magnifier tool** (beside Pan) zooms in on click; **Right-click** or **Shift/Option/Control-click** zooms out.
-- **Z** zooms in; **Shift+Z** zooms out. Zoom keeps the selection center at its
-  current screen position; without a selection, it keeps the point under the cursor
-  fixed (or the viewport center when the cursor is outside the drawing area).
+- The **Magnifier tool** (beside Pan) zooms in on click; **Right-click** or **Shift/Option/Control-click** zooms out. It always focuses the clicked point, regardless of selection.
+- **Z** zooms in; **Shift+Z** zooms out. Zoom keeps the point under the cursor
+  fixed when it is inside the selected objects' combined bounds. Outside those
+  bounds, zoom focuses the selection center. Without a selection, zoom follows
+  the cursor (or the viewport center when the cursor is outside the drawing area).
 - **Ctrl/Cmd + 0** resets to 100% and centers the canvas.
 - Zoom ranges from **25% to 800%**. You can pan across the gray workspace
   even when the whole page fits. The camera can move beyond a page edge to preserve

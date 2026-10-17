@@ -440,14 +440,18 @@ class DrawingController extends Controller {
 
     navigationAnchor(point = pdg.gfx.getMouse()) {
         this.navigation.setViewport(this.backgroundView.getViewArea());
-        // Galactica's priority: selection, cursor in the canvas, viewport center.
-        // Use the combined world bounds so groups and multiple selections agree.
+        // Within the selection bounds, keep the point under the cursor fixed.
+        // Otherwise focus the combined selection, then the canvas cursor/center.
         const selected=this.drawing.getShapes().filter(shape=>shape.selected);
         if(selected.length) {
             const bounds=selected.map(require('./shapes').getShapeBounds);
+            const left=Math.min(...bounds.map(b=>b.left)),right=Math.max(...bounds.map(b=>b.right));
+            const top=Math.min(...bounds.map(b=>b.top)),bottom=Math.max(...bounds.map(b=>b.bottom));
+            const world=this.navigation.toWorld(point);
+            if(this.backgroundView.pointInViewArea(point) &&
+                world.x>=left && world.x<=right && world.y>=top && world.y<=bottom)return point;
             return this.navigation.toView(new pdg.Point(
-                (Math.min(...bounds.map(b=>b.left))+Math.max(...bounds.map(b=>b.right)))/2,
-                (Math.min(...bounds.map(b=>b.top))+Math.max(...bounds.map(b=>b.bottom)))/2));
+                (left+right)/2,(top+bottom)/2));
         }
         return this.backgroundView.pointInViewArea(point) ? point
             : this.backgroundView.getViewArea().centerPoint();
@@ -536,7 +540,8 @@ class DrawingController extends Controller {
         const currentTool = this.toolManager.getCurrentTool();
         if (currentTool===Tools.TOOLS.ZOOM && !this.spaceHeld) {
             this.commitTextEdit();
-            this.navigation.zoomAt(this.zoomOut(event) ? 1/1.25 : 1.25,this.navigationAnchor(event.mousePos));
+            this.navigation.setViewport(this.backgroundView.getViewArea());
+            this.navigation.zoomAt(this.zoomOut(event) ? 1/1.25 : 1.25,event.mousePos);
             return true;
         }
         if (this.spaceHeld || currentTool === Tools.TOOLS.PAN) {
@@ -763,7 +768,8 @@ class DrawingController extends Controller {
 
     handleMouseRightClick(event) {
         if(this.toolManager.getCurrentTool()===Tools.TOOLS.ZOOM) {
-            this.navigation.zoomAt(1/1.25,this.navigationAnchor(event.mousePos));return true;
+            this.navigation.setViewport(this.backgroundView.getViewArea());
+            this.navigation.zoomAt(1/1.25,event.mousePos);return true;
         }
         const pos = this.getMousePosition(event);
         const currentTool = this.toolManager.getCurrentTool();

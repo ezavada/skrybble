@@ -185,34 +185,81 @@ test('fitting disconnected rotated curve runs preserves intervening segments, st
     c.undo();assert.deepStrictEqual(c.drawing.serializeShape(c.drawing.getShapes()[0]),original);
     c.redo();assert.deepStrictEqual(c.drawing.serializeShape(c.drawing.getShapes()[0]),serialized);
 }));
-test('polygon fitting preserves closure, fill and unselected edges, including a run over the closing edge',()=>withController(c=>{
+test('whole-polygon fitting preserves closure and fill',()=>withController(c=>{
     const points=[{x:100,y:100},{x:180,y:90},{x:250,y:120},{x:280,y:200},{x:220,y:250},{x:130,y:240}];
-    for(const ids of [[0,1,2,3,4,5],[4,5,0,1]]) {
+    for(const ids of [[0,1,2,3,4,5]]) {
         c.drawing.clearShapes();c.pointEditor.clear();const shape=new Shapes.Polygon(points.map(p=>({...p})),'red','blue',3);
-        select(c,shape,ids.map(i=>'a:'+i));const before=Geometry.pathGeometry(shape);
+        select(c,shape,ids.map(i=>'a:'+i));
         assert.ok(c.pointEditor.fitCurve());const result=c.drawing.getShapes()[0];
         assert.deepStrictEqual(result.points[0],result.points.at(-1));assert.strictEqual(result.fillColor,'red');
         assert.ok(result.contains(190,170));
-        if(ids.length<6)for(const i of [1,2,3]) {
-            const segment=Geometry.pathGeometry(result).segments.find(s=>s.p0.x===before.segments[i].p0.x && s.p0.y===before.segments[i].p0.y);
-            assert.ok(segment);sameSegment(segment,before.segments[i]);
-        }
         const surface=pdg.gfx.createOffscreenPort(new pdg.Rect(400,350));
         try {result.selected=false;result.draw(surface);const image=new pdg.Image(surface);assert.ok(image.getPixel(190,170).red>.9);}
         finally {pdg.gfx.closeGraphicsPort(surface);}
     }
 }));
-test('Cmd/Ctrl+J fits selected anchors, while isolated and tangent-only selections leave geometry and undo unchanged',()=>withController(c=>{
+test('Cmd/Ctrl+J fits point runs and falls back to the whole path without a selected run',()=>withController(c=>{
     const shape=bezier();select(c,shape,['c:0','a:1']);const before=c.drawing.serializeShape(shape),undo=c.undoStack.length;
-    assert.strictEqual(c.pointEditor.fitCurve(),false);assert.deepStrictEqual(c.drawing.serializeShape(shape),before);
-    assert.strictEqual(c.undoStack.length,undo);
+    assert.ok(c.pointEditor.fitCurve());assert.strictEqual(c.undoStack.length,undo+1);
+    c.undo();assert.deepStrictEqual(c.drawing.serializeShape(c.drawing.getShapes()[0]),before);
     for(const [modifier,mask] of [['MetaLeft',8],['ControlLeft',2]]) {
-        const current=c.drawing.getShapes()[0];c.pointEditor.selection.set(current,new Set(['a:0','a:1','a:2']));
+        const current=c.drawing.getShapes()[0];current.selected=true;c.pointEditor.active=true;
+        c.pointEditor.selection.set(current,new Set(['a:0','a:1','a:2']));
         const input=pdg.getInputManager();
         for(const [code,down,modifiers] of [[modifier,true,mask],['KeyJ',true,mask],['KeyJ',false,mask],[modifier,false,0]]) {
             input.feed({kind:'key',code,down,modifiers});if(down)c.doKeyDown({keyCode:code});else c.doKeyUp({keyCode:code});
         }
         assert.notStrictEqual(c.drawing.getShapes()[0],current);
     }
+}));
+test('without a selected run, all selected paths are replaced, including isolated or tangent-only point selections',()=>withController(c=>{
+    for(const mode of ['objects','isolated','tangent']) {
+        c.drawing.clearShapes();c.pointEditor.clear();
+        const a=polygon(),b=bezier();a.selected=b.selected=true;c.drawing.addShape(a);c.drawing.addShape(b);
+        if(mode!=='objects'){c.pointEditor.active=true;c.pointEditor.selection.set(b,new Set([mode==='isolated'?'a:1':'c:0']));}
+        const before=c.drawing.getShapes().map(s=>c.drawing.serializeShape(s)),undo=c.undoStack.length;
+        assert.ok(c.pointEditor.fitCurve());assert.strictEqual(c.undoStack.length,undo+1);
+        const shapes=c.drawing.getShapes();assert.strictEqual(shapes.length,2);
+        assert.ok(shapes.every(s=>s instanceof Shapes.BezierSpline));assert.ok(!shapes.includes(a) && !shapes.includes(b));
+        assert.deepStrictEqual(shapes[0].points[0],shapes[0].points.at(-1));assert.strictEqual(shapes[0].fillColor,'red');
+        c.undo();assert.deepStrictEqual(c.drawing.getShapes().map(s=>c.drawing.serializeShape(s)),before);
+    }
+}));
+test('a partial polygon run is removed and patched while its fitted curve becomes a separate object in place',()=>withController(c=>{
+    const points=[{x:100,y:100},{x:180,y:90},{x:250,y:120},{x:280,y:200},{x:220,y:250},{x:130,y:240}];
+    const shape=new Shapes.Polygon(points,'red','blue',3);shape.rotation=.3;
+    select(c,shape,['a:5','a:0','a:1']);const original=c.drawing.serializeShape(shape),world=Geometry.pathGeometry(shape);
+    const other=polygon();other.selected=true;c.drawing.addShape(other);
+    const clipboard=[{preserved:true}];c.clipboard=clipboard;const undo=c.undoStack.length;
+    assert.ok(c.pointEditor.fitCurve());const [patched,curve,untouched]=c.drawing.getShapes();
+    assert.ok(patched instanceof Shapes.Polygon);assert.strictEqual(patched.points.length,3);
+    assert.deepStrictEqual(patched.points,[2,3,4].map(i=>world.anchors[i]));assert.strictEqual(patched.fillColor,'red');
+    assert.ok(curve instanceof Shapes.BezierSpline);assert.strictEqual(curve.fillColor,null);
+    assert.strictEqual(curve.strokeColor,'blue');assert.strictEqual(curve.strokeWidth,3);
+    assert.deepStrictEqual(curve.points[0],world.anchors[5]);assert.deepStrictEqual(curve.points.at(-1),world.anchors[1]);
+    assert.strictEqual(untouched,other);assert.ok(curve.selected && !patched.selected);
+    assert.strictEqual(c.clipboard,clipboard);assert.strictEqual(c.undoStack.length,undo+1);
+    const after=c.drawing.getShapes().map(s=>c.drawing.serializeShape(s));
+    c.undo();assert.deepStrictEqual(c.drawing.serializeShape(c.drawing.getShapes()[0]),original);
+    c.redo();assert.deepStrictEqual(c.drawing.getShapes().map(s=>c.drawing.serializeShape(s)),after);
+}));
+test('disconnected polygon runs become independent curves and remove only their anchors',()=>withController(c=>{
+    const shape=new Shapes.Polygon(Array.from({length:9},(_,i)=>({x:200+80*Math.cos(i*2*Math.PI/9),y:200+80*Math.sin(i*2*Math.PI/9)})),'red','blue',3);
+    select(c,shape,['a:0','a:1','a:3','a:4','a:7']); // Isolated anchor 7 must survive.
+    assert.ok(c.pointEditor.fitCurve());const [patched,...curves]=c.drawing.getShapes();
+    assert.deepStrictEqual(patched.points,[2,5,6,7,8].map(i=>shape.points[i]));assert.strictEqual(curves.length,2);
+    assert.ok(curves.every(s=>s instanceof Shapes.BezierSpline && !s.fillColor));
+}));
+test('partial freehand runs detach, and sources with too few survivors are removed',()=>withController(c=>{
+    const anchors=Array.from({length:6},(_,i)=>({x:100+i*30,y:150+20*Math.sin(i)}));
+    const shape=new Shapes.Spline([anchors[0],...anchors,anchors.at(-1)],null,'blue',2);
+    select(c,shape,['a:2','a:3']);const original=Geometry.pathGeometry(shape);
+    assert.ok(c.pointEditor.fitCurve());const [patched,curve]=c.drawing.getShapes();
+    assert.strictEqual(patched.points.length,4);assert.deepStrictEqual(curve.points[0],anchors[2]);
+    assert.deepStrictEqual(curve.points.at(-1),anchors[3]);
+    sameSegment(Geometry.pathGeometry(patched).segments[0],original.segments[0]);
+    c.drawing.clearShapes();c.pointEditor.clear();const poly=polygon();select(c,poly,['a:0','a:1','a:2']);
+    assert.ok(c.pointEditor.fitCurve());assert.strictEqual(c.drawing.getShapeCount(),1);
+    assert.ok(c.drawing.getShapes()[0] instanceof Shapes.BezierSpline);assert.strictEqual(c.drawing.getShapes()[0].fillColor,null);
 }));
 console.log(`${passed} passed, ${failed} failed`);process.exit(failed?1:0);

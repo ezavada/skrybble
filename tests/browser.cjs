@@ -229,7 +229,11 @@ const escape=async()=> {
 };
 await key('t','KeyT',84);await click(600,600);
 if(!await evalPage('document.querySelector("canvas").style.cursor==="text"'))throw Error('Text tool did not use I-beam cursor');await key('X','KeyX',88);
-await evalPage('__skrybbleTestApp.drawingController.showSaveMessage("Saved"); true');
+await evalPage('__skrybbleTestApp.drawingController.showErrorMessage("Open failed: unable to read drawing"); true');
+const errorBanner=await shot();
+if(process.env.SKRYBBLE_ERROR_SCREENSHOT)fs.writeFileSync(process.env.SKRYBBLE_ERROR_SCREENSHOT,Buffer.from(errorBanner,'base64'));
+if(!await evalPage(`(()=>{const v=__skrybbleTestApp.drawingController.backgroundView,color=v._notificationStyles[0].getFillColor();
+    return color.red>color.green*2 && v._notificationStyles[1].getTextSize()===18;})()`))throw Error('Error notification did not use red and natural-size text');
 await escape();
 if(!await evalPage('!__skrybbleTestApp.drawingController.saveMessage && !!__skrybbleTestApp.drawingController.textEdit'))throw Error('Escape did not dismiss notification before text editing');
 await escape();
@@ -381,6 +385,18 @@ if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawin
         s.points[0].x===s.points.at(-1).x && s.points[0].y===s.points.at(-1).y && c.pointEditor.count()>0;})()`))throw Error('Ctrl+J did not fit selected points into a closed curve');
 await shot();await ctrlCommand('Z');
 if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapes()[0].constructor.name==="Polygon"'))throw Error('Curve fitting undo did not restore polygon');
+await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];
+    s.selected=true;c.pointEditor.active=true;c.pointEditor.selection.set(s,new Set([0,1,2,3,4,5].map(i=>'a:'+i)));return true;})()`);
+await ctrlCommand('J');
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,[poly,curve]=c.drawing.getShapes();
+    return c.drawing.getShapeCount()===2 && poly.constructor.name==='Polygon' && poly.points.length===55 && !poly.selected &&
+        curve.constructor.name==='BezierSpline' && curve.fillColor===null && curve.points[0].x===150 && curve.points.at(-1).x===165;})()`))throw Error('Ctrl+J did not detach fitted points and patch their polygon');
+await ctrlCommand('Z');
+await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;c.pointEditor.clear();
+    c.drawing.getShapes()[0].selected=true;return true;})()`);
+await ctrlCommand('J');
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];
+    return c.drawing.getShapeCount()===1 && s.constructor.name==='BezierSpline' && s.points.length<61 && s.fillColor==='red';})()`))throw Error('Ctrl+J without selected points did not replace the whole path');
 console.log('PASS: Ctrl+J selected-point curve fitting and undo');
 
 

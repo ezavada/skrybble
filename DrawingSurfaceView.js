@@ -45,9 +45,10 @@ class DrawingSurfaceView extends View {
         a.playScript('skrybble-selection-pulse');
     }
     stopSelectionPulse() { this.selectionAppearance.cancelSchedule(); }
-    showNotification(message) {
+    showNotification(message, kind = 'success') {
         this._notificationMessage=message;
-        this._notificationDrawing=null;
+        this._notificationKind=kind;
+        this._notificationLayout=null;
         const a=this.notificationAppearance;
         a.cancelSchedule().fillOpacity(1).lineOpacity(1);
         a.wait(5).changeFillOpacity(0,.5).changeLineOpacity(0,.5);
@@ -55,7 +56,7 @@ class DrawingSurfaceView extends View {
     dismissNotification() {
         this.notificationAppearance.cancelSchedule().fillOpacity(0).lineOpacity(0);
         this._notificationMessage=null;
-        this._notificationDrawing=null;
+        this._notificationLayout=null;
         this.controller.saveMessage=null;
     }
     animate(seconds) {
@@ -111,22 +112,7 @@ class DrawingSurfaceView extends View {
         } finally { port.setClipRect(savedClip); }
         // Retain static overlay geometry until the layout changes.
         const layout=[area.left,area.top,area.right,area.bottom].join(',');
-        if (this._notificationMessage) {
-            if (!this._notificationDrawing || this._notificationLayout!==layout) {
-                this._notificationDrawing=pdg.createDrawing();
-                const x=area.left+area.width()/2, y=area.top+area.height()/2;
-                const w=port.getTextWidth(this._notificationMessage,18)+40;
-                const rect=new pdg.Rect(x-w/2,y-30,x+w/2,y+30);
-                const bg=new pdg.AnimatedAttributes().fillColor(new pdg.Color(.2,.6,.2,.9)).roundedCorners(10);
-                const label=new pdg.AnimatedAttributes().textSize(18).textStyle(pdg.textStyle_Centered).fillColor(new pdg.Color('white'));
-                this._notificationStyles=[bg,label];
-                this._notificationDrawing.addRect(rect,bg).setLiveAttributes(bg);
-                this._notificationDrawing.addText(this._notificationMessage,rect,label).setLiveAttributes(label);
-                this._notificationLayout=layout;
-            }
-            for (const attrs of this._notificationStyles) attrs.fillOpacity(this.notificationAppearance.getFillOpacity());
-            port.drawDrawing(this._notificationDrawing,new pdg.Point(0,0),new pdg.Attributes());
-        }
+        if (this._notificationMessage) this.drawNotification(port,area,layout);
         const selected=controller.textEdit ? [controller.textEdit.shape]
             : controller.getDrawing().getShapes().filter(shape=>shape.selected);
         const readout=controller.pointEditor.active?`${selectionReadout(selected)} · ${controller.pointEditor.count()} points selected`:selectionReadout(selected);
@@ -134,6 +120,35 @@ class DrawingSurfaceView extends View {
             new pdg.Attributes().textSize(12).fillColor(new pdg.Color('#475569')));
         port.drawText(controller.textEdit ? (controller.textEdit.boneName?'Bone name · Enter to accept · Esc to cancel':'Type text · Enter to accept · Esc to cancel') : `${Math.round(controller.navigation.camera.getZoom()*100)}% · ${controller.navigation.width} × ${controller.navigation.height}`,
             new pdg.Point(area.left+8,area.bottom-8),new pdg.Attributes().textSize(12).fillColor(new pdg.Color('#475569')));
+    }
+
+    drawNotification(port,area,layout) {
+        if(this._notificationLayout!==layout) {
+            const maxWidth=Math.max(1,area.width()-64),lines=[];
+            let line='';
+            for(const paragraph of this._notificationMessage.split('\n')) {
+                for(const word of paragraph.split(/\s+/)) {
+                    if(line && port.getTextWidth(line+' '+word,18)>maxWidth){lines.push(line);line='';}
+                    for(const char of (line?' ':'')+word) {
+                        if(line && port.getTextWidth(line+char,18)>maxWidth){lines.push(line);line='';}
+                        line+=char;
+                    }
+                }
+                lines.push(line);line='';
+            }
+            const width=Math.max(...lines.map(text=>port.getTextWidth(text,18)))+40;
+            const height=lines.length*24+24,x=area.left+area.width()/2,y=area.top+area.height()/2;
+            this._notificationRect=new pdg.Rect(x-width/2,y-height/2,x+width/2,y+height/2);
+            this._notificationLines=lines.map((text,i)=>({text,point:new pdg.Point(x-port.getTextWidth(text,18)/2,y-height/2+30+i*24)}));
+            this._notificationStyles=[new pdg.Attributes().fillColor(this._notificationKind==='error'?'#b91c1c':'#287a35').roundedCorners(10),
+                new pdg.Attributes().font(port.getCurrentFont()).textSize(18).fillColor('white')];
+            this._notificationLayout=layout;
+        }
+        for(const attrs of this._notificationStyles)attrs.fillOpacity(this.notificationAppearance.getFillOpacity());
+        port.drawRect(this._notificationRect,this._notificationStyles[0]);
+        // Point-positioned text keeps the font's natural proportions. A retained
+        // text element fitted to the banner rectangle stretched the glyphs.
+        for(const {text,point} of this._notificationLines)port.drawText(text,point,this._notificationStyles[1]);
     }
 
     drawHelp(port, area) {
@@ -185,7 +200,7 @@ class DrawingSurfaceView extends View {
             { key: 'Normal Click', description: 'Return to whole-object selection' },
             { key: 'Point Copy/Cut', description: '2+ adjacent anchors; handles follow' },
             { key: 'Opt+Ctrl+C/X', description: 'Close polygon fragments (3+ anchors)' },
-            { key: 'Ctrl+J', description: 'Fit selected points at current smoothness' },
+            { key: 'Ctrl+J', description: 'Fit point runs, or all path points' },
             { key: 'Bone Drag', description: 'Start on any bone to create a child' },
             { key: 'Bone Endpoints', description: 'Select tool: drag to edit' },
             { key: 'Bone Name', description: 'Enter / double-click to rename' },

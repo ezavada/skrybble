@@ -103,6 +103,19 @@ function fitSelected(path,selected,tolerance) {
     shape.fillColor=path.shape.fillColor;
     return {shape,keys};
 }
+function fitFragments(path,selected,tolerance) {
+    const included=new Set(path.segments.filter(s=>selected.has('a:'+s.start)&&selected.has('a:'+s.end)).map(s=>s.index));
+    const fragments=[],removed=new Set();
+    for(const run of segmentRuns(path,included)) {
+        const fitted=require('./curve-fit')([run[0].p0,...run.map(s=>s.p3)],tolerance);
+        if(!fitted.length)continue;
+        const shape=curveFragment(path.shape,fitted);
+        if(path.closed && run.length===path.segments.length)shape.fillColor=path.shape.fillColor;
+        fragments.push(shape);
+        for(const segment of run){removed.add(segment.start);removed.add(segment.end);}
+    }
+    return {fragments,removed};
+}
 function distance(p,a,b) {
     const dx=b.x-a.x,dy=b.y-a.y,len=dx*dx+dy*dy;
     const t=len?Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/len)):0;
@@ -121,4 +134,4 @@ function crosses(a,b,c,d) {
         Math.abs(r)<epsilon && distance(a,c,d)<epsilon || Math.abs(s)<epsilon && distance(b,c,d)<epsilon)return true;
     return (p>0)!==(q>0) && (r>0)!==(s>0);
 }
-module.exports={supported,pathGeometry,segmentRuns,curveFragment,copiedFragments,reconnect,fitSelected,distance,flatten,crosses};
+module.exports={supported,pathGeometry,segmentRuns,curveFragment,copiedFragments,reconnect,fitSelected,fitFragments,distance,flatten,crosses};

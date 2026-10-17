@@ -503,7 +503,7 @@ class DrawingController extends Controller {
             const edit=this.textEdit;
             if(!cancel) {
                 try {this.drawing.boneEditor.rename(edit.boneName,edit.shape.text,action=>this.saveUndoState(action));}
-                catch(error) {this.showSaveMessage(error.message);return;}
+                catch(error) {this.showErrorMessage(error.message);return;}
             }
             edit.editor.setFocus(false);this.textEdit=null;this.textSelecting=false;this.shortcuts?.syncMode();return;
         }
@@ -572,7 +572,7 @@ class DrawingController extends Controller {
         const bones=this.drawing.boneEditor;
         if(currentTool===Tools.TOOLS.BONE || (currentTool===Tools.TOOLS.SELECT && bones.hit(pos,7/this.navigation.camera.getZoom(),true))) {
             try { bones.begin(pos,7/this.navigation.camera.getZoom(),currentTool===Tools.TOOLS.SELECT,!!event.shift || !!this.inputState?.shift); }
-            catch(error) { this.showSaveMessage(error.message); }
+            catch(error) { this.showErrorMessage(error.message); }
             return true;
         }
         bones.selected=null;
@@ -1569,7 +1569,7 @@ class DrawingController extends Controller {
                 if (selected) this.activateImageTool(selected);
             }).catch(error => {
                 console.error('Failed to choose image:', error);
-                this.showSaveMessage(`Failed to choose image: ${error.message}`);
+                this.showErrorMessage(`Failed to choose image: ${error.message}`);
             });
             return true;
         }
@@ -1594,7 +1594,7 @@ class DrawingController extends Controller {
                 return true;
             } catch (error) {
                 console.error('Failed to import drawing:', error);
-                this.showSaveMessage(`Failed to import drawing: ${error.message}`);
+                this.showErrorMessage(`Failed to import drawing: ${error.message}`);
                 return false;
             }
         }
@@ -1617,7 +1617,7 @@ class DrawingController extends Controller {
             return true;
         } catch (error) {
             console.error('Failed to load image:', error);
-            this.showSaveMessage(`Failed to load image: ${error.message}`);
+            this.showErrorMessage(`Failed to load image: ${error.message}`);
             return false;
         }
     }
@@ -2138,19 +2138,19 @@ class DrawingController extends Controller {
                 if (selected) this.openDrawingFile(selected);
             }).catch(error => {
                 console.error('Failed to choose drawing:', error);
-                this.showSaveMessage(`Open failed: ${error.message}`);
+                this.showErrorMessage(`Open failed: ${error.message}`);
             });
             return true;
         }
         if (!selectedFilename) return false;
 
         if (path.extname(selectedFilename).toLowerCase() !== '.skrbl' && !pdgDrawingImport.isPdgDrawing(selectedFilename)) {
-            this.showSaveMessage('Open failed: choose a .skrbl, .pdgdrawing or .drawing.json file');
+            this.showErrorMessage('Open failed: choose a .skrbl, .pdgdrawing or .drawing.json file');
             return false;
         }
 
         if (!this.loadFile(selectedFilename)) {
-            this.showSaveMessage('Open failed: invalid or unsupported drawing');
+            this.showErrorMessage('Open failed: invalid or unsupported drawing');
             return false;
         }
 
@@ -2208,12 +2208,12 @@ class DrawingController extends Controller {
             : path.basename(this.currentFilename || 'drawing.skrbl').replace(/\.skrbl$/i,'.pdgdrawing');
         const selected=filename || this.chooseFileWithVisibleCursor(()=>chooseSaveDrawingFile(suggested));
         if (selected && typeof selected.then === 'function') {
-            selected.then(name => { if (name) this.saveAs(name); }).catch(error => this.showSaveMessage(`Save failed: ${error.message}`));
+            selected.then(name => { if (name) this.saveAs(name); }).catch(error => this.showErrorMessage(`Save failed: ${error.message}`));
             return true;
         }
         if (!selected) return false;
         if (!/\.(skrbl|pdgdrawing)$/i.test(selected)) {
-            this.showSaveMessage('Save failed: choose a .skrbl or .pdgdrawing filename');return false;
+            this.showErrorMessage('Save failed: choose a .skrbl or .pdgdrawing filename');return false;
         }
         const previous=this.currentFilename;
         this.currentFilename=selected;
@@ -2274,14 +2274,18 @@ class DrawingController extends Controller {
             return true;
         } catch (error) {
             console.error('Failed to save file:', error);
-            this.showSaveMessage(`Failed to save: ${error.message}`);
+            this.showErrorMessage(`Failed to save: ${error.message}`);
             return false;
         }
     }
     
-    showSaveMessage(message) {
+    showSaveMessage(message, kind = 'success') {
         this.saveMessage = message;
-        this.backgroundView.showNotification(message);
+        this.backgroundView.showNotification(message, kind);
+    }
+
+    showErrorMessage(message) {
+        this.showSaveMessage(message, 'error');
     }
 
     dismissMessage() {

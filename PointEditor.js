@@ -61,7 +61,7 @@ class PointEditor {
         this.prune();
         const eligible=this.paths().map(path=>({path,...Geometry.copiedFragments(path,this.selection.get(path.shape)||new Set(),closePolygon)}))
             .filter(entry=>entry.fragments.length);
-        if(!eligible.length){this.controller.showSaveMessage(closePolygon?'Select at least three adjacent polygon anchors to close a fragment':'Select at least two adjacent anchors to copy or cut a fragment');return false;}
+        if(!eligible.length){this.controller.showErrorMessage(closePolygon?'Select at least three adjacent polygon anchors to close a fragment':'Select at least two adjacent anchors to copy or cut a fragment');return false;}
         if(storeClipboard){
             this.controller.clipboard=eligible.flatMap(entry=>entry.fragments).map(shape=>this.controller.drawing.serializeShape(shape));
             this.controller.pasteCount=0;
@@ -74,13 +74,28 @@ class PointEditor {
     }
     fitCurve(){
         this.prune();
-        const changes=this.paths().map(path=>({path,result:Geometry.fitSelected(path,
-            this.active && this.selection.get(path.shape) || new Set(),this.controller.toolManager.getSmoothnessDistance())}))
-            .filter(entry=>entry.result);
-        if(!changes.length){this.controller.showSaveMessage('Select at least two adjacent anchors to fit a curve');return false;}
+        const paths=this.paths(),tolerance=this.controller.toolManager.getSmoothnessDistance();
+        const keys=path=>this.active && this.selection.get(path.shape) || new Set();
+        const hasRun=paths.some(path=>path.segments.some(s=>keys(path).has('a:'+s.start)&&keys(path).has('a:'+s.end)));
+        const changes=[];
+        for(const path of paths) {
+            const selected=hasRun?keys(path):new Set(path.anchors.map((_,i)=>'a:'+i));
+            if(!hasRun || path.type==='BezierSpline') {
+                const result=Geometry.fitSelected(path,selected,tolerance);
+                if(result)changes.push({path,curves:[result.shape],selections:[result.keys],survivors:[]});
+            } else {
+                const {fragments,removed}=Geometry.fitFragments(path,selected,tolerance);
+                if(fragments.length)changes.push({path,curves:fragments,
+                    selections:fragments.map(shape=>new Set(shape.points.map((_,i)=>'a:'+i))),
+                    survivors:Geometry.reconnect(path,removed)});
+            }
+        }
+        if(!changes.length){this.controller.showErrorMessage('Select an editable path to fit a curve');return false;}
         this.controller.saveUndoState('fit curve');
-        for(const {path,result} of changes){
-            this.replace(path.shape,[result.shape]);this.selection.set(result.shape,result.keys);
+        for(const {path,curves,selections,survivors} of changes){
+            this.replace(path.shape,[...survivors,...curves]);
+            survivors.forEach(shape=>shape.selected=false);
+            curves.forEach((shape,i)=>this.selection.set(shape,selections[i]));
         }
         this.active=true;return true;
     }

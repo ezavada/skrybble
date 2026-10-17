@@ -234,11 +234,15 @@ selections can be nudged, but cannot be copied or cut as drawable fragments.
 
 **Cmd/Ctrl+J** fits editable Bézier curves to consecutive runs of selected
 anchors using the current Smoothness level (higher levels allow a looser fit).
-It preserves each run's endpoints, the shape's fill and stroke, and all unselected
-segments. Separate selected runs are fitted independently; polygon outlines stay
-closed. The fitted anchors remain selected, and the command is one undo step.
-Select at least two adjacent anchors; isolated points and tangent handles alone
-cannot form a curve. Two-point Line objects are unaffected.
+With no selected run, it fits all points on each selected path and replaces that
+path with the curve, preserving its style and closure. With selected runs on a
+polygon or freehand line, it removes those anchors, reconnects the remaining
+shape, and adds each fitted run as a separate, open, stroke-only curve. A source
+with too few remaining anchors is removed. Selected runs on an existing Bézier
+curve stay attached, preserving unselected segments. Each run keeps its endpoints.
+The fitted anchors remain selected, and the command is one undo step. Isolated
+points or tangent handles alone count as no selected run. Two-point Line objects
+are unaffected.
 
 The Scissors tool (**C**) operates on already-selected paths, excluding two-point
 Line objects and primitive shapes. Click an edge/curve segment to remove it, or

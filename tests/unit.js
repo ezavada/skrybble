@@ -303,6 +303,28 @@ test('Escape dismisses success and error messages, and replacement messages rest
     assert.strictEqual(controller.getSaveMessage(),null);assert.ok(controller.textEdit);
     controller.commitTextEdit(true);
 });
+test('notifications use natural-size text, red errors, green success and wrapped long messages',()=> {
+    const view=controller.backgroundView,port=pdg.gfx.createOffscreenPort(new pdg.Rect(600,300));
+    try {
+        for(const error of [false,true]) {
+            if(error)controller.showErrorMessage('Open failed');else controller.showSaveMessage('Saved');
+            port.clear();view.drawNotification(port,new pdg.Rect(600,300),'notification-test');
+            const rect=view._notificationRect,image=new pdg.Image(port),bg=image.getPixel(Math.round(rect.left+12),150);
+            assert.ok(error ? bg.red>bg.green*2 : bg.green>bg.red*2);
+            let top=Infinity,bottom=-Infinity;
+            for(let y=Math.floor(rect.top);y<rect.bottom;y++)for(let x=Math.floor(rect.left);x<rect.right;x++) {
+                const pixel=image.getPixel(x,y);
+                if(pixel.red>.9 && pixel.green>.9 && pixel.blue>.9){top=Math.min(top,y);bottom=Math.max(bottom,y);}
+            }
+            assert.ok(bottom-top>5 && bottom-top<24,`Expected natural 18px text, got ${bottom-top}px`);
+        }
+        controller.showErrorMessage('Open failed: '+ 'very-long-drawing-name'.repeat(20));
+        view.drawNotification(port,new pdg.Rect(600,300),'notification-long');
+        assert.ok(view._notificationLines.length>1);
+        assert.ok(view._notificationRect.left>=0 && view._notificationRect.right<=600);
+        assert.ok(view._notificationLines.every(line=>port.getTextWidth(line.text,18)<=536));
+    } finally {controller.dismissMessage();pdg.gfx.closeGraphicsPort(port);}
+});
 test('width popup uses captured release then clickable option',()=> {
     let accepted=null;
     const picker=new WidthPicker(controller,1,[],value=>accepted=value,()=>{},0);

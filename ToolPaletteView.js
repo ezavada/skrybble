@@ -11,11 +11,11 @@ class ToolPaletteView extends View {
         this.setID(ToolPaletteView.TOOL_PALETTE_VIEW_ID);
         this.layoutParts();
     }
-    slotWidth() { return Math.min(50,this.getViewArea().width()/Object.keys(Tools.TOOLS).length); }
+    slotWidth() { return Math.min(50,this.getViewArea().width()/Tools.getToolList().length); }
     layoutParts() {
         this.clickableParts=[];
         const r=this.getViewArea(), w=this.slotWidth();
-        Object.values(Tools.TOOLS).forEach((tool,i)=>
+        Tools.getToolList().forEach((tool,i)=>
             this.addClickablePart(new pdg.Rect(i*w,0,(i+1)*w,r.height()),i+1));
     }
     viewAreaChanged(previous) {
@@ -42,6 +42,9 @@ class ToolPaletteView extends View {
             case Tools.TOOLS.SCISSORS:
                 drawing.addEllipse(point(15,33),5,5,line);drawing.addEllipse(point(35,33),5,5,line);
                 segment(18,29,37,10);segment(32,29,13,10);break;
+            case Tools.TOOLS.BONE:
+                segment(12,38,38,12);segment(12,38,14,24);segment(14,24,38,12);
+                drawing.addEllipse(point(12,38),3,3,line);drawing.addEllipse(point(38,12),2,2,line);break;
             case Tools.TOOLS.LINE: segment(10,37,40,12);break;
             case Tools.TOOLS.CIRCLE: drawing.addEllipse(point(25,25),14,14,line);break;
             case Tools.TOOLS.OVAL: drawing.addEllipse(point(25,25),18,11,line);break;
@@ -110,7 +113,7 @@ class ToolPaletteView extends View {
         const r=this.getViewArea(),w=this.slotWidth(),manager=this.controller.getToolManager();
         const selected=this.controller.getDrawing().getShapes().find(s=>s.selected);
         port.drawRect(r,new pdg.Attributes().fillColor(new pdg.Color('#eef2f6')));
-        Object.values(Tools.TOOLS).forEach((tool,i)=> {
+        Tools.getToolList().forEach((tool,i)=> {
             const x=r.left+i*w;
             const pressed=tool===this.pressedTool && tool===this.hoverTool;
             const hovered=tool===this.hoverTool,active=tool===this.activeTool;
@@ -126,7 +129,7 @@ class ToolPaletteView extends View {
     }
     updateHover(point) {
         const r=this.getViewArea();
-        const tool=point && this.pointInViewArea(point) ? Object.values(Tools.TOOLS)[Math.floor((point.x-r.left)/this.slotWidth())] : null;
+        const tool=point && this.pointInViewArea(point) ? Tools.getToolList()[Math.floor((point.x-r.left)/this.slotWidth())] : null;
         if(tool!==this.hoverTool){this.hoverTool=tool;this.hoverStarted=Date.now();}
     }
     drawHover(port) {
@@ -134,7 +137,7 @@ class ToolPaletteView extends View {
         const name=Tools.TOOL_NAMES[this.hoverTool],key=Object.keys(Tools.TOOL_SHORTCUTS).find(k=>Tools.TOOL_SHORTCUTS[k]===this.hoverTool);
         const text=name+(key?' ('+key+')':''),r=this.getViewArea();
         const width=port.getTextWidth(text,13)+16;
-        const index=Object.values(Tools.TOOLS).indexOf(this.hoverTool);
+        const index=Tools.getToolList().indexOf(this.hoverTool);
         const x=Math.max(r.left,Math.min(r.left+index*this.slotWidth(),r.right-width));
         port.drawRoundedRect(new pdg.Rect(x,r.bottom+4,x+width,r.bottom+28),4,
             new pdg.Attributes().fillColor(new pdg.Color('#f8fafc')).lineColor(new pdg.Color('#94a3b8')).lineThickness(1));

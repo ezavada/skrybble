@@ -7,6 +7,7 @@ class Drawing {
     constructor() {
         this.shapes = [];
         this.selectedShape = null;
+        this.boneEditor = new (require('./BoneEditor'))(this);
     }
 
     addShape(shape) {
@@ -31,6 +32,7 @@ class Drawing {
     }
 
     clearShapes() {
+        this.boneEditor = new (require('./BoneEditor'))(this);
         this.shapes = [];
         this.selectedShape = null;
     }
@@ -133,6 +135,8 @@ class Drawing {
 
         this.shapes = this.shapes.filter(shape => !selectedSet.has(shape));
         const group = new ShapeClasses.Group(selected);
+        const binding=selected[0].rigBone;
+        if(binding && selected.every(shape=>shape.rigBone===binding))group.rigBone=binding;
         group.selected = true;
         this.insertShape(insertionIndex, group);
         this.selectedShape = group;
@@ -159,6 +163,7 @@ class Drawing {
                     this.moveShape(child,rotated.x-childCenter.x,rotated.y-childCenter.y);
                     child.rotation=(child.rotation || 0)+shape.rotation;
                 }
+                if(shape.rigBone)child.rigBone=shape.rigBone;
                 child.selected = true;
                 replacement.push(child);
                 ungrouped.push(child);
@@ -251,7 +256,7 @@ class Drawing {
     }
 
     deserializeDocument(data) {
-        if (!data || !['skrbl-v0.0.3','skrbl-v0.0.4'].includes(data.fileFormat) ||
+        if (!data || !['skrbl-v0.0.3','skrbl-v0.0.4','skrbl-v0.0.5'].includes(data.fileFormat) ||
             !Array.isArray(data.imageData) || !Array.isArray(data.shapes)) {
             throw new Error('Unsupported or invalid file format');
         }
@@ -380,7 +385,7 @@ class Drawing {
                 return null;
         }
         
-        return { type: typeName, ...data };
+        return { type: typeName, ...data, ...(shape.rigBone ? {rigBone:shape.rigBone} : {}) };
     }
 
     deserializeShape(type, data, imageDataById = null) {
@@ -475,6 +480,7 @@ class Drawing {
             shape.rotation = data.rotation;
         }
         
+        if(shape && typeof data.rigBone==='string')shape.rigBone=data.rigBone;
         return shape;
     }
 }

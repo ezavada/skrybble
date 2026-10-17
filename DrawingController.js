@@ -168,7 +168,7 @@ class DrawingController extends Controller {
                         if(shape){if(shape.isQuad)shape.isQuad=false;this.saveUndoState('add shape');this.drawing.addShape(shape);}
                     }
                     this.resetCanvasGesture();
-                    const chosen=Object.values(Tools.TOOLS)[part-1];
+                    const chosen=Tools.getToolList()[part-1];
                     if(chosen!==Tools.TOOLS.HELP)this.showHelp=false;
                     this._toolbarPress=true;palette.pressedTool=chosen;palette.updateHover(event.mousePos);
                     this.doLeftClick(event,palette,palette.getID(),part);
@@ -214,7 +214,7 @@ class DrawingController extends Controller {
                 const textHit=this.drawing.findShapeAt(world.x,world.y)?.constructor.name==='Text';
                 if(tool===Tools.TOOLS.TEXT || (this.textEdit && this.textEdit.shape.contains(world.x,world.y)) ||
                     (tool===Tools.TOOLS.SELECT && textHit))cursor='text';
-                else if([Tools.TOOLS.SCISSORS,Tools.TOOLS.LINE,Tools.TOOLS.FREEHAND,Tools.TOOLS.SPLINE,Tools.TOOLS.BEZIER,
+                else if([Tools.TOOLS.BONE,Tools.TOOLS.SCISSORS,Tools.TOOLS.LINE,Tools.TOOLS.FREEHAND,Tools.TOOLS.SPLINE,Tools.TOOLS.BEZIER,
                     Tools.TOOLS.CIRCLE,Tools.TOOLS.OVAL,Tools.TOOLS.RECT,Tools.TOOLS.QUAD,Tools.TOOLS.POLY,Tools.TOOLS.IMAGE].includes(tool))cursor='crosshair';
             }
         }
@@ -314,7 +314,7 @@ class DrawingController extends Controller {
             // Handle tool selection from tool palette
             // Part numbers correspond to tool indices (1-based)
             if (part > 0) {
-                const toolNames = Object.values(Tools.TOOLS);
+                const toolNames = Tools.getToolList();
                 const selectedTool = toolNames[part - 1];
                 if (selectedTool) {
                     if(selectedTool===Tools.TOOLS.FONT) {this.openFontPicker(part);return true;}
@@ -415,6 +415,7 @@ class DrawingController extends Controller {
         if(this.shortcuts.suppressText){this.shortcuts.suppressText=false;return true;}
         try {
             if(this.textEdit)return this.handleTextKey(info);
+            if(info.unicode===13 && this.drawing.boneEditor.selected) {this.beginBoneNameEdit();return true;}
             const picker=this.activePicker();
             return picker?picker.doKeyPress(info,view,id,part):false;
         } finally {this.shortcuts.syncMode();}
@@ -478,8 +479,27 @@ class DrawingController extends Controller {
         this.shortcuts?.syncMode();
     }
 
+    beginBoneNameEdit() {
+        const bones=this.drawing.boneEditor,bone=bones.bones.find(b=>b.name===bones.selected);
+        if(!bone || bone.name==='root')return;
+        this.commitTextEdit();
+        const shape=new (this.drawing.getShapeClasses().Text)(bone.root.x+8,bone.root.y-32,bone.name,'#92400e',16);
+        shape.layout(this.port);shape._editing=true;
+        const editor=new CanvasTextEditor(this,shape);
+        editor.highlightStartCharIndex=0;editor.highlightEndCharIndex=bone.name.length;editor.caretPos=bone.name.length;
+        this.textEdit={shape,isNew:true,boneName:bone.name,editor};this.shortcuts?.syncMode();
+    }
+
     commitTextEdit(cancel=false) {
         if (!this.textEdit) return;
+        if(this.textEdit.boneName) {
+            const edit=this.textEdit;
+            if(!cancel) {
+                try {this.drawing.boneEditor.rename(edit.boneName,edit.shape.text,action=>this.saveUndoState(action));}
+                catch(error) {this.showSaveMessage(error.message);return;}
+            }
+            edit.editor.setFocus(false);this.textEdit=null;this.textSelecting=false;this.shortcuts?.syncMode();return;
+        }
         const {shape,isNew,before}=this.textEdit;
         const text=shape.text;
         shape.text=before;
@@ -540,6 +560,14 @@ class DrawingController extends Controller {
             return true;
         }
         this.commitTextEdit();
+        if(this.textEdit)return true;
+        const bones=this.drawing.boneEditor;
+        if(currentTool===Tools.TOOLS.BONE || (currentTool===Tools.TOOLS.SELECT && bones.hit(pos,7/this.navigation.camera.getZoom(),true))) {
+            try { bones.begin(pos,7/this.navigation.camera.getZoom(),currentTool===Tools.TOOLS.SELECT); }
+            catch(error) { this.showSaveMessage(error.message); }
+            return true;
+        }
+        bones.selected=null;
         if (currentTool === Tools.TOOLS.SELECT) {
             this.handleSelectMode(pos.x, pos.y, event);
         } else if (currentTool === Tools.TOOLS.SPLINE || currentTool === Tools.TOOLS.BEZIER || currentTool === Tools.TOOLS.POLY || currentTool === Tools.TOOLS.QUAD) {
@@ -557,6 +585,7 @@ class DrawingController extends Controller {
     }
 
     handleMouseMove(event) {
+        if(this.drawing.boneEditor.gesture) {this.drawing.boneEditor.move(this.getMousePosition(event));return true;}
         if(this.pointEditor.move(this.getMousePosition(event)))return true;
         event={...event,shift:!!event.shift || !!this.inputState?.shift};
         this._gesturePointer={x:event.mousePos.x,y:event.mousePos.y};
@@ -612,6 +641,12 @@ class DrawingController extends Controller {
     }
 
     handleMouseUp(event) {
+        if(this.drawing.boneEditor.gesture) {
+            this.drawing.boneEditor.move(this.getMousePosition(event));
+            this.drawing.boneEditor.finish(action=>this.saveUndoState(action));
+            if(this.drawing.boneEditor.selected && this.drawing.boneEditor.selected!=='root' && this.toolManager.getCurrentTool()===Tools.TOOLS.BONE)this.beginBoneNameEdit();
+            return true;
+        }
         if(this.pointEditor.end(this.getMousePosition(event)))return true;
         if(this.textSelecting) {this.textSelecting=false;return true;}
         this._pointDragGeometry=null;
@@ -701,6 +736,8 @@ class DrawingController extends Controller {
 
     handleMouseDoubleClick(event) {
         const pos = this.getMousePosition(event);
+        const boneHit=this.drawing.boneEditor.hit(pos,7/this.navigation.camera.getZoom());
+        if(boneHit){this.drawing.boneEditor.selected=boneHit.bone.name;this.beginBoneNameEdit();return true;}
         const hit=this.drawing.findShapeAt(pos.x,pos.y);
         if (hit && hit.constructor.name==='Text') {this.beginTextEdit(hit);this.textEdit.editor.positionAt(pos);this.textEdit.editor.selectWord();return true;}
         const currentTool = this.toolManager.getCurrentTool();
@@ -1333,7 +1370,7 @@ class DrawingController extends Controller {
     selectToolShortcut(tool) {
         this.pointEditor.clear();
         if(tool===Tools.TOOLS.FONT) {
-            this.openFontPicker(Object.values(Tools.TOOLS).indexOf(tool)+1);return true;
+            this.openFontPicker(Tools.getToolList().indexOf(tool)+1);return true;
         }
         // Special handling for HELP - just toggle help, don't switch tools
         if (tool === Tools.TOOLS.HELP) {
@@ -1349,7 +1386,7 @@ class DrawingController extends Controller {
         // Check for line width tool shortcut
         if (tool === Tools.TOOLS.LINE_WIDTH) {
             // Find the toolbar part index for line width tool
-            const toolNames = Object.values(Tools.TOOLS);
+            const toolNames = Tools.getToolList();
             const toolIndex = toolNames.indexOf(Tools.TOOLS.LINE_WIDTH) + 1;
             this.openLineWidthPicker(toolIndex);
             return true;
@@ -1357,7 +1394,7 @@ class DrawingController extends Controller {
         // Check for smoothness tool shortcut
         if (tool === Tools.TOOLS.SMOOTHNESS) {
             // Find the toolbar part index for smoothness tool
-            const toolNames = Object.values(Tools.TOOLS);
+            const toolNames = Tools.getToolList();
             const toolIndex = toolNames.indexOf(Tools.TOOLS.SMOOTHNESS) + 1;
             this.openSmoothnessPicker(toolIndex);
             return true;
@@ -1381,6 +1418,7 @@ class DrawingController extends Controller {
     }
 
     deleteSelectionOrPoint() {
+        if(this.drawing.boneEditor.deleteSelected(action=>this.saveUndoState(action)))return true;
         if(this.pointEditor.active)return this.pointEditor.copy(true,false,false);
         const currentToolForDelete = this.toolManager.getCurrentTool();
         // For multi-point tools while drawing, remove last point
@@ -1403,6 +1441,7 @@ class DrawingController extends Controller {
     }
 
     escapeToSelect() {
+        this.drawing.boneEditor.gesture=null;this.drawing.boneEditor.selected=null;
         this.pointEditor.clear();
         const editing = this.textEdit;
         if (editing) this.commitTextEdit(true);
@@ -1423,6 +1462,7 @@ class DrawingController extends Controller {
     }
 
     resetCanvasGesture() {
+        if(this.drawing)this.drawing.boneEditor.gesture=null;
         if(this.pointEditor){this.pointEditor.gesture=null;this.pointEditor.cutter=null;}
         if(this.rotatingShape)delete this.rotatingShape._rotationGuideLength;
         this.draggedPoint = this.draggedShapes = this.rotatingShape = this.panPosition = null;
@@ -1934,6 +1974,7 @@ class DrawingController extends Controller {
         
         const state = {
             action: action,
+            rig: this.drawing.boneEditor.snapshot(),
             shapes: this.drawing.getShapes().map(shape => {
                 const serialized = this.drawing.serializeShape(shape);
                 return {
@@ -1983,6 +2024,7 @@ class DrawingController extends Controller {
         // Save current state to redo stack
         const currentState = {
             action: 'undo',
+            rig: this.drawing.boneEditor.snapshot(),
             shapes: this.drawing.getShapes().map(shape => {
                 const serialized = this.drawing.serializeShape(shape);
                 return {
@@ -2007,6 +2049,7 @@ class DrawingController extends Controller {
             }
         }
         
+        this.drawing.boneEditor.restore(previousState.rig);
         this.selectedShape = null;
     }
 
@@ -2023,6 +2066,7 @@ class DrawingController extends Controller {
         // Save current state to undo stack
         const currentState = {
             action: 'redo',
+            rig: this.drawing.boneEditor.snapshot(),
             shapes: this.drawing.getShapes().map(shape => {
                 const serialized = this.drawing.serializeShape(shape);
                 return {
@@ -2047,6 +2091,7 @@ class DrawingController extends Controller {
             }
         }
         
+        this.drawing.boneEditor.restore(redoState.rig);
         this.selectedShape = null;
     }
 
@@ -2097,6 +2142,8 @@ class DrawingController extends Controller {
         try {
             const data = pdgDrawingImport.readDocument(filename);
             const loadedShapes = this.drawing.deserializeDocument(data);
+            const loadedBones=new (require('./BoneEditor'))(this.drawing);
+            loadedBones.restore(data.rig);
             const canvas = data.canvas || [1024,1024];
             if (!Array.isArray(canvas) || canvas.length !== 2 ||
                 !canvas.every(n => Number.isFinite(n) && n > 0 && n <= 100000))
@@ -2106,6 +2153,7 @@ class DrawingController extends Controller {
             // been validated and materialized successfully.
             this.drawing.clearShapes();
             loadedShapes.forEach(shape => this.drawing.addShape(shape));
+            this.drawing.boneEditor=loadedBones;
             
             // Load recent colors if available
             if (data.recentColors) {
@@ -2125,7 +2173,8 @@ class DrawingController extends Controller {
     }
 
     saveAs(filename = null) {
-        const suggested=path.basename(this.currentFilename || 'drawing.skrbl').replace(/\.skrbl$/i,'.pdgdrawing');
+        const suggested=this.drawing.boneEditor.asset ? path.basename(this.currentFilename || 'drawing.skrbl').replace(/\.pdgdrawing$/i,'.skrbl')
+            : path.basename(this.currentFilename || 'drawing.skrbl').replace(/\.skrbl$/i,'.pdgdrawing');
         const selected=filename || chooseSaveDrawingFile(suggested);
         if (selected && typeof selected.then === 'function') {
             selected.then(name => { if (name) this.saveAs(name); }).catch(error => this.showSaveMessage(`Save failed: ${error.message}`));
@@ -2144,6 +2193,7 @@ class DrawingController extends Controller {
 
     saveFile() {
         this.commitTextEdit();
+        if(this.textEdit)return false;
         // Generate filename if not set
         if (!this.currentFilename) {
             const now = new Date();
@@ -2170,7 +2220,8 @@ class DrawingController extends Controller {
                 };
             });
             const data = {
-                fileFormat: 'skrbl-v0.0.4',
+                fileFormat: this.drawing.boneEditor.asset ? 'skrbl-v0.0.5' : 'skrbl-v0.0.4',
+                rig: this.drawing.boneEditor.snapshot(),
                 canvas: [this.navigation.width,this.navigation.height],
                 imageData: imageRegistry.entries,
                 shapes,

@@ -366,6 +366,36 @@ if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;return c.u
 console.log('PASS: Option point selection, partial Copy/Paste, scissors click/drag and undo');
 
 
+// Bone authoring uses real pointer and keyboard input in the browser runtime.
+const bonePoints=JSON.parse(await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses();
+    c.pointEditor.clear();c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];c.navigation.setCanvas(600,400);
+    const artwork=new S.Rectangle(100,100,80,30,'#ef4444',null,0);artwork.selected=true;c.drawing.addShape(artwork);
+    const area=c.port.getDrawingArea(),rect=document.querySelector('canvas').getBoundingClientRect();
+    const screen=p=>{const v=c.navigation.toView(new pdg.Point(p));return {x:rect.left+(v.x-area.left)*rect.width/area.width(),y:rect.top+(v.y-area.top)*rect.height/area.height()};};
+    return JSON.stringify({root:screen({x:100,y:100}),tip:screen({x:300,y:100}),middle:screen({x:200,y:100}),child:screen({x:200,y:240})});})()`));
+await key('b','KeyB',66);
+const boneDrag=async(start,end)=>{
+    await call('Input.dispatchMouseEvent',{type:'mousePressed',...start,button:'left',clickCount:1});
+    await call('Input.dispatchMouseEvent',{type:'mouseMoved',...end,button:'left',buttons:1});
+    await call('Input.dispatchMouseEvent',{type:'mouseReleased',...end,button:'left',clickCount:1});
+};
+await boneDrag(bonePoints.root,bonePoints.tip);await boneDrag(bonePoints.middle,bonePoints.child);
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,b=c.drawing.boneEditor;
+    return b.asset.getBoneCount()===2 && b.asset.getBoneDefinition('bone1').parent==='root' &&
+        c.drawing.getShapes()[0].rigBone==='root' && c.textEdit?.boneName==='bone1';})()`))throw Error('Bone authoring or inline name editor failed');
+for(const character of 'forearm')await key(character,'Key'+character.toUpperCase(),character.toUpperCase().charCodeAt(0));
+await key('\r','Enter',13);
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,b=c.drawing.boneEditor;
+    if(c.textEdit || !b.asset.getBoneNames().includes('forearm'))return false;
+    const stream=b.snapshot();b.restore(stream);
+    const sprite=b.getSprite();
+    return sprite.getPartCount()===3 && b.asset.getBoneDefinition('forearm').parent==='root' &&
+        c.toolPaletteView.constructor && c.toolPaletteView.clickableParts.length===Object.keys(c.toolManager.constructor.TOOLS).length;
+})()`))throw Error('Bone rename or native rig round trip failed: '+await evalPage(`JSON.stringify({edit:__skrybbleTestApp.drawingController.textEdit?.shape.text,names:__skrybbleTestApp.drawingController.drawing.boneEditor.asset.getBoneNames(),parts:__skrybbleTestApp.drawingController.drawing.boneEditor.getSprite().getPartCount()})`));
+await shot();
+if(process.env.SKRYBBLE_BONES_SCREENSHOT)fs.writeFileSync(process.env.SKRYBBLE_BONES_SCREENSHOT,Buffer.from(await shot(),'base64'));
+console.log('PASS: Bone shortcut, midpoint child creation, artwork binding, inline naming and native rig round trip');
+
 await shot();if(errors.length)throw Error(errors.join('\n'));
 if(process.env.SKRYBBLE_SCREENSHOT) fs.writeFileSync(process.env.SKRYBBLE_SCREENSHOT,Buffer.from(pan,'base64'));
 console.log('PASS: browser startup, drawing, text caret editing, font picker, Illustrator shortcuts, unmodified wheel zoom, magnifier and contextual cursors, Pen shortcut, keyboard zoom, wide strokes, stationary Shift transitions, pan including a fully visible page, picker, freehand handle alignment, Escape recovery, window-sized help, and no runtime errors');

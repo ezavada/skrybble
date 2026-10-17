@@ -9,6 +9,7 @@ undo/redo, draw-order control, and persistent `.skrbl` documents.
 
 ### Drawing Tools
 - **Select Tool** (`Esc`) - Select and manipulate existing shapes
+- **Bone Tool** (`B`) - Draw a PDG rig, attach selected artwork, and edit bone endpoints
 - **Line Tool** (`\\`) - Draw straight lines
 - **Freehand Tool** (`N`) - Draw freehand curves (auto-converts to Cardinal Spline)
 - **Cardinal Spline Tool** (`S`) - Create smooth curves through control points
@@ -635,3 +636,28 @@ export/import on desktop, build `pdg-devel` or launch with
 Native streams omit editor canvas dimensions; reopening derives the page size
 from the artwork bounds. `.skrbl` retains the editor canvas and shape-specific
 editing information.
+
+### Bone authoring (PDG 1.3 development runtime)
+
+Use **B** and drag from root to tip. The first bone is named `root`. Starting
+anywhere on an existing bone creates a child at that position; starting in empty
+space creates another root. Selected artwork becomes a Part bound to the new
+bone, keeping its placement, and is then deselected. Drawing a bare skeleton
+requires no artwork selection.
+
+New bones other than `root` open an inline name field. Press Enter to accept or
+Escape to keep the generated name. Names must be nonempty and unique. With the
+Select tool, drag an endpoint to edit the bind pose, or double-click a bone to
+rename it. Select an endpoint and press Enter to rename later. The first `root`
+keeps its name. Delete removes the selected bone and descendants, leaving artwork
+unbound. Bone edits, names, and attachments support undo/redo.
+
+Save as **.skrbl** to preserve the native serialized `AnimationRig`, editable
+artwork, and Part bindings. Rig documents use `skrbl-v0.0.5`; drawings without
+bones retain v0.0.4. **.pdgdrawing** exports contain artwork only. Skeletons, bone
+names, and endpoint handles are editor overlays and are excluded from exports.
+Endpoint edits adjust the skeleton's bind pose while leaving artwork in place.
+
+Bone authoring requires a PDG runtime containing `AnimationRig`; use
+`PDG_SOURCE=devel ./skrybble` or set `PDG_EXECUTABLE` to that development build.
+For the web app, rebuild with a matching development WebAssembly runtime.

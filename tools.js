@@ -4,6 +4,7 @@ const TOOLS = {
     SELECT: 'select',
     PAN: 'pan',
     ZOOM: 'zoom',
+    BONE: 'bone',
     LINE: 'line',
     FREEHAND: 'freehand',
     SPLINE: 'spline',
@@ -20,11 +21,12 @@ const TOOLS = {
     LINE_COLOR: 'linecolor',
     LINE_WIDTH: 'linewidth',
     SMOOTHNESS: 'smoothness',
-    HELP: 'help',
-    SCISSORS: 'scissors'
+    SCISSORS: 'scissors',
+    HELP: 'help'
 };
 
 const TOOL_SHORTCUTS = {
+    'B': TOOLS.BONE,
     'V': TOOLS.SELECT,
     'C': TOOLS.SCISSORS,
     'H': TOOLS.PAN,
@@ -48,10 +50,11 @@ const TOOL_SHORTCUTS = {
 };
 
 class Tools {
+    static getToolList() { return [...Object.values(TOOLS).filter(tool=>tool!==TOOLS.HELP),TOOLS.HELP]; }
     static TOOL_SHORTCUTS = TOOL_SHORTCUTS;
     static TOOLS = TOOLS;
     static TOOL_NAMES = {
-        scissors:'Scissors',select:'Select',pan:'Pan',zoom:'Magnifier',line:'Line',freehand:'Freehand',spline:'Cardinal Spline',
+        bone:'Bone',scissors:'Scissors',select:'Select',pan:'Pan',zoom:'Magnifier',line:'Line',freehand:'Freehand',spline:'Cardinal Spline',
         bezier:'Pen',circle:'Circle',oval:'Ellipse',rect:'Rectangle',quad:'Quad',poly:'Polygon',image:'Import image or drawing',
         text:'Text',font:'Font & style',fillcolor:'Fill color',linecolor:'Stroke color',linewidth:'Line width',smoothness:'Smoothness',help:'Help'
     };

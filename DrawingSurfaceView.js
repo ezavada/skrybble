@@ -86,6 +86,7 @@ class DrawingSurfaceView extends View {
             const current=controller.getToolManager().getCurrentShape();
             if (current) current.draw(canvas);
             controller.pointEditor.draw(canvas);
+            controller.getDrawing().boneEditor.draw(canvas);
             if (controller.textEdit && controller.textEdit.isNew) controller.textEdit.shape.draw(canvas);
             if (controller.textEdit) controller.textEdit.editor.drawOverlay(canvas);
             if (controller.rubberBandActive) {
@@ -120,7 +121,7 @@ class DrawingSurfaceView extends View {
         const readout=controller.pointEditor.active?`${selectionReadout(selected)} · ${controller.pointEditor.count()} points selected`:selectionReadout(selected);
         if(readout)port.drawText(readout,new pdg.Point(area.left+8,area.bottom-26),
             new pdg.Attributes().textSize(12).fillColor(new pdg.Color('#475569')));
-        port.drawText(controller.textEdit ? 'Type text · Enter to accept · Esc to cancel' : `${Math.round(controller.navigation.camera.getZoom()*100)}% · ${controller.navigation.width} × ${controller.navigation.height}`,
+        port.drawText(controller.textEdit ? (controller.textEdit.boneName?'Bone name · Enter to accept · Esc to cancel':'Type text · Enter to accept · Esc to cancel') : `${Math.round(controller.navigation.camera.getZoom()*100)}% · ${controller.navigation.width} × ${controller.navigation.height}`,
             new pdg.Point(area.left+8,area.bottom-8),new pdg.Attributes().textSize(12).fillColor(new pdg.Color('#475569')));
     }
 
@@ -173,6 +174,9 @@ class DrawingSurfaceView extends View {
             { key: 'Normal Click', description: 'Return to whole-object selection' },
             { key: 'Point Copy/Cut', description: '2+ adjacent anchors; handles follow' },
             { key: 'Opt+Ctrl+C/X', description: 'Close polygon fragments (3+ anchors)' },
+            { key: 'Bone Drag', description: 'Start on any bone to create a child' },
+            { key: 'Bone Endpoints', description: 'Select tool: drag to edit' },
+            { key: 'Bone Name', description: 'Enter / double-click to rename' },
             { key: 'Scissors Click', description: 'Remove the segment clicked' },
             { key: 'Scissors Drag', description: 'Remove segments crossed by cut line' },
             { key: 'TAB', description: 'Select next shape' },

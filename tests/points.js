@@ -110,6 +110,29 @@ test('scissors drag removes crossed polygon edges, including collinear overlaps,
     assert.ok(Geometry.crosses({x:0,y:0},{x:10,y:0},{x:3,y:0},{x:7,y:0}));
     assert.ok(!Geometry.crosses({x:0,y:0},{x:1,y:0},{x:3,y:0},{x:7,y:0}));
 }));
+test('scissors drag repairs polygon fragments with fill and stroke, with or without Option, and preserves undo',()=>withController(c=>{
+    for(const alt of [false,true]) {
+        c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];
+        const shape=new Shapes.Polygon([{x:100,y:100},{x:200,y:100},{x:300,y:100},
+            {x:300,y:250},{x:200,y:250},{x:100,y:250}],'red','blue',3);
+        shape.rotation=.2;shape.selected=true;c.drawing.addShape(shape);
+        const before=JSON.stringify(c.drawing.serializeShape(shape)),center=shape.getCenterPoint();
+        const rotate=p=>shape.rotatePoint(p.x,p.y,center.x,center.y,shape.rotation);
+        const start=rotate({x:250,y:60}),end=rotate({x:250,y:290});
+        c.toolManager.setTool('scissors');
+        c.handleMouseDown({mousePos:c.navigation.toView(start),alt});
+        c.handleMouseMove({mousePos:c.navigation.toView(end),alt});
+        c.handleMouseUp({mousePos:c.navigation.toView(end),alt});
+        const fragments=c.drawing.getShapes();assert.strictEqual(fragments.length,2);
+        const repaired=fragments.find(s=>s.constructor.name==='Polygon');assert.ok(repaired);
+        assert.strictEqual(repaired.points.length,4);assert.strictEqual(repaired.fillColor,'red');
+        assert.strictEqual(repaired.strokeColor,'blue');assert.strictEqual(repaired.strokeWidth,3);
+        assert.ok(fragments.some(s=>s.constructor.name==='BezierSpline' && s.points.length===2));
+        near(repaired.rotation,0);assert.strictEqual(c.undoStack.length,1);
+        c.undo();assert.strictEqual(JSON.stringify(c.drawing.serializeShape(c.drawing.getShapes()[0])),before);
+        c.redo();assert.ok(c.drawing.getShapes().some(s=>s.constructor.name==='Polygon'));
+    }
+}));
 test('scissors and partial-point operations exclude two-point Line objects and primitives',()=>withController(c=>{
     const line=new Shapes.Line(100,100,200,100),rect=new Shapes.Rectangle(100,150,100,50);
     for(const shape of [line,rect]){shape.selected=true;c.drawing.addShape(shape);}

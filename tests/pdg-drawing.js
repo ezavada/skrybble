@@ -121,5 +121,27 @@ if (typeof pdg.Serializer.prototype.serializeDrawing==='function') {
         assert.ok(controller.loadFile(path.join(dir,'mixed-again.pdgdrawing')));
     });
 }
+test('Copy and Cut survive opening another drawing, and pasted shapes can be undone independently',()=>{
+    const destination=path.join(dir,'clipboard-destination.skrbl');
+    fs.writeFileSync(destination,JSON.stringify({fileFormat:'skrbl-v0.0.4',canvas:[900,700],imageData:[],shapes:[]}));
+    for(const cut of [false,true]) {
+        controller.drawing.clearShapes();
+        const source=new Shape.Polygon([{x:100,y:100},{x:200,y:100},{x:150,y:200}],'red','blue',3);
+        controller.drawing.addShape(source);source.selected=true;
+        if(cut)controller.cutSelectedShapes();else controller.copySelectedShapes();
+        const copied=JSON.stringify(controller.clipboard);
+        controller.pasteShapes(); // Opening a document restarts the cumulative offset.
+        assert.ok(controller.openDrawingFile(destination));
+        assert.strictEqual(JSON.stringify(controller.clipboard),copied);
+        assert.strictEqual(controller.pasteCount,0);
+        controller.pasteShapes();
+        const pasted=controller.drawing.getShapes()[0];
+        assert.ok(pasted instanceof Shape.Polygon);assert.notStrictEqual(pasted,source);
+        assert.strictEqual(pasted.points[0].x,110);assert.strictEqual(pasted.points[0].y,110);
+        assert.strictEqual(pasted.fillColor,'red');assert.strictEqual(pasted.strokeColor,'blue');
+        controller.undo();assert.strictEqual(controller.drawing.getShapeCount(),0);
+        assert.strictEqual(JSON.stringify(controller.clipboard),copied);
+    }
+});
 controller.destroy();pdg.gfx.closeGraphicsPort(surface);fs.rmSync(dir,{recursive:true,force:true});
 console.log(`${passed} passed, ${failed} failed`);process.exit(failed ? 1 : 0);

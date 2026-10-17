@@ -1956,7 +1956,10 @@ class DrawingController extends Controller {
     }
 
     deserializeShapeWithOffset(shapeData, offset) {
-        const shape = this.drawing.deserializeShape(shapeData.type, shapeData);
+        // Deserialized paths can retain their input point arrays. Give every
+        // paste its own geometry before applying offsets or subsequent edits.
+        const data = JSON.parse(JSON.stringify(shapeData));
+        const shape = this.drawing.deserializeShape(data.type, data);
         if (shape) this.drawing.moveShape(shape, offset, offset);
         return shape;
     }
@@ -2142,7 +2145,8 @@ class DrawingController extends Controller {
 
         this.undoStack = [];
         this.redoStack = [];
-        this.clipboard = null;
+        // Copied shapes belong to the editing session, so they survive opening
+        // another drawing. Restart the paste offset in the new document.
         this.pasteCount = 0;
         this.selectedShape = null;
         this.toolManager.finishCurrentDrawing();

@@ -233,8 +233,10 @@ selections can be nudged, but cannot be copied or cut as drawable fragments.
 
 The Scissors tool (**C**) operates on already-selected paths, excluding two-point
 Line objects and primitive shapes. Click an edge/curve segment to remove it, or
-drag a straight cutting line to remove every crossed segment. Surviving runs
-become open, editable paths; each gesture is one undo step. Curve fragments retain
+drag a straight cutting line to remove every crossed segment. Drag-cut polygon
+fragments with at least three vertices close automatically and keep their fill
+and stroke; smaller fragments and cut curves remain open paths. Clicking a
+single segment opens the path. Each gesture is one undo step. Curve fragments retain
 their geometry, including when cardinal paths become cubic Bézier fragments.
 
 ### Keyboard Shortcuts

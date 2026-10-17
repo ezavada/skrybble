@@ -1,4 +1,5 @@
 const Geometry=require('./path-editing');
+const {Polygon}=require('./shapes');
 const cloneSelection=selection=>new Map([...selection].map(([shape,keys])=>[shape,new Set(keys)]));
 
 class PointEditor {
@@ -124,7 +125,13 @@ class PointEditor {
         this.controller.saveUndoState('scissors');
         for(const {path,removed} of changes){
             const kept=new Set(path.segments.filter(s=>!removed.has(s.index)).map(s=>s.index));
-            this.replace(path.shape,Geometry.segmentRuns(path,kept).map(run=>Geometry.curveFragment(path.shape,run)));
+            this.replace(path.shape,Geometry.segmentRuns(path,kept).map(run=>{
+                if(drag && path.closed && run.length>=2) {
+                    const points=[run[0].p0,...run.map(segment=>segment.p3)].map(point=>({x:point.x,y:point.y}));
+                    return new Polygon(points,path.shape.fillColor,path.shape.strokeColor,path.shape.strokeWidth);
+                }
+                return Geometry.curveFragment(path.shape,run);
+            }));
         }
         this.selection.clear();this.active=false;
     }

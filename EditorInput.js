@@ -1,7 +1,7 @@
 const Tools=require('./tools');
 let nextContext=0;
 
-const commandKeys={KeyC:'copy',KeyX:'cut',KeyV:'paste',KeyO:'open',Digit0:'resetZoom'};
+const commandKeys={KeyC:'copy',KeyX:'cut',KeyV:'paste',KeyO:'open',KeyJ:'fitCurve',Digit0:'resetZoom'};
 const directions={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
 const toolCodes={Backslash:'\\',Slash:'?',...Object.fromEntries(
     Object.keys(Tools.TOOL_SHORTCUTS).map(key=>key.replace('Shift+',''))

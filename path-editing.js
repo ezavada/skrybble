@@ -80,6 +80,29 @@ function reconnect(path,removed) {
     result.manuallyEditedControls=new Set(result.controlPoints.map((_,i)=>i));
     return [result];
 }
+function fitSelected(path,selected,tolerance) {
+    const included=new Set(path.segments.filter(s=>selected.has('a:'+s.start)&&selected.has('a:'+s.end)).map(s=>s.index));
+    const runs=segmentRuns(path,included),replacements=new Map();
+    for(const run of runs) {
+        const fitted=require('./curve-fit')([run[0].p0,...run.map(s=>s.p3)],tolerance);
+        if(fitted.length)replacements.set(run[0].index,fitted);
+    }
+    if(!replacements.size)return null;
+    // A selected run can cross a polygon's closing edge. Begin at that run so
+    // its replacement remains contiguous, without fitting across unselected gaps.
+    const wrap=runs.find(run=>run.some((s,i)=>i && s.index<run[i-1].index));
+    const start=wrap?wrap[0].index:0,segments=[],keys=new Set();
+    for(let i=0;i<path.segments.length;i++) {
+        const index=(start+i)%path.segments.length,fitted=replacements.get(index);
+        if(fitted) {
+            keys.add('a:'+segments.length);
+            for(const segment of fitted){segments.push(segment);keys.add('a:'+segments.length);}
+        } else if(!included.has(index))segments.push(path.segments[index]);
+    }
+    const shape=curveFragment(path.shape,segments);
+    shape.fillColor=path.shape.fillColor;
+    return {shape,keys};
+}
 function distance(p,a,b) {
     const dx=b.x-a.x,dy=b.y-a.y,len=dx*dx+dy*dy;
     const t=len?Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/len)):0;
@@ -98,4 +121,4 @@ function crosses(a,b,c,d) {
         Math.abs(r)<epsilon && distance(a,c,d)<epsilon || Math.abs(s)<epsilon && distance(b,c,d)<epsilon)return true;
     return (p>0)!==(q>0) && (r>0)!==(s>0);
 }
-module.exports={supported,pathGeometry,segmentRuns,curveFragment,copiedFragments,reconnect,distance,flatten,crosses};
+module.exports={supported,pathGeometry,segmentRuns,curveFragment,copiedFragments,reconnect,fitSelected,distance,flatten,crosses};

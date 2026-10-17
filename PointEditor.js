@@ -72,6 +72,18 @@ class PointEditor {
         }
         return true;
     }
+    fitCurve(){
+        this.prune();
+        const changes=this.paths().map(path=>({path,result:Geometry.fitSelected(path,
+            this.active && this.selection.get(path.shape) || new Set(),this.controller.toolManager.getSmoothnessDistance())}))
+            .filter(entry=>entry.result);
+        if(!changes.length){this.controller.showSaveMessage('Select at least two adjacent anchors to fit a curve');return false;}
+        this.controller.saveUndoState('fit curve');
+        for(const {path,result} of changes){
+            this.replace(path.shape,[result.shape]);this.selection.set(result.shape,result.keys);
+        }
+        this.active=true;return true;
+    }
     nudge(dx,dy){
         this.prune();if(!this.count())return false;
         if(!this.controller.isNudging){this.controller.saveUndoState('move points');this.controller.isNudging=true;}

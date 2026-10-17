@@ -415,6 +415,7 @@ class DrawingController extends Controller {
 
     doKeyPress(info, view, id, part) {
         if(this.shortcuts.suppressText){this.shortcuts.suppressText=false;return true;}
+        if(info.unicode===27 && this.dismissMessage())return true;
         try {
             if(this.textEdit)return this.handleTextKey(info);
             if(info.unicode===13 && this.drawing.boneEditor.selected) {this.beginBoneNameEdit();return true;}
@@ -1302,6 +1303,7 @@ class DrawingController extends Controller {
 
     executeShortcut(command, argument) {
         const commands={
+            fitCurve:()=>this.pointEditor.fitCurve(),
             copy:()=>this.copySelectedShapes(argument?.closePolygon), cut:()=>this.cutSelectedShapes(argument?.closePolygon),
             paste:()=>this.pasteShapes(), undo:()=>this.undo(), redo:()=>this.redo(),
             save:()=>this.saveFile(), saveAs:()=>this.saveAs(), open:()=>this.openDrawingFile(),
@@ -1313,7 +1315,7 @@ class DrawingController extends Controller {
             tool:()=>this.selectToolShortcut(argument),
             nextShape:()=>{this.selectNextShape(argument);this.toolManager.setTool(Tools.TOOLS.SELECT);this.updateToolSelection(Tools.TOOLS.SELECT);},
             delete:()=>this.deleteSelectionOrPoint(),
-            escape:()=>this.showHelp?this.toggleHelp():this.escapeToSelect()
+            escape:()=>this.dismissMessage() || (this.showHelp?this.toggleHelp():this.escapeToSelect())
         };
         if (!commands[command]) return false;
         commands[command]();
@@ -2277,6 +2279,12 @@ class DrawingController extends Controller {
     showSaveMessage(message) {
         this.saveMessage = message;
         this.backgroundView.showNotification(message);
+    }
+
+    dismissMessage() {
+        if(!this.saveMessage)return false;
+        this.backgroundView.dismissNotification();
+        return true;
     }
 
     destroy() {

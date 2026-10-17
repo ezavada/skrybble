@@ -232,6 +232,14 @@ polygon fragments with at least three anchors. Cut reconnects surviving anchors,
 removing the source if too few remain. Isolated anchors and tangent-only
 selections can be nudged, but cannot be copied or cut as drawable fragments.
 
+**Cmd/Ctrl+J** fits editable Bézier curves to consecutive runs of selected
+anchors using the current Smoothness level (higher levels allow a looser fit).
+It preserves each run's endpoints, the shape's fill and stroke, and all unselected
+segments. Separate selected runs are fitted independently; polygon outlines stay
+closed. The fitted anchors remain selected, and the command is one undo step.
+Select at least two adjacent anchors; isolated points and tangent handles alone
+cannot form a curve. Two-point Line objects are unaffected.
+
 The Scissors tool (**C**) operates on already-selected paths, excluding two-point
 Line objects and primitive shapes. Click an edge/curve segment to remove it, or
 drag a straight cutting line to remove every crossed segment. Drag-cut polygon

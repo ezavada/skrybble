@@ -279,9 +279,29 @@ test('text editing commits as one undo action, cancel and unicode backspace',()=
 test('selection pulse and notification finish without wall-clock timers',()=> {
     const view=controller.backgroundView;view.startSelectionPulse();view.animate(.1);
     assert.ok(view.selectionAppearance.getLineOpacity()<1);view.stopSelectionPulse();
-    controller.showSaveMessage('Saved');view.animate(1.75);
+    controller.showSaveMessage('Saved');view.animate(4.99);
+    near(view.notificationAppearance.getFillOpacity(),1);
+    assert.strictEqual(controller.getSaveMessage(),'Saved');
+    view.animate(.26);
     assert.ok(view.notificationAppearance.getFillOpacity()<1);
     view.animate(.5);assert.strictEqual(controller.getSaveMessage(),null);
+});
+test('Escape dismisses success and error messages, and replacement messages restart their duration',()=> {
+    const view=controller.backgroundView;
+    for(const message of ['Saved','Open failed']) {
+        controller.showSaveMessage(message);view.animate(4);
+        controller.showSaveMessage(message);view.animate(4.99);
+        assert.strictEqual(controller.getSaveMessage(),message);
+        near(view.notificationAppearance.getFillOpacity(),1);
+        pressShortcut(controller,{unicode:27});
+        assert.strictEqual(controller.getSaveMessage(),null);
+        assert.strictEqual(view._notificationMessage,null);
+        near(view.notificationAppearance.getFillOpacity(),0);
+    }
+    const text=new Shape.Text(40,40,'Editing');controller.beginTextEdit(text);
+    controller.showSaveMessage('Saved');controller.doKeyPress({unicode:27});
+    assert.strictEqual(controller.getSaveMessage(),null);assert.ok(controller.textEdit);
+    controller.commitTextEdit(true);
 });
 test('width popup uses captured release then clickable option',()=> {
     let accepted=null;
@@ -324,6 +344,7 @@ test('canvas and retained help and notification render under zoom',()=> {
     const cached=controller.backgroundView._helpImage;controller.drawViews(surface,3);
     assert.strictEqual(controller.backgroundView._helpImage,cached);
     controller.showHelp=false;controller.showSaveMessage('Saved');controller.backgroundView.drawSelf(surface,4);
+    controller.dismissMessage();
 });
 test('retained text updates its native element without replacing artwork',()=> {
     const text=new Shape.Text(20,20,'Before');const art=text.getArtwork();
@@ -419,7 +440,7 @@ test('2x toolbar downsampling produces partial edge coverage',()=> {
     assert.ok(partial>10,`Expected antialiased edge pixels, got ${partial}`);
 });
 test('canvas rendering clips artwork to fixed page bounds',()=> {
-    controller.backgroundView.animate(3);
+    controller.backgroundView.animate(6);
     controller.navigation.camera.setZoom(.25);controller.navigation.constrain();
     controller.drawing.clearShapes();controller.drawing.addShape(new Shape.Rectangle(-500,-500,2024,2024,'red',null,0));
     surface.clear();controller.backgroundView.drawSelf(surface,10);const image=new pdg.Image(surface);

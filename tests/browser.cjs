@@ -228,7 +228,11 @@ const escape=async()=> {
     await shot();
 };
 await key('t','KeyT',84);await click(600,600);
-if(!await evalPage('document.querySelector("canvas").style.cursor==="text"'))throw Error('Text tool did not use I-beam cursor');await key('X','KeyX',88);await escape();
+if(!await evalPage('document.querySelector("canvas").style.cursor==="text"'))throw Error('Text tool did not use I-beam cursor');await key('X','KeyX',88);
+await evalPage('__skrybbleTestApp.drawingController.showSaveMessage("Saved"); true');
+await escape();
+if(!await evalPage('!__skrybbleTestApp.drawingController.saveMessage && !!__skrybbleTestApp.drawingController.textEdit'))throw Error('Escape did not dismiss notification before text editing');
+await escape();
 if(!await evalPage('!__skrybbleTestApp.drawingController.textEdit && __skrybbleTestApp.drawingController.toolManager.currentTool === "select"')) throw Error('Escape did not leave text editing');
 await shortcut('Shift+P');await click(250,250);await click(500,250);await click(400,450);await escape();
 if(!await evalPage('!__skrybbleTestApp.drawingController.toolManager.isDrawing && __skrybbleTestApp.drawingController.toolManager.currentTool === "select"')) throw Error('Escape did not finish polygon');
@@ -364,6 +368,20 @@ await call('Input.dispatchMouseEvent',{type:'mouseMoved',...scissorsPositions.en
 await call('Input.dispatchMouseEvent',{type:'mouseReleased',...scissorsPositions.end,button:'left',clickCount:1});
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;return c.undoStack.length===1 && c.drawing.getShapeCount()===2 && c.drawing.getShapes().every(s=>s.constructor.name==='BezierSpline' && s.points.length===2);})()`))throw Error('Scissors drag did not remove both crossed edges');
 console.log('PASS: Option point selection, partial Copy/Paste, scissors click/drag and undo');
+
+await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses();
+    c.pointEditor.clear();c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];c.toolManager.setTool('select');
+    const points=Array.from({length:61},(_,i)=>({x:150+i*3,y:150+20*Math.sin(i/8)}));
+    const shape=new S.Polygon(points,'red','blue',2);shape.selected=true;c.drawing.addShape(shape);
+    c.pointEditor.active=true;c.pointEditor.selection.set(shape,new Set(points.map((_,i)=>'a:'+i)));
+    c.toolManager.setSmoothnessLevel(3);return true;})()`);
+await ctrlCommand('J');
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];
+    return c.undoStack.length===1 && s.constructor.name==='BezierSpline' && s.points.length<61 && s.fillColor==='red' &&
+        s.points[0].x===s.points.at(-1).x && s.points[0].y===s.points.at(-1).y && c.pointEditor.count()>0;})()`))throw Error('Ctrl+J did not fit selected points into a closed curve');
+await shot();await ctrlCommand('Z');
+if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapes()[0].constructor.name==="Polygon"'))throw Error('Curve fitting undo did not restore polygon');
+console.log('PASS: Ctrl+J selected-point curve fitting and undo');
 
 
 // Bone authoring uses real pointer and keyboard input in the browser runtime.

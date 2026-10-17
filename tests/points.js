@@ -150,4 +150,69 @@ test('C selects scissors while Option+Command+C keeps command precedence and req
     const shortcut=input.shortcut('KeyC',{meta:true,alt:true});assert.strictEqual(shortcut[0],'copy');assert.ok(shortcut[1].closePolygon);
     const shape=polygon();select(c,shape,['a:0','a:1','a:2']);c.executeShortcut(...shortcut);assert.strictEqual(c.clipboard[0].type,'Polygon');
 }));
+test('curve fitting follows smoothness, preserves endpoints, and approximates dense sampled points',()=>{
+    const fit=require('../curve-fit');
+    const points=Array.from({length:81},(_,i)=>({x:100+i*2,y:150+30*Math.sin(i/9)+2*Math.sin(i*2)}));
+    const fine=fit(points,2),smooth=fit(points,13);
+    assert.ok(smooth.length<fine.length);assert.ok(smooth.length<points.length/4);
+    for(const [segments,tolerance] of [[fine,2],[smooth,13]]) {
+        assert.deepStrictEqual(segments[0].p0,points[0]);assert.deepStrictEqual(segments.at(-1).p3,points.at(-1));
+        const polyline=segments.flatMap(s=>Geometry.flatten(s,.05));
+        for(const point of points) {
+            let distance=Infinity;
+            for(let i=1;i<polyline.length;i++)distance=Math.min(distance,Geometry.distance(point,polyline[i-1],polyline[i]));
+            assert.ok(distance<=tolerance+.1,`Distance ${distance} exceeds ${tolerance}`);
+        }
+    }
+    assert.deepStrictEqual(fit([{x:1,y:1},{x:1,y:1}],5),[]);
+});
+test('fitting disconnected rotated curve runs preserves intervening segments, style, clipboard and undo',()=>withController(c=>{
+    const shape=new Shapes.BezierSpline(Array.from({length:8},(_,i)=>({x:100+i*30,y:160+20*Math.sin(i)})),'red','blue',3);
+    shape.rotation=.4;select(c,shape,['a:0','a:1','a:2','a:5','a:6','a:7']);
+    const original=c.drawing.serializeShape(shape),path=Geometry.pathGeometry(shape),clipboard=[{untouched:true}];c.clipboard=clipboard;
+    const undo=c.undoStack.length;assert.ok(c.pointEditor.fitCurve());
+    const result=c.drawing.getShapes()[0],after=Geometry.pathGeometry(result);
+    assert.ok(result instanceof Shapes.BezierSpline);assert.strictEqual(result.fillColor,'red');
+    assert.strictEqual(result.strokeColor,'blue');assert.strictEqual(result.strokeWidth,3);assert.strictEqual(result.rotation,0);
+    for(const i of [2,3,4]) {
+        const preserved=after.segments.find(s=>Math.hypot(s.p0.x-path.segments[i].p0.x,s.p0.y-path.segments[i].p0.y)<1e-6);
+        assert.ok(preserved);sameSegment(preserved,path.segments[i]);
+    }
+    assert.strictEqual(c.clipboard,clipboard);assert.strictEqual(c.undoStack.length,undo+1);assert.ok(c.pointEditor.active);
+    const serialized=c.drawing.serializeShape(result);
+    const restored=c.drawing.deserializeShape(serialized.type,serialized);
+    assert.deepStrictEqual(c.drawing.serializeShape(restored),serialized);
+    c.undo();assert.deepStrictEqual(c.drawing.serializeShape(c.drawing.getShapes()[0]),original);
+    c.redo();assert.deepStrictEqual(c.drawing.serializeShape(c.drawing.getShapes()[0]),serialized);
+}));
+test('polygon fitting preserves closure, fill and unselected edges, including a run over the closing edge',()=>withController(c=>{
+    const points=[{x:100,y:100},{x:180,y:90},{x:250,y:120},{x:280,y:200},{x:220,y:250},{x:130,y:240}];
+    for(const ids of [[0,1,2,3,4,5],[4,5,0,1]]) {
+        c.drawing.clearShapes();c.pointEditor.clear();const shape=new Shapes.Polygon(points.map(p=>({...p})),'red','blue',3);
+        select(c,shape,ids.map(i=>'a:'+i));const before=Geometry.pathGeometry(shape);
+        assert.ok(c.pointEditor.fitCurve());const result=c.drawing.getShapes()[0];
+        assert.deepStrictEqual(result.points[0],result.points.at(-1));assert.strictEqual(result.fillColor,'red');
+        assert.ok(result.contains(190,170));
+        if(ids.length<6)for(const i of [1,2,3]) {
+            const segment=Geometry.pathGeometry(result).segments.find(s=>s.p0.x===before.segments[i].p0.x && s.p0.y===before.segments[i].p0.y);
+            assert.ok(segment);sameSegment(segment,before.segments[i]);
+        }
+        const surface=pdg.gfx.createOffscreenPort(new pdg.Rect(400,350));
+        try {result.selected=false;result.draw(surface);const image=new pdg.Image(surface);assert.ok(image.getPixel(190,170).red>.9);}
+        finally {pdg.gfx.closeGraphicsPort(surface);}
+    }
+}));
+test('Cmd/Ctrl+J fits selected anchors, while isolated and tangent-only selections leave geometry and undo unchanged',()=>withController(c=>{
+    const shape=bezier();select(c,shape,['c:0','a:1']);const before=c.drawing.serializeShape(shape),undo=c.undoStack.length;
+    assert.strictEqual(c.pointEditor.fitCurve(),false);assert.deepStrictEqual(c.drawing.serializeShape(shape),before);
+    assert.strictEqual(c.undoStack.length,undo);
+    for(const [modifier,mask] of [['MetaLeft',8],['ControlLeft',2]]) {
+        const current=c.drawing.getShapes()[0];c.pointEditor.selection.set(current,new Set(['a:0','a:1','a:2']));
+        const input=pdg.getInputManager();
+        for(const [code,down,modifiers] of [[modifier,true,mask],['KeyJ',true,mask],['KeyJ',false,mask],[modifier,false,0]]) {
+            input.feed({kind:'key',code,down,modifiers});if(down)c.doKeyDown({keyCode:code});else c.doKeyUp({keyCode:code});
+        }
+        assert.notStrictEqual(c.drawing.getShapes()[0],current);
+    }
+}));
 console.log(`${passed} passed, ${failed} failed`);process.exit(failed?1:0);

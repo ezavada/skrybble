@@ -862,6 +862,14 @@ class BezierSpline extends Shape {
         this.underConstruction = false; // Track if shape is still being built
     }
 
+    closedOutline() {
+        const first=this.points[0],last=this.points.at(-1);
+        if(this.points.length<3 || first.x!==last.x || first.y!==last.y)return null;
+        const {flatten}=require('./path-editing');
+        return this.points.slice(0,-1).flatMap((p0,i)=>flatten({p0,p1:this.controlPoints[2*i] || p0,
+            p2:this.controlPoints[2*i+1] || this.points[i+1],p3:this.points[i+1]},.25).slice(0,-1));
+    }
+
     generateControlPoints(preserveManualEdits = false) {
         // For a Bezier spline with N points, we need 2*(N-1) control points
         // Each segment between two endpoints needs 2 control points
@@ -947,6 +955,14 @@ class BezierSpline extends Shape {
         
         // Add segments to the spline, applying rotation if set
         // Each segment uses 2 control points: controls[i*2] and controls[i*2+1]
+        const outline=this.closedOutline();
+        if(outline) {
+            const vertices=outline.map(p=>this.rotation?this.rotatePoint(p.x,p.y,center.x,center.y,this.rotation):p);
+            // Splines draw strokes only. Keep a separate retained fill element
+            // even when transparent so style edits retain the element layout.
+            port.drawPolygon(new pdg.Polygon(vertices.map(p=>new pdg.Point(p))),new pdg.Attributes()
+                .fillColor(this.fillColor || 'white').fillOpacity(this.fillColor?1:0).lineStyle(pdg.lineStyle_None));
+        }
         for (let i = 0; i < this.points.length - 1; i++) {
             let p1 = this.points[i];
             let p4 = this.points[i + 1];
@@ -970,9 +986,9 @@ class BezierSpline extends Shape {
         
         // Draw the spline
         const attrs = new pdg.Attributes();
-        attrs.lineColor(new pdg.Color(this.strokeColor))
-             .lineThickness(this.strokeWidth)
-             .lineStyle(pdg.lineStyle_Solid);
+        if(this.strokeColor && this.strokeWidth>0)attrs.lineColor(new pdg.Color(this.strokeColor))
+             .lineThickness(this.strokeWidth).lineStyle(pdg.lineStyle_Solid);
+        else attrs.lineStyle(pdg.lineStyle_None);
         if (this.fillColor) {
             attrs.fillColor(new pdg.Color(this.fillColor));
         }
@@ -1072,6 +1088,8 @@ class BezierSpline extends Shape {
         
         // Sample points along the Bezier spline and check distance to each segment
         if (this.points.length < 2) return false;
+        const outline=this.fillColor && this.closedOutline();
+        if(outline && new pdg.Polygon(outline.map(p=>new pdg.Point(p))).contains(new pdg.Point(testX,testY)))return true;
         
         // Create a temporary PDG spline to sample points
         const spline = new pdg.Spline(pdg.spline_CubicBezier);

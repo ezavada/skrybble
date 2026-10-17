@@ -50,7 +50,13 @@ class DrawingSurfaceView extends View {
         this._notificationDrawing=null;
         const a=this.notificationAppearance;
         a.cancelSchedule().fillOpacity(1).lineOpacity(1);
-        a.wait(1.5).andThen().changeFillOpacity(0,.5).changeLineOpacity(0,.5);
+        a.wait(5).changeFillOpacity(0,.5).changeLineOpacity(0,.5);
+    }
+    dismissNotification() {
+        this.notificationAppearance.cancelSchedule().fillOpacity(0).lineOpacity(0);
+        this._notificationMessage=null;
+        this._notificationDrawing=null;
+        this.controller.saveMessage=null;
     }
     animate(seconds) {
         const changed=super.animate(seconds);
@@ -179,6 +185,7 @@ class DrawingSurfaceView extends View {
             { key: 'Normal Click', description: 'Return to whole-object selection' },
             { key: 'Point Copy/Cut', description: '2+ adjacent anchors; handles follow' },
             { key: 'Opt+Ctrl+C/X', description: 'Close polygon fragments (3+ anchors)' },
+            { key: 'Ctrl+J', description: 'Fit selected points at current smoothness' },
             { key: 'Bone Drag', description: 'Start on any bone to create a child' },
             { key: 'Bone Endpoints', description: 'Select tool: drag to edit' },
             { key: 'Bone Name', description: 'Enter / double-click to rename' },

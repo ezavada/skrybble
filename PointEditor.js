@@ -78,8 +78,40 @@ class PointEditor {
         const keys=path=>this.active && this.selection.get(path.shape) || new Set();
         const hasRun=paths.some(path=>path.segments.some(s=>keys(path).has('a:'+s.start)&&keys(path).has('a:'+s.end)));
         const changes=[];
+        let rejectedInk=false;
         for(const path of paths) {
             const selected=hasRun?keys(path):new Set(path.anchors.map((_,i)=>'a:'+i));
+            const whole=!hasRun || path.anchors.every((_,i)=>selected.has('a:'+i));
+            if(whole && path.type==='Polygon' && path.shape.fillColor && (!path.shape.strokeColor || path.shape.strokeWidth<=0)) {
+                const ink=require('./ink-centerline').partition(path.anchors,line=>{
+                    // A document-sized smoothing error can erase the bends in
+                    // narrow ink. Bound it by the inferred stroke width.
+                    const segments=require('./curve-fit')(line.points,Math.min(tolerance,line.width));
+                    if(!segments.length)return null;
+                    let length=0;
+                    for(const segment of segments) {
+                        const points=Geometry.flatten(segment,Math.min(.05,line.width/20));
+                        for(let i=1;i<points.length;i++)length+=Math.hypot(points[i].x-points[i-1].x,points[i].y-points[i-1].y);
+                    }
+                    if(length<5*line.width)return null;
+                    const shape=Geometry.curveFragment({strokeColor:path.shape.fillColor,strokeWidth:line.width},segments);
+                    if(path.shape.rigBone)shape.rigBone=path.shape.rigBone;
+                    return shape;
+                });
+                if(ink) {
+                    const curves=ink.accepted;
+                    if(!curves.length)rejectedInk=true;
+                    if(curves.length) {
+                        const survivors=ink.residual.map(points=>{
+                            const shape=new Polygon(points,path.shape.fillColor,null,0);
+                            if(path.shape.rigBone)shape.rigBone=path.shape.rigBone;
+                            return shape;
+                        });
+                        changes.push({path,curves,selections:curves.map(shape=>new Set(shape.points.map((_,i)=>'a:'+i))),survivors});
+                    }
+                    continue;
+                }
+            }
             if(!hasRun || path.type==='BezierSpline') {
                 const result=Geometry.fitSelected(path,selected,tolerance);
                 if(result)changes.push({path,curves:[result.shape],selections:[result.keys],survivors:[]});
@@ -90,7 +122,9 @@ class PointEditor {
                     survivors:Geometry.reconnect(path,removed)});
             }
         }
-        if(!changes.length){this.controller.showErrorMessage('Select an editable path to fit a curve');return false;}
+        if(!changes.length){this.controller.showErrorMessage(rejectedInk
+            ?'No ink curves meet the limit: length at least 5× width'
+            :'Select an editable path to fit a curve');return false;}
         this.controller.saveUndoState('fit curve');
         for(const {path,curves,selections,survivors} of changes){
             this.replace(path.shape,[...survivors,...curves]);

@@ -201,6 +201,7 @@ class DrawingSurfaceView extends View {
             { key: 'Point Copy/Cut', description: '2+ adjacent anchors; handles follow' },
             { key: 'Opt+Ctrl+C/X', description: 'Close polygon fragments (3+ anchors)' },
             { key: 'Ctrl+J', description: 'Fit point runs, or all path points' },
+            { key: 'Ctrl+J on Ink', description: 'Trace centerlines and estimate width' },
             { key: 'Bone Drag', description: 'Start on any bone to create a child' },
             { key: 'Bone Endpoints', description: 'Select tool: drag to edit' },
             { key: 'Bone Name', description: 'Enter / double-click to rename' },

@@ -244,6 +244,19 @@ The fitted anchors remain selected, and the command is one undo step. Isolated
 points or tangent handles alone count as no selected run. Two-point Line objects
 are unaffected.
 
+For a whole filled polygon with no outline stroke, Cmd/Ctrl+J also checks whether
+its geometry looks like a thin ink ribbon. Ink ribbons become centerline Bézier
+strokes using the polygon's fill color and an estimated width for each branch.
+Junctions split into separate curves, while loops remain connected. Compact
+filled regions keep the normal outline-fitting behavior; partial point runs are
+unchanged. This works on imported v5 line-art polygons without needing conversion
+metadata, and the entire conversion remains one undo step.
+Each resulting ink curve must have an arc length at least five times its
+estimated stroke width; a two-anchor curve is valid. Rejected branches stay as
+filled polygon regions; if none qualify, the original polygon remains unchanged.
+Ink fitting error is capped at the estimated stroke width, while lower Smoothness
+settings still apply, so smoothing does not erase bends in narrow ribbons.
+
 The Scissors tool (**C**) operates on already-selected paths, excluding two-point
 Line objects and primitive shapes. Click an edge/curve segment to remove it, or
 drag a straight cutting line to remove every crossed segment. Drag-cut polygon

@@ -399,6 +399,44 @@ if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawin
     return c.drawing.getShapeCount()===1 && s.constructor.name==='BezierSpline' && s.points.length<61 && s.fillColor==='red';})()`))throw Error('Ctrl+J without selected points did not replace the whole path');
 console.log('PASS: Ctrl+J selected-point curve fitting and undo');
 
+const inkFixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/v5-ink-network.json'),'utf8'));
+await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses(),fixture=${JSON.stringify(inkFixture)};
+    c.pointEditor.clear();c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];c.navigation.setCanvas(...fixture.canvas);
+    c.toolManager.setTool('select');const shape=new S.Polygon(fixture.points.map(([x,y])=>({x,y})),fixture.fillColor,null,0);
+    shape.selected=true;c.drawing.addShape(shape);return true;})()`);
+if(process.env.SKRYBBLE_INK_SOURCE_SCREENSHOT) {
+    await evalPage('__skrybbleTestApp.drawingController.drawing.getShapes()[0].selected=false;true');
+    fs.writeFileSync(process.env.SKRYBBLE_INK_SOURCE_SCREENSHOT,Buffer.from(await shot(),'base64'));
+    await evalPage('__skrybbleTestApp.drawingController.drawing.getShapes()[0].selected=true;true');
+}
+await ctrlCommand('J');
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,curves=c.drawing.getShapes();
+    const strokes=curves.filter(s=>s.constructor.name==='BezierSpline'),fills=curves.filter(s=>s.constructor.name==='Polygon');
+    return c.undoStack.length===1 && strokes.length>10 && fills.length>0 && strokes.every(s=>s.points.length>=2 && s.fillColor===null && s.strokeColor==='#202020' && s.strokeWidth>0) &&
+        fills.every(s=>s.fillColor==='#202020' && s.strokeWidth===0) && strokes.reduce((sum,s)=>sum+s.points.length,0)<4655;})()`))throw Error('Ctrl+J did not recover qualifying centerlines and preserve rejected ink regions');
+await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;c.pointEditor.clear();c.drawing.getShapes().forEach(s=>s.selected=false);return true;})()`);
+const inkPreview=await shot();
+if(process.env.SKRYBBLE_INK_SCREENSHOT)fs.writeFileSync(process.env.SKRYBBLE_INK_SCREENSHOT,Buffer.from(inkPreview,'base64'));
+await ctrlCommand('Z');
+if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapeCount()===1 && __skrybbleTestApp.drawingController.drawing.getShapes()[0].points.length===9310'))throw Error('Ink tracing undo did not restore the original polygon');
+console.log('PASS: v5 ink centerline conversion, inferred widths, render and undo');
+
+const badRibbon=fs.readFileSync(path.join(__dirname,'fixtures/bad-ribbon.pdgdrawing')).toString('base64');
+await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,bytes=Uint8Array.from(atob(${JSON.stringify(badRibbon)}),ch=>ch.charCodeAt(0));
+    FS.mkdirTree('/uploads');FS.writeFile('/uploads/bad-ribbon.pdgdrawing',bytes);
+    c.pointEditor.clear();c.openDrawingFile('/uploads/bad-ribbon.pdgdrawing');c.dismissMessage();
+    const shapes=c.drawing.getShapes(),ribbon=shapes.find(s=>s.points?.length===764);
+    shapes.forEach(s=>s.selected=s===ribbon);window.badRibbonJunk=shapes.filter(s=>s!==ribbon);
+    window.badRibbonBefore=JSON.stringify(shapes.map(s=>c.drawing.serializeShape(s)));
+    c.toolManager.setSmoothnessLevel(4);return true;})()`);
+await ctrlCommand('J');
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,shapes=c.drawing.getShapes(),curves=shapes.filter(s=>s.constructor.name==='BezierSpline');
+    return curves.length>=3 && curves.some(s=>s.points.length===2) && window.badRibbonJunk.every(s=>shapes.includes(s)) &&
+        shapes.filter(s=>s.constructor.name==='Polygon').length>window.badRibbonJunk.length && c.undoStack.length===1;})()`))throw Error('Bad ribbon did not convert at high smoothness while keeping junk filled');
+await ctrlCommand('Z');
+if(!await evalPage('JSON.stringify(__skrybbleTestApp.drawingController.drawing.getShapes().map(s=>__skrybbleTestApp.drawingController.drawing.serializeShape(s)))===window.badRibbonBefore'))throw Error('Bad ribbon undo did not restore the original artwork');
+console.log('PASS: bad-ribbon at maximum smoothness, two-anchor strokes, retained junk and undo');
+
 const alphaPoint=JSON.parse(await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses();
     c.pointEditor.clear();c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];c.navigation.setCanvas(600,400);
     c.drawing.addShape(new S.Rectangle(100,80,400,220,'blue',null,0));

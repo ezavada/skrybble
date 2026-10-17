@@ -164,15 +164,27 @@ class DrawingSurfaceView extends View {
             { key: 'CTRL/CMD+0', description: 'Reset view to 100%' },
             { key: 'SHIFT+DRAG', description: 'Constrain shapes, rotation, movement' },
             { key: '', description: '' },
+            { key: 'SHIFT+CLICK/DRAG', description: 'Add shapes to selection' },
+            { key: 'CTRL+CLICK/DRAG', description: 'Toggle shape selection' },
+            { key: 'OPT+CLICK/DRAG', description: 'Select points on selected paths' },
+            { key: 'SHIFT+OPT', description: 'Add points to selection' },
+            { key: 'CTRL+OPT', description: 'Toggle point selection' },
+            { key: 'POINTS', description: 'Stay selected after releasing Option' },
+            { key: 'NORMAL CLICK', description: 'Return to whole-object selection' },
+            { key: 'POINT COPY/CUT', description: '2+ adjacent anchors; handles follow' },
+            { key: 'OPT+CTRL+C/X', description: 'Close polygon fragments (3+ anchors)' },
+            { key: 'SCISSORS CLICK', description: 'Remove the segment clicked' },
+            { key: 'SCISSORS DRAG', description: 'Remove segments crossed by cut line' },
+            { key: 'PATHS ONLY', description: 'Selected paths only; excludes Lines' },
             { key: 'TAB', description: 'Select next shape' },
             { key: 'SHIFT+TAB', description: 'Select previous shape' },
             { key: 'DELETE/BKSP', description: 'Delete / Remove last point' },
-            { key: 'ARROWS', description: 'Move selected shapes (10px)' },
-            { key: 'SHIFT+ARROWS', description: 'Move selected shapes (1px)' },
+            { key: 'ARROWS', description: 'Move selected shapes / points (10px)' },
+            { key: 'SHIFT+ARROWS', description: 'Move selected shapes / points (1px)' },
             { key: '', description: '' },
-            { key: 'CMD/CTRL+C', description: 'Copy selected shapes' },
-            { key: 'CMD/CTRL+X', description: 'Cut selected shapes' },
-            { key: 'CMD/CTRL+V', description: 'Paste shapes' },
+            { key: 'CMD/CTRL+C', description: 'Copy shapes / point fragments' },
+            { key: 'CMD/CTRL+X', description: 'Cut points (reconnect) / shapes' },
+            { key: 'CMD/CTRL+V', description: 'Paste shapes / separate fragments' },
             { key: 'CMD/CTRL+G', description: 'Group selected shapes' },
             { key: 'CMD/CTRL+SHIFT+G', description: 'Ungroup selected groups' },
             { key: 'CMD/CTRL+Z', description: 'Undo' },
@@ -204,10 +216,10 @@ class DrawingSurfaceView extends View {
         const keyWidth = Math.max(...items.map(item => measure(item.key, textSize))) + 12;
         const lineHeight = Math.max(textSize * 1.5, Math.min(22, (area.height() - 110) / rows));
         const centerX = area.left + area.width() / 2;
-        port.drawText('Keyboard Shortcuts', new pdg.Point(centerX, area.top + 34),
+        port.drawText('Tools & Shortcuts', new pdg.Point(centerX, area.top + 34),
             new pdg.Attributes().textSize(Math.min(24, textSize * 1.8)).textStyle(pdg.textStyle_Centered)
                 .fillColor(new pdg.Color('white')));
-        port.drawText('Ctrl shortcuts also use Cmd on macOS', new pdg.Point(centerX, area.top + 56),
+        port.drawText('Opt = Option / Alt; Cmd also works for Ctrl key shortcuts', new pdg.Point(centerX, area.top + 56),
             new pdg.Attributes().textSize(textSize).textStyle(pdg.textStyle_Centered)
                 .fillColor(new pdg.Color('#cbd5e1')));
         const keyAttrs = new pdg.Attributes().textSize(textSize).fillColor(new pdg.Color('#cce5ff'));

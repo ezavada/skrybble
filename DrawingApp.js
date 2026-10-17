@@ -80,6 +80,21 @@ class DrawingApp extends Application {
         this.drawingController = new DrawingController(this, this.mainPort);
     }
 
+    _registerEventHandlers() {
+        super._registerEventHandlers();
+        this.quitRequestHandler=pdg.on(pdg.eventType_QuitRequest,()=>this.onQuitRequest());
+    }
+
+    onQuitRequest() {
+        // GLFW/Cocoa may still be iterating the windows during this callback.
+        // Destroy them only after native event polling has returned to JavaScript.
+        if(this.quitTask==null)this.quitTask=setTimeout(()=>{
+            this.quitTask=null;
+            pdg.quit();
+        },0);
+        return true;
+    }
+
     onShutdown(event) {
         const handled = super.onShutdown(event);
         this.cleanup();
@@ -87,6 +102,8 @@ class DrawingApp extends Application {
     }
     
     cleanup() {
+        if(this.quitRequestHandler){this.quitRequestHandler.cancel();this.quitRequestHandler=null;}
+        if(this.quitTask!=null){clearTimeout(this.quitTask);this.quitTask=null;}
         if (this.drawingController) {
             this.drawingController.destroy();
             this.drawingController = null;

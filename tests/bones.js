@@ -108,6 +108,45 @@ test('IK keeps rotated mixed-binding group frames stable',()=>{
     near(fixedAfter.x,fixed.x);near(fixedAfter.y,fixed.y);
     near(movingAfter.x,120-(moving.y-100));near(movingAfter.y,100+(moving.x-120));
 });
+test('new bones at existing child starts share their parent and attachment point',()=>{
+    const d=new Drawing(),e=d.boneEditor;
+    drag(e,{x:100,y:100},{x:300,y:100});drag(e,{x:200,y:100},{x:200,y:200});
+    drag(e,{x:202,y:102},{x:240,y:200});
+    assert.strictEqual(e.bones[2].parent,'root');near(e.bones[2].root.x,200);near(e.bones[2].root.y,100);
+    drag(e,{x:200,y:200},{x:240,y:240});assert.strictEqual(e.bones[3].parent,'bone1');
+});
+test('Shift slides child attachments on the parent without IK or sibling movement',()=>{
+    const d=new Drawing(),e=d.boneEditor;
+    drag(e,{x:100,y:100},{x:300,y:100});drag(e,{x:200,y:100},{x:200,y:180});
+    drag(e,{x:200,y:180},{x:250,y:180});drag(e,{x:250,y:100},{x:250,y:60});
+    const parent=JSON.stringify(e.bones[0]),sibling=JSON.stringify(e.bones[3]);
+    e.begin({x:200,y:100},7,true,true);e.move({x:240,y:160},true);e.finish(()=>{});
+    near(e.bones[1].root.x,240);near(e.bones[1].root.y,100);near(e.bones[1].tip.x,240);
+    near(e.bones[2].root.x,240);near(e.bones[2].tip.x,290);
+    assert.strictEqual(JSON.stringify(e.bones[0]),parent);assert.strictEqual(JSON.stringify(e.bones[3]),sibling);
+    e.begin({x:240,y:100},7,true,true);e.move({x:500,y:50},true);e.finish(()=>{});near(e.bones[1].root.x,300);
+    e.selected=null;const before=JSON.stringify(e.bones);let undo=0;
+    e.begin({x:100,y:100},7,true,true);e.move({x:50,y:50},true);e.finish(()=>undo++);
+    assert.strictEqual(JSON.stringify(e.bones),before);assert.strictEqual(undo,0);
+});
+test('Shift tip resizing carries descendants at their relative attachments without parent IK',()=>{
+    const d=new Drawing(),e=d.boneEditor;
+    drag(e,{x:20,y:100},{x:120,y:100});drag(e,{x:120,y:100},{x:220,y:100});
+    drag(e,{x:170,y:100},{x:170,y:150});drag(e,{x:170,y:150},{x:200,y:150});
+    const ancestor=JSON.stringify(e.bones[0]);
+    e.begin({x:220,y:100},7,true,true);e.move({x:120,y:300},true);e.finish(()=>{});
+    assert.strictEqual(JSON.stringify(e.bones[0]),ancestor);
+    near(e.bones[1].tip.x,120);near(e.bones[1].tip.y,300);
+    near(e.bones[2].root.x,120);near(e.bones[2].root.y,200);
+    near(e.bones[2].tip.x,70);near(e.bones[2].tip.y,200);
+    near(e.bones[3].root.x,70);near(e.bones[3].root.y,200);near(e.bones[3].tip.y,230);
+    near(e.asset.getBoneDefinition('bone1').length,200);near(e.asset.getBoneDefinition('bone2').length,50);
+    // At an overlapping tip/child start, the selected parent's tip can still be resized.
+    const shared=new Drawing(),r=shared.boneEditor;
+    drag(r,{x:20,y:20},{x:120,y:20});drag(r,{x:120,y:20},{x:120,y:80});r.selected='root';
+    r.begin({x:120,y:20},7,true,true);assert.strictEqual(r.gesture.edit.end,'tip');
+    r.move({x:220,y:20},true);r.finish(()=>{});near(r.bones[1].root.x,220);near(r.bones[1].tip.x,220);
+});
 test('tiny drag cancels without touching history or artwork',()=>{
     const d=new Drawing();let undo=0;
     d.boneEditor.begin({x:10,y:10},7);d.boneEditor.move({x:11,y:11});d.boneEditor.finish(()=>undo++);
@@ -159,6 +198,22 @@ try {
         near(c.drawing.getShapes()[0].getCenterPoint().x,200);near(c.drawing.boneEditor.bones[1].root.x,200);
         c.redo();near(c.drawing.getShapes()[0].getCenterPoint().y,200);near(c.drawing.boneEditor.bones[1].root.y,200);
         c.backgroundView.drawSelf(surface,0);
+    });
+    test('controller Shift transitions recompute stationary bone previews and commit one undo',()=>{
+        c.commitTextEdit(true);c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];c.showHelp=false;
+        c.toolManager.setTool('select');c.inputState={shift:true,pan:false};
+        const e=c.drawing.boneEditor;drag(e,{x:100,y:100},{x:300,y:100});drag(e,{x:200,y:100},{x:200,y:180});
+        const art=new Shapes.Rectangle(195,95,10,10);art.rigBone='bone1';c.drawing.addShape(art);
+        const event=(x,y,shift)=>({mousePos:c.navigation.toView({x,y}),shift});
+        c.handleMouseDown(event(200,100,true));c.handleMouseMove(event(250,130,true));
+        near(e.gesture.preview[1].root.x,250);near(e.gesture.preview[1].root.y,100);
+        near(e.getShapesForDisplay()[0].getCenterPoint().x,250);
+        c.applyHeldInput({shift:false,pan:false});assert.ok(e.gesture.preview[0].tip.y>100);
+        c.applyHeldInput({shift:true,pan:false});near(e.gesture.preview[0].tip.y,100);near(e.gesture.preview[1].root.x,250);
+        c.handleMouseUp(event(250,130,true));assert.strictEqual(c.undoStack.length,1);near(e.bones[1].root.x,250);
+        c.undo();near(c.drawing.boneEditor.bones[1].root.x,200);near(c.drawing.getShapes()[0].getCenterPoint().x,200);
+        c.redo();near(c.drawing.boneEditor.bones[1].root.x,250);near(c.drawing.getShapes()[0].getCenterPoint().x,250);
+        c.inputState={shift:false,pan:false};
     });
     test('Help stays last even when tools are appended',()=>{
         Tools.TOOLS.TEST='test';

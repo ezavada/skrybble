@@ -408,7 +408,7 @@ class DrawingController extends Controller {
         }
         if (before.shift!==state.shift && this._gesturePointer && !this.textEdit &&
             !this.activePicker() && !this.showHelp &&
-            (this.panPosition || this.rotatingShape || this.draggedPoint || this.draggedShapes || this.toolManager.isCurrentlyDrawing())) {
+            (this.drawing.boneEditor.gesture || this.panPosition || this.rotatingShape || this.draggedPoint || this.draggedShapes || this.toolManager.isCurrentlyDrawing())) {
             this.handleMouseMove({mousePos:new pdg.Point(this._gesturePointer),shift:state.shift});
         }
     }
@@ -571,7 +571,7 @@ class DrawingController extends Controller {
         if(this.textEdit)return true;
         const bones=this.drawing.boneEditor;
         if(currentTool===Tools.TOOLS.BONE || (currentTool===Tools.TOOLS.SELECT && bones.hit(pos,7/this.navigation.camera.getZoom(),true))) {
-            try { bones.begin(pos,7/this.navigation.camera.getZoom(),currentTool===Tools.TOOLS.SELECT); }
+            try { bones.begin(pos,7/this.navigation.camera.getZoom(),currentTool===Tools.TOOLS.SELECT,!!event.shift || !!this.inputState?.shift); }
             catch(error) { this.showSaveMessage(error.message); }
             return true;
         }
@@ -593,7 +593,10 @@ class DrawingController extends Controller {
     }
 
     handleMouseMove(event) {
-        if(this.drawing.boneEditor.gesture) {this.drawing.boneEditor.move(this.getMousePosition(event));return true;}
+        if(this.drawing.boneEditor.gesture) {
+            this._gesturePointer={x:event.mousePos.x,y:event.mousePos.y};
+            this.drawing.boneEditor.move(this.getMousePosition(event),!!event.shift || !!this.inputState?.shift);return true;
+        }
         if(this.pointEditor.move(this.getMousePosition(event)))return true;
         event={...event,shift:!!event.shift || !!this.inputState?.shift};
         this._gesturePointer={x:event.mousePos.x,y:event.mousePos.y};
@@ -650,7 +653,7 @@ class DrawingController extends Controller {
 
     handleMouseUp(event) {
         if(this.drawing.boneEditor.gesture) {
-            this.drawing.boneEditor.move(this.getMousePosition(event));
+            this.drawing.boneEditor.move(this.getMousePosition(event),!!event.shift || !!this.inputState?.shift);
             this.drawing.boneEditor.finish(action=>this.saveUndoState(action));
             if(this.drawing.boneEditor.selected && this.drawing.boneEditor.selected!=='root' && this.toolManager.getCurrentTool()===Tools.TOOLS.BONE)this.beginBoneNameEdit();
             return true;

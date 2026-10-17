@@ -677,3 +677,13 @@ changing bone lengths. Attached artwork follows endpoint edits without scaling.
 Bone authoring requires a PDG runtime containing `AnimationRig`; use
 `PDG_SOURCE=devel ./skrybble` or set `PDG_EXECUTABLE` to that development build.
 For the web app, rebuild with a matching development WebAssembly runtime.
+
+Starting a new bone on an existing child's parent connection creates a sibling,
+sharing that child's parent and connection point. **Shift-drag** a child start
+to slide its whole subtree along the parent segment; it cannot detach or rotate
+the parent. An unattached start stays fixed with Shift. **Shift-drag** a tip to
+resize and rotate that bone without parent IK. Descendant attachment positions
+follow proportionally along its new length, and descendant lengths stay fixed.
+When a parent tip overlaps a child start, select the parent first to Shift-drag
+its tip; otherwise the child connection takes precedence. Releasing Shift
+restores the normal immediate-parent IK behavior during the same drag.

@@ -17,22 +17,29 @@ class BoneEditor {
         }
         return null;
     }
-    begin(point,tolerance,edit=false) {
+    begin(point,tolerance,edit=false,shift=false) {
         this.requireRuntime();
-        const hit=this.hit(point,tolerance,edit);
+        let hit=this.hit(point,tolerance,edit);
+        if(edit && shift) {
+            const selected=this.bones.find(b=>b.name===this.selected);
+            if(selected && Math.hypot(point.x-selected.tip.x,point.y-selected.tip.y)<=tolerance)hit={bone:selected,end:'tip'};
+        }
         if(edit) {
             if(!hit)return false;
             this.selected=hit.bone.name;
-            this.gesture={edit:hit,point:{...point}};
+            this.gesture={edit:hit,point:{...point},shift};
         } else {
-            this.gesture={root:{...point},tip:{...point},parent:hit?hit.bone.name:null};
+            // A shared child start belongs to its parent, even when the
+            // reverse-order hit test encounters that child first.
+            const connection=[...this.bones].reverse().find(b=>b.parent && Math.hypot(point.x-b.root.x,point.y-b.root.y)<=tolerance);
+            this.gesture={root:connection?{...connection.root}:{...point},tip:{...point},parent:connection?connection.parent:hit?hit.bone.name:null};
         }
         return true;
     }
-    move(point) {
+    move(point,shift=this.gesture?.shift || false) {
         const g=this.gesture;if(!g)return;
         if(g.edit) {
-            g.point={...point};g.preview=this.solveEndpoint(g.edit,point);
+            g.point={...point};g.shift=shift;g.preview=this.solveEndpoint(g.edit,point,shift);
             g.shapes=this.drawing.getShapes().map(shape=>{
                 const data=JSON.parse(JSON.stringify(this.drawing.serializeShape(shape)));
                 const copy=this.drawing.deserializeShape(data.type,data);copy.selected=shape.selected;return copy;
@@ -40,9 +47,44 @@ class BoneEditor {
             this.moveArtwork(g.shapes,this.bones,g.preview);
         } else g.tip={...point};
     }
-    solveEndpoint(hit,target) {
+    solveEndpoint(hit,target,shift=false) {
         const bones=this.bones.map(b=>({...b,root:{...b.root},tip:{...b.tip}}));
         const original=hit.bone,parent=this.bones.find(b=>b.name===original.parent);
+        if(shift) {
+            const moving=new Set([original.name]);
+            if(hit.end==='root') {
+                if(!parent)return bones;
+                const dx=parent.tip.x-parent.root.x,dy=parent.tip.y-parent.root.y,length2=dx*dx+dy*dy;
+                if(length2<1e-8)return bones;
+                const t=Math.max(0,Math.min(1,((target.x-parent.root.x)*dx+(target.y-parent.root.y)*dy)/length2));
+                const offset={x:parent.root.x+t*dx-original.root.x,y:parent.root.y+t*dy-original.root.y};
+                for(const b of bones) {
+                    if(moving.has(b.parent))moving.add(b.name);
+                    if(moving.has(b.name))for(const end of ['root','tip'])b[end]={x:b[end].x+offset.x,y:b[end].y+offset.y};
+                }
+            } else {
+                const ox=original.tip.x-original.root.x,oy=original.tip.y-original.root.y,oldLength=Math.hypot(ox,oy);
+                const nx=target.x-original.root.x,ny=target.y-original.root.y,newLength=Math.hypot(nx,ny);
+                if(oldLength<1e-8 || newLength<3)return bones;
+                const turn=Math.atan2(ny,nx)-Math.atan2(oy,ox),c=Math.cos(turn),s=Math.sin(turn);
+                const frames=new Map();
+                bones.find(b=>b.name===original.name).tip={...target};
+                for(const b of bones) {
+                    if(b.parent===original.name) {
+                        const x=b.root.x-original.root.x,y=b.root.y-original.root.y;
+                        const along=(x*ox+y*oy)/oldLength,across=(-x*oy+y*ox)/oldLength;
+                        frames.set(b.name,{old:{...b.root},next:{x:original.root.x+nx/oldLength*along-ny/newLength*across,
+                            y:original.root.y+ny/oldLength*along+nx/newLength*across}});
+                    } else if(frames.has(b.parent))frames.set(b.name,frames.get(b.parent));
+                    const frame=frames.get(b.name);if(!frame)continue;
+                    for(const end of ['root','tip']) {
+                        const x=b[end].x-frame.old.x,y=b[end].y-frame.old.y;
+                        b[end]={x:frame.next.x+c*x-s*y,y:frame.next.y+s*x+c*y};
+                    }
+                }
+            }
+            return bones;
+        }
         const pivotBone=hit.end==='root' && parent ? parent : original;
         const connected=!!parent && hit.end==='root' || hit.end==='tip' && this.bones.some(b=>b.parent===original.name);
         if(connected) {
@@ -103,7 +145,7 @@ class BoneEditor {
         const g=this.gesture;if(!g)return false;
         this.gesture=null;
         if(g.edit) {
-            const preview=g.preview || this.solveEndpoint(g.edit,g.point);
+            const preview=g.preview || this.solveEndpoint(g.edit,g.point,g.shift);
             if(!preview.some((bone,i)=>['root','tip'].some(end=>Math.hypot(bone[end].x-this.bones[i][end].x,bone[end].y-this.bones[i][end].y)>.001)))return true;
             saveUndo('edit bone');
             this.moveArtwork(this.drawing.getShapes(),this.bones,preview);

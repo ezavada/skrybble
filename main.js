@@ -16,6 +16,7 @@ function main() {
         const app = new DrawingApp(process.argv);
     } catch (error) {
         console.error('Failed to start DrawingApp:', error && error.stack ? error.stack : error);
+        process.exitCode = 1;
         pdg.quit();
         if (typeof globalThis !== 'undefined' && globalThis.skrybbleWeb) throw error;
     }

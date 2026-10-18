@@ -101,9 +101,17 @@ load, duplicate, and undo.
 - **Open** (`Cmd/Ctrl+O`) - Load `.skrbl`, `.svg`, `.pdgdrawing`, or `.drawing.json` drawings
 - **Save** (`Cmd/Ctrl+S`) - Save to the current document filename
 - **Save As** (`Cmd/Ctrl+Shift+S`) - Choose `.skrbl` or native `.pdgdrawing` output
-- **Load** - Specify filename on command line to load on startup
+- **Load** - Specify a positional filename or `--input FILE` to load on startup
+- **Output** - `--output FILE.skrbl` or `--output FILE.pdgdrawing` sets the save destination after loading
+- **Batch curves** - `--convert-curves` selects all, runs the normal Convert to Curves operation, saves to `--output`, then exits. Requires an existing input and a separate output path.
 - Auto-generates timestamped filename if none specified
 - JSON-based file format preserves all shape properties and stores each unique embedded image once
+
+```sh
+PDG_SOURCE=devel ./skrybble --input pose.ink.svg --output r3/pose.pdgdrawing --convert-curves
+```
+
+Launch options also accept `--input=FILE` and `--output=FILE`. Paths containing spaces must be quoted. Without `--convert-curves`, the editor stays open and the supplied output path is used by Save.
 
 ## File Structure
 

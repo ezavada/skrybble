@@ -11,6 +11,7 @@ const Application = require('./index').Application;
 const DrawingController = require('./DrawingController.js');
 
 const fs = require('fs');
+const parseLaunchOptions = require('./launch-options');
 
 // -----------------------------------------------
 // Drawing Application class
@@ -28,15 +29,8 @@ const fs = require('fs');
 class DrawingApp extends Application {
     initialize(args) {
         this.drawingController = null;
-        this.filename = null;
-
-        // Parse command line arguments for filename.
-        for (const arg of args || []) {
-            if (/\.(skrbl|pdgdrawing|drawing\.json|svg)$/i.test(arg)) {
-                this.filename = arg;
-                break;
-            }
-        }
+        this.launchOptions = parseLaunchOptions(args);
+        this.filename = this.launchOptions.input;
     }
 
     setupGraphics() {
@@ -46,15 +40,31 @@ class DrawingApp extends Application {
     setupControllers() {
         this.createDrawingController();
 
+        const options = this.launchOptions;
         if (this.filename) {
             if (fs.existsSync(this.filename)) {
                 console.log('Loading file:', this.filename);
-                this.drawingController.openDrawingFile(this.filename);
-            } else if (/\.skrbl$/i.test(this.filename)) {
+                if (!this.drawingController.openDrawingFile(this.filename))
+                    throw new Error(`Unable to open ${this.filename}: ${this.drawingController.lastLoadError || 'unsupported drawing'}`);
+            } else if (!options.explicitInput && !options.convertCurves && /\.skrbl$/i.test(this.filename)) {
                 console.log('File does not exist, will use for save:', this.filename);
                 this.drawingController.setFilename(this.filename);
-            }
+            } else throw new Error(`Input file does not exist: ${this.filename}`);
         }
+        if (options.output) this.drawingController.setFilename(options.output);
+        if (options.convertCurves) setTimeout(() => {
+            try {
+                const controller = this.drawingController;
+                controller.selectAll();
+                if (!controller.pointEditor.fitCurve()) throw new Error('No selected paths could be converted to curves');
+                if (!controller.saveFile()) throw new Error(`Unable to save ${options.output}`);
+                console.log('Converted curves and saved:', options.output);
+                this.onQuitRequest();
+            } catch (error) {
+                console.error('Batch conversion failed:', error.stack || error);
+                process.exit(1);
+            }
+        }, 0);
     }
     
     createGraphicsPort() {

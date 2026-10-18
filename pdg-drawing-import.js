@@ -1,7 +1,7 @@
 'use strict';
-// Polygon drawing exchange v1 and PDG Drawing snapshots v4/v5 emitted by the
-// local pose converter. Binary decoding is independent of native bindings so
-// the same files work in desktop PDG and the browser's uploaded-file filesystem.
+// Polygon exchange v1 and PDG Drawing snapshots. Flat v4/v5 polygons use the
+// portable reader; nested v4/v5/v6 artwork uses the recursive editable reader.
+// Both desktop and browser use these paths before retained native fallback.
 const fs = require('fs');
 const Colors = require('./colors');
 const LAYERS = ['light', 'midtone', 'shadow', 'ink'];
@@ -291,10 +291,14 @@ function fromBase64(value) {
 function fromBinary(bytes) {
     try { return fromPolygonBinary(bytes); }
     catch (polygonError) {
+        try { return require('./pdg-editable-import')(bytes,Reader); }
+        catch (editableError) { /* Retain unsupported content without changing its appearance. */ }
         const native = decodeNative(bytes), bounds=native.getBounds();
         const width=Math.max(1,Math.ceil(bounds.right)),height=Math.max(1,Math.ceil(bounds.bottom));
         if (![width,height].every(n=>Number.isFinite(n)&&n<=100000)) throw new Error('Invalid drawing bounds');
-        return document([{type:'NativeDrawing',data:{type:'NativeDrawing',stream:toBase64(bytes),x:0,y:0,rotation:0}}],[width,height]);
+        const result=document([{type:'NativeDrawing',data:{type:'NativeDrawing',stream:toBase64(bytes),x:0,y:0,rotation:0}}],[width,height]);
+        result.importWarnings=['Some drawing features were retained as native artwork and cannot be ungrouped'];
+        return result;
     }
 }
 function exportBinary(shapes) {

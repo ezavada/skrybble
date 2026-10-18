@@ -2200,8 +2200,8 @@ class DrawingController extends Controller {
 
     reportDrawingImport(message, warnings = []) {
         if (warnings && warnings.length) {
-            console.warn('SVG import: '+warnings.join('; '));
-            this.showErrorMessage(message+' — SVG limitations: '+warnings.join('; '));
+            console.warn('Drawing import: '+warnings.join('; '));
+            this.showErrorMessage(message+' — Import limitations: '+warnings.join('; '));
         } else this.showSaveMessage(message);
     }
 

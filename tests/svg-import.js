@@ -70,7 +70,7 @@ test('linear and radial gradients render, move, and survive editing snapshots an
         const capture=()=>{port.clear();for(const s of c.drawing.getShapes())s.draw(port);return new pdg.Image(port,pdg.CopyPixels);};
         let image=capture();assert.ok(image.getPixel(20,50).red>.75);assert.ok(image.getPixel(80,50).blue>.75);assert.ok(image.getPixel(150,50).red>.9);assert.ok(image.getPixel(185,50).red<.2);
         const before=c.drawing.exportShapes();c.saveUndoState('move');c.drawing.moveShape(shapes[0],10,10);image=capture();assert.ok(image.getPixel(30,60).red>.75);c.undo();assert.strictEqual(c.drawing.exportShapes(),before);c.redo();capture();
-        const bytes=importer.exportBinary(c.drawing.getShapes());const restored=importer.fromBinary(bytes);assert.strictEqual(restored.shapes[0].type,'NativeDrawing');
+        const bytes=importer.exportBinary(c.drawing.getShapes());const restored=importer.fromBinary(bytes);assert.strictEqual(restored.shapes[0].type,'Group');
         port.clear();for(const s of c.drawing.deserializeDocument(restored))s.draw(port);image=new pdg.Image(port);assert.ok(image.getPixel(30,60).red>.75);assert.ok(image.getPixel(90,60).blue>.75);
     }finally{pdg.gfx.closeGraphicsPort(port);}
 }));

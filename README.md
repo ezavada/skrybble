@@ -700,18 +700,25 @@ extents. Opening an import fits its page in the viewport; saving writes a `.skrb
 document beside the import and preserves page dimensions, leaving the source
 PDG file unchanged. Existing `.skrbl` files without canvas metadata use 1024 × 1024.
 
-The portable pose reader supports polygon snapshots v4/v5 with flat fills and
-solid/no strokes, including all converted poses. Current development runtimes
-also restore other native artwork through PDG’s full codec. Invalid files leave
-the current document unchanged.
+The portable pose reader supports flat polygon snapshots v4/v5. A recursive
+reader also imports nested v4/v5/v6 drawings, including the `v5-pose-library/r2`
+files, as editable Groups containing polygons, lines and Cardinal/Bézier paths.
+Shared drawing references become independent editable objects. Nested destination
+rectangles, affine transforms, opacity and supported gradients/blend modes are
+preserved. Select the imported group and use **Cmd/Ctrl+Shift+G** to ungroup it;
+repeat for nested groups. Single-child drawing wrappers are collapsed on import.
+Invalid files leave the current document unchanged.
 
 Use **Ctrl/Cmd+Shift+S** to Save As `.pdgdrawing` on desktop or download the
 binary stream in the browser. After Save As, Ctrl/Cmd+S saves that format again.
 Native export preserves polygons, curves, primitives, text, images, attributes,
 and nested groups when running a current `pdg-devel` runtime. Images are embedded;
 font files must be installed on the receiving system. Pose polygons stay fully
-editable. Other native drawings reopen as retained artwork that can be moved,
-rotated, duplicated and grouped, and can also be saved inside `.skrbl` documents.
+editable, as do supported nested native drawings. Files containing unsupported
+features such as embedded images, native fonts/text, clipping or other effects
+reopen as retained artwork that can be moved, rotated, duplicated and grouped,
+and saved inside `.skrbl` documents. An import notification explains when this
+fallback prevents Ungroup, rather than silently treating the drawing as a group.
 
 Select `PDG_SOURCE=devel` to use a built sibling `pdg-devel` runtime; an explicit
 `PDG_EXECUTABLE` takes precedence.

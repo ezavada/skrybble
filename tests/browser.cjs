@@ -416,6 +416,27 @@ await ctrlCommand('J');
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];return c.drawing.getShapeCount()===1&&s.constructor.name==='Spline'&&!!s.joinCorrections&&c.saveAs('/uploads/join.skrbl')&&c.openDrawingFile('/uploads/join.skrbl')&&!!c.drawing.getShapes()[0].joinCorrections;})()`))throw Error('Cardinal join/save/reopen failed');
 console.log('PASS: Ctrl+A objects and points, Ctrl+J line welding and Cardinal joins, undo and save/reopen');
 
+for(const [r2Name,r2Count] of [['r2-figure.pdgdrawing',1025],['r2-figure.ink.pdgdrawing',315]]) {
+    const r2Bytes=fs.readFileSync(path.join(__dirname,'fixtures',r2Name)).toString('base64');
+    if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;FS.writeFile('/uploads/r2.pdgdrawing',Uint8Array.from(atob(${JSON.stringify(r2Bytes)}),ch=>ch.charCodeAt(0)));
+        if(!c.openDrawingFile('/uploads/r2.pdgdrawing'))return false;const s=c.drawing.getShapes()[0];c.dismissMessage();c.selectAll();
+        return s.constructor.name==='Group'&&s.children.length===${r2Count};})()`))throw Error('R2 import did not create an editable group: '+r2Name);
+    await call('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'Control',code:'ControlLeft',windowsVirtualKeyCode:17,modifiers:2});
+    await call('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'Shift',code:'ShiftLeft',windowsVirtualKeyCode:16,modifiers:10});
+    await call('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'G',code:'KeyG',windowsVirtualKeyCode:71,modifiers:10});
+    await call('Input.dispatchKeyEvent',{type:'keyUp',key:'G',code:'KeyG',windowsVirtualKeyCode:71,modifiers:10});
+    await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Shift',code:'ShiftLeft',windowsVirtualKeyCode:16,modifiers:2});
+    await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Control',code:'ControlLeft',windowsVirtualKeyCode:17});
+    if(!await evalPage(`__skrybbleTestApp.drawingController.drawing.getShapeCount()===${r2Count}`))throw Error('Ctrl+Shift+G did not ungroup r2 artwork');
+    await ctrlCommand('Z');
+    if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapeCount()===1'))throw Error('R2 ungroup undo failed');
+    if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;while(c.drawing.getShapes().some(s=>s.constructor.name==='Group')){c.selectAll();c.ungroupSelectedShapes();}
+        const curve=c.drawing.getShapes().find(s=>s.constructor.name==='BezierSpline');if(!curve||c.drawing.getShapes().some(s=>s.constructor.name==='NativeDrawing'))return false;
+        const x=curve.points[0].x;c.updateShapeEndpoint(curve,0,x+.5,curve.points[0].y);if(curve.points[0].x!==x+.5)return false;
+        const before=c.drawing.exportShapes();return c.saveAs('/uploads/r2-edit.skrbl')&&c.openDrawingFile('/uploads/r2-edit.skrbl')&&c.drawing.exportShapes()===before;})()`))throw Error('R2 point editing or editable save/reopen failed');
+}
+console.log('PASS: r2 full and ink editable import, Ctrl+Shift+G, undo, point editing and save/reopen');
+
 const svgFull=fs.readFileSync(path.join(__dirname,'fixtures/v5-figure.svg'),'utf8');
 const svgInk=fs.readFileSync(path.join(__dirname,'fixtures/v5-figure.ink.svg'),'utf8');
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;FS.mkdirTree('/uploads');

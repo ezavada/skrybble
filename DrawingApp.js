@@ -32,7 +32,7 @@ class DrawingApp extends Application {
 
         // Parse command line arguments for filename.
         for (const arg of args || []) {
-            if (/\.(skrbl|pdgdrawing|drawing\.json)$/i.test(arg)) {
+            if (/\.(skrbl|pdgdrawing|drawing\.json|svg)$/i.test(arg)) {
                 this.filename = arg;
                 break;
             }
@@ -49,7 +49,7 @@ class DrawingApp extends Application {
         if (this.filename) {
             if (fs.existsSync(this.filename)) {
                 console.log('Loading file:', this.filename);
-                this.drawingController.loadFile(this.filename);
+                this.drawingController.openDrawingFile(this.filename);
             } else if (/\.skrbl$/i.test(this.filename)) {
                 console.log('File does not exist, will use for save:', this.filename);
                 this.drawingController.setFilename(this.filename);

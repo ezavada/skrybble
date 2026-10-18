@@ -69,6 +69,12 @@ class Shape {
     _paintUnselected(port) {
         const selected = this.selected, rotation = this.rotation, construction=this.underConstruction;
         this.selected = false; this.rotation = 0; this.underConstruction=false;
+        if(this.fillGradient || this.blendMode) {
+            const target=port;port=Object.create(target);
+            for(const method of ['drawLine','drawRect','drawRoundedRect','drawCircle','drawEllipse','drawPolygon','drawSpline','drawQuad','drawArc','drawImage','drawText']) {
+                if(target[method])port[method]=(...args)=>{require('./fill-style').apply(args.at(-1),this);return target[method](...args);};
+            }
+        }
         try { this.drawArtwork(port); }
         finally { this.selected = selected; this.rotation = rotation; this.underConstruction=construction; }
     }
@@ -1779,6 +1785,7 @@ class Text extends Shape {
         const points=[rect.leftTop(),rect.rightTop(),rect.rightBottom(),rect.leftBottom()];
         const key=[rect.left,rect.top,rect.right,rect.bottom].join(',');
         if(key!==this._inkKey) {
+            if(this.fillGradient)this._paintUnselected(require('./rendering').drawingPort(this._geometry,this._elements,strokeScale));
             points.forEach((point,index)=>this._elements[0].changeControlPoint(index,point));
             const bounds=this._geometry.getBounds();
             [bounds.leftTop(),bounds.rightTop(),bounds.rightBottom(),bounds.leftBottom()]

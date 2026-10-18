@@ -98,7 +98,7 @@ load, duplicate, and undo.
 - Smart accumulation for nudges and draw order changes
 
 ### File Management
-- **Open** (`Cmd/Ctrl+O`) - Load `.skrbl`, `.pdgdrawing`, or `.drawing.json` drawings
+- **Open** (`Cmd/Ctrl+O`) - Load `.skrbl`, `.svg`, `.pdgdrawing`, or `.drawing.json` drawings
 - **Save** (`Cmd/Ctrl+S`) - Save to the current document filename
 - **Save As** (`Cmd/Ctrl+Shift+S`) - Choose `.skrbl` or native `.pdgdrawing` output
 - **Load** - Specify filename on command line to load on startup
@@ -364,11 +364,45 @@ Skrybble-specific tools use the additional shortcuts shown here.
 4. Shape automatically converts to an editable Cardinal Spline
 
 #### Importing Images and Drawings
-1. Select the Image tool (`I`) and choose an image or `.skrbl` drawing in the platform file dialog
+1. Select the Image tool (`Shift+I`) and choose an image, SVG, `.skrbl` or PDG drawing in the platform file dialog
 2. For an image, click the canvas to use its intrinsic dimensions or drag to choose its bounds
-3. A `.skrbl` drawing is imported as one group centered at the mouse position
+3. An imported drawing is placed as one editable group centered at the mouse position
 4. Use the Select tool to move, resize, rotate, reorder, group, copy, or delete imported content
 5. Image bytes are embedded when the drawing is saved, so the original files are no longer required
+
+#### Editable SVG Import
+Open an `.svg` with **Cmd/Ctrl+O**, pass its filename on the command line, or use
+**Shift+I** to place it in the current drawing. Opening uses the SVG canvas and
+viewBox; placing preserves the current canvas and adds an editable group as one
+undo step. Ungroup to edit individual objects. Saving defaults to a new `.skrbl`
+filename, preserving the original SVG; SVG export is not provided.
+
+Paths (including relative commands, cubic/quadratic Béziers and elliptical
+arcs), polygons, polylines, lines, rectangles, circles and ellipses become editable
+polygons or Bézier paths. Group transforms, viewBox alignment, inherited/inline
+paint styles and opacity are applied. Compound even-odd paths preserve holes;
+curved compound fills are approximated as editable polygons with separate strokes.
+The v5 full-color and ink SVGs import without warnings and retain their vertices.
+
+Text becomes editable Text objects with font family, size, bold/italic, alphabetic
+baseline, text anchor and rotation. Linear and centered circular radial gradient
+fills use PDG gradients and survive movement, grouping, copy/paste, undo and
+`.skrbl` save/reopen. The solid fill picker replaces an imported gradient with a
+solid color; gradient-stop editing is not yet exposed. Native `.pdgdrawing` export
+preserves their appearance through PDG's drawing codec. Multiply and screen on
+individual objects map to PDG blend modes; these are not SVG masks.
+
+Import notifications report omitted or approximated features, including CSS
+stylesheets/classes, images, use/symbol references, masks, clipping, filters,
+patterns, gradient strokes, unsupported colors, custom stroke caps/joins/dashes,
+compound nonzero winding fills and nested viewports. Multi-stop and repeat/reflect
+gradients use endpoint colors and pad; elliptical or off-center radial gradients
+are approximated with a centered circle. Text spans are flattened to one object;
+per-character positioning, text strokes, spacing, alternate baselines and skewed
+or nonuniform text transforms are reported. Group opacity is applied per object;
+group blend modes and other blend modes are reported as unsupported. Scripts,
+external resources and event handlers are never executed. Malformed files and
+DOCTYPE declarations/custom entities fail without replacing the current drawing.
 
 #### Text
 1. Select **Text** (`T`) and click inside the page.

@@ -155,6 +155,7 @@ function fromPolygonBinary(bytes) {
 }
 
 function readDocument(filename) {
+    if (/\.svg$/i.test(filename)) return require('./svg-import').fromSVG(fs.readFileSync(filename, 'utf8'));
     if (/\.pdgdrawing$/i.test(filename)) return fromBinary(fs.readFileSync(filename));
     const record = JSON.parse(fs.readFileSync(filename, 'utf8'));
     return isPdgDrawing(filename) || record.format === 'pdg-polygon-drawing' ? fromJSON(record) : record;
@@ -216,6 +217,7 @@ function exportPolygonBinary(shapes) {
         }
         if (shape.constructor.name !== 'Polygon')
             throw new Error('PDG pose export supports polygons and polygon groups. Save other shapes as .skrbl.');
+        if (shape.fillGradient || shape.blendMode) throw new Error('Use native drawing encoding for gradients and blend modes');
         const points=shape.points.map(p => {const q=parent(rotate(p));return [q.x,q.y];});
         polygon(points,shape.fillColor); // validate before writing any file
         polygons.push({ points, fill: shape.fillColor ? colorBytes(shape.fillColor) : null,

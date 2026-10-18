@@ -82,7 +82,7 @@ class PointEditor {
         for(const path of paths) {
             const selected=hasRun?keys(path):new Set(path.anchors.map((_,i)=>'a:'+i));
             const whole=!hasRun || path.anchors.every((_,i)=>selected.has('a:'+i));
-            if(whole && path.type==='Polygon' && path.shape.fillColor && (!path.shape.strokeColor || path.shape.strokeWidth<=0)) {
+            if(whole && path.type==='Polygon' && path.shape.fillColor && !path.shape.fillGradient && (!path.shape.strokeColor || path.shape.strokeWidth<=0)) {
                 const ink=require('./ink-centerline').partition(path.anchors,line=>{
                     // A document-sized smoothing error can erase the bends in
                     // narrow ink. Bound it by the inferred stroke width.
@@ -189,7 +189,7 @@ class PointEditor {
             this.replace(path.shape,Geometry.segmentRuns(path,kept).map(run=>{
                 if(drag && path.closed && run.length>=2) {
                     const points=[run[0].p0,...run.map(segment=>segment.p3)].map(point=>({x:point.x,y:point.y}));
-                    return new Polygon(points,path.shape.fillColor,path.shape.strokeColor,path.shape.strokeWidth);
+                    return require('./fill-style').copy(path.shape,new Polygon(points,path.shape.fillColor,path.shape.strokeColor,path.shape.strokeWidth));
                 }
                 return Geometry.curveFragment(path.shape,run);
             }));

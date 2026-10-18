@@ -1575,7 +1575,7 @@ class DrawingController extends Controller {
         }
         if (!selectedFilename) return false;
 
-        if (path.extname(selectedFilename).toLowerCase() === '.skrbl' || pdgDrawingImport.isPdgDrawing(selectedFilename)) {
+        if (/\.(skrbl|svg)$/i.test(selectedFilename) || pdgDrawingImport.isPdgDrawing(selectedFilename)) {
             try {
                 const documentData = pdgDrawingImport.readDocument(selectedFilename);
                 const importedShapes = this.drawing.deserializeDocument(documentData);
@@ -1590,7 +1590,7 @@ class DrawingController extends Controller {
                     this.drawing.deserializeShape(groupSnapshot.type, groupSnapshot));
                 this.toolManager.setTool(Tools.TOOLS.IMAGE);
                 this.updateToolSelection(Tools.TOOLS.IMAGE);
-                this.showSaveMessage(`Drawing ready: ${path.basename(selectedFilename)}`);
+                this.reportDrawingImport(`Drawing ready: ${path.basename(selectedFilename)}`, documentData.importWarnings);
                 return true;
             } catch (error) {
                 console.error('Failed to import drawing:', error);
@@ -1683,6 +1683,7 @@ class DrawingController extends Controller {
             shape[key]=initialColor;
             try {this.saveUndoState('change color');}
             finally {shape[key]=preview;}
+            if(colorType==='fill')delete shape.fillGradient;
         }
         
         // Add to recent colors
@@ -2148,13 +2149,13 @@ class DrawingController extends Controller {
         }
         if (!selectedFilename) return false;
 
-        if (path.extname(selectedFilename).toLowerCase() !== '.skrbl' && !pdgDrawingImport.isPdgDrawing(selectedFilename)) {
-            this.showErrorMessage('Open failed: choose a .skrbl, .pdgdrawing or .drawing.json file');
+        if (!/\.(skrbl|svg)$/i.test(selectedFilename) && !pdgDrawingImport.isPdgDrawing(selectedFilename)) {
+            this.showErrorMessage('Open failed: choose a .skrbl, .svg, .pdgdrawing or .drawing.json file');
             return false;
         }
 
         if (!this.loadFile(selectedFilename)) {
-            this.showErrorMessage('Open failed: invalid or unsupported drawing');
+            this.showErrorMessage(`Open failed: ${this.lastLoadError || 'invalid or unsupported drawing'}`);
             return false;
         }
 
@@ -2167,8 +2168,15 @@ class DrawingController extends Controller {
         this.toolManager.finishCurrentDrawing();
         this.toolManager.setTool(Tools.TOOLS.SELECT);
         this.updateToolSelection(Tools.TOOLS.SELECT);
-        this.showSaveMessage(`Opened ${path.basename(selectedFilename)}`);
+        this.reportDrawingImport(`Opened ${path.basename(selectedFilename)}`, this.importWarnings);
         return true;
+    }
+
+    reportDrawingImport(message, warnings = []) {
+        if (warnings && warnings.length) {
+            console.warn('SVG import: '+warnings.join('; '));
+            this.showErrorMessage(message+' — SVG limitations: '+warnings.join('; '));
+        } else this.showSaveMessage(message);
     }
 
     loadFile(filename) {
@@ -2196,13 +2204,16 @@ class DrawingController extends Controller {
             }
             
             // Save imports as editor documents, preserving the source stream.
-            this.currentFilename = pdgDrawingImport.isPdgDrawing(filename)
-                ? filename.replace(/\.(pdgdrawing|drawing\.json)$/i, '.skrbl') : filename;
+            this.currentFilename = pdgDrawingImport.isPdgDrawing(filename) || /\.svg$/i.test(filename)
+                ? filename.replace(/\.(pdgdrawing|drawing\.json|svg)$/i, '.skrbl') : filename;
+            this.importWarnings = data.importWarnings || [];
+            this.lastLoadError = null;
             this.navigation.setCanvas(canvas[0],canvas[1]);
             console.log('Loaded file:', filename);
             return true;
         } catch (error) {
             console.error('Failed to load file:', error);
+            this.lastLoadError = error.message;
             return false;
         }
     }

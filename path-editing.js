@@ -50,7 +50,7 @@ function curveFragment(shape,segments) {
     const result=new Shapes.BezierSpline(points,null,shape.strokeColor,shape.strokeWidth);
     result.controlPoints=segments.flatMap(s=>[copy(s.p1),copy(s.p2)]);
     result.manuallyEditedControls=new Set(result.controlPoints.map((_,i)=>i));
-    return result;
+    return require('./fill-style').copy(shape,result);
 }
 function copiedFragments(path,selected,closePolygon=false) {
     const anchors=new Set([...selected].filter(key=>key.startsWith('a:')).map(key=>Number(key.slice(2))));
@@ -63,6 +63,7 @@ function copiedFragments(path,selected,closePolygon=false) {
         if(closed && unique.length<3)continue;
         const fragment=closed?new Shapes.Polygon(unique.map(i=>copy(path.anchors[i])),path.shape.fillColor,path.shape.strokeColor,path.shape.strokeWidth)
             :curveFragment(path.shape,run);
+        if(closed)require('./fill-style').copy(path.shape,fragment);
         unique.forEach(i=>removed.add(i));fragments.push(fragment);
     }
     return {fragments,removed};
@@ -70,7 +71,7 @@ function copiedFragments(path,selected,closePolygon=false) {
 function reconnect(path,removed) {
     const ids=path.anchors.map((_,i)=>i).filter(i=>!removed.has(i));
     if(ids.length<(path.closed?3:2))return [];
-    if(path.closed)return [new Shapes.Polygon(ids.map(i=>copy(path.anchors[i])),path.shape.fillColor,path.shape.strokeColor,path.shape.strokeWidth)];
+    if(path.closed)return [require('./fill-style').copy(path.shape,new Shapes.Polygon(ids.map(i=>copy(path.anchors[i])),path.shape.fillColor,path.shape.strokeColor,path.shape.strokeWidth))];
     const result=new Shapes.BezierSpline(ids.map(i=>copy(path.anchors[i])),null,path.shape.strokeColor,path.shape.strokeWidth);
     // Keep exact controls on untouched segments; new connections use generated handles.
     ids.slice(0,-1).forEach((id,i)=>{

@@ -15,15 +15,15 @@ function run(command, args) {
 function chooseImageFile() {
     if (typeof globalThis !== 'undefined' && globalThis.skrybbleWeb) {
         return globalThis.skrybbleWeb.chooseFile({
-            accept: '.png,.jpg,.jpeg,.gif,.bmp,.skrbl,.pdgdrawing,.drawing.json,image/*',
-            prompt: 'Choose an image, Skrybble or PDG drawing'
+            accept: '.png,.jpg,.jpeg,.gif,.bmp,.skrbl,.pdgdrawing,.drawing.json,.svg,image/*',
+            prompt: 'Choose an image, Skrybble, PDG or SVG drawing'
         });
     }
 
     if (process.platform === 'darwin') {
         return run('/usr/bin/osascript', [
             '-e',
-            'POSIX path of (choose file with prompt "Choose an image, Skrybble or PDG drawing" of type {"public.image", "skrbl", "pdgdrawing", "json"})'
+            'POSIX path of (choose file with prompt "Choose an image, Skrybble, PDG or SVG drawing" of type {"public.image", "skrbl", "pdgdrawing", "json", "svg"})'
         ]);
     }
 
@@ -31,8 +31,8 @@ function chooseImageFile() {
         const script = [
             'Add-Type -AssemblyName System.Windows.Forms',
             '$dialog = New-Object System.Windows.Forms.OpenFileDialog',
-            '$dialog.Title = "Choose an image, Skrybble or PDG drawing"',
-            '$dialog.Filter = "Supported files|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.skrbl;*.pdgdrawing;*.drawing.json|Image files|*.png;*.jpg;*.jpeg;*.gif;*.bmp|Drawing files|*.skrbl;*.pdgdrawing;*.drawing.json"',
+            '$dialog.Title = "Choose an image, Skrybble, PDG or SVG drawing"',
+            '$dialog.Filter = "Supported files|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.skrbl;*.pdgdrawing;*.drawing.json;*.svg|Image files|*.png;*.jpg;*.jpeg;*.gif;*.bmp|Drawing files|*.skrbl;*.pdgdrawing;*.drawing.json;*.svg"',
             'if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dialog.FileName }'
         ].join('; ');
         return run('powershell.exe', ['-NoProfile', '-STA', '-Command', script]);
@@ -40,15 +40,15 @@ function chooseImageFile() {
 
     const zenityResult = run('zenity', [
         '--file-selection',
-        '--title=Choose an image, Skrybble or PDG drawing',
-        '--file-filter=Supported files | *.png *.jpg *.jpeg *.gif *.bmp *.skrbl *.pdgdrawing *.drawing.json'
+        '--title=Choose an image, Skrybble, PDG or SVG drawing',
+        '--file-filter=Supported files | *.png *.jpg *.jpeg *.gif *.bmp *.skrbl *.pdgdrawing *.drawing.json *.svg'
     ]);
     if (zenityResult) return zenityResult;
 
     return run('kdialog', [
         '--getopenfilename',
         '.',
-        'Supported files (*.png *.jpg *.jpeg *.gif *.bmp *.skrbl *.pdgdrawing *.drawing.json)'
+        'Supported files (*.png *.jpg *.jpeg *.gif *.bmp *.skrbl *.pdgdrawing *.drawing.json *.svg)'
     ]);
 }
 

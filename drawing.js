@@ -385,7 +385,9 @@ class Drawing {
                 return null;
         }
         
-        return { type: typeName, ...data, ...(shape.rigBone ? {rigBone:shape.rigBone} : {}) };
+        return { type: typeName, ...data, ...(shape.rigBone ? {rigBone:shape.rigBone} : {}),
+            ...(shape.fillGradient ? {fillGradient:JSON.parse(JSON.stringify(shape.fillGradient))} : {}),
+            ...(shape.blendMode ? {blendMode:shape.blendMode} : {}) };
     }
 
     deserializeShape(type, data, imageDataById = null) {
@@ -481,6 +483,8 @@ class Drawing {
         }
         
         if(shape && typeof data.rigBone==='string')shape.rigBone=data.rigBone;
+        if(shape && data.fillGradient)shape.fillGradient=JSON.parse(JSON.stringify(data.fillGradient));
+        if(shape && ['Multiply','Screen'].includes(data.blendMode))shape.blendMode=data.blendMode;
         return shape;
     }
 }

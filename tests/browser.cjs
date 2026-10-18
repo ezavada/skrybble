@@ -399,6 +399,43 @@ if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawin
     return c.drawing.getShapeCount()===1 && s.constructor.name==='BezierSpline' && s.points.length<61 && s.fillColor==='red';})()`))throw Error('Ctrl+J without selected points did not replace the whole path');
 console.log('PASS: Ctrl+J selected-point curve fitting and undo');
 
+const svgFull=fs.readFileSync(path.join(__dirname,'fixtures/v5-figure.svg'),'utf8');
+const svgInk=fs.readFileSync(path.join(__dirname,'fixtures/v5-figure.ink.svg'),'utf8');
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;FS.mkdirTree('/uploads');
+    FS.writeFile('/uploads/figure.svg',${JSON.stringify(svgFull)});FS.writeFile('/uploads/figure.ink.svg',${JSON.stringify(svgInk)});
+    if(!c.openDrawingFile('/uploads/figure.svg')||c.drawing.getShapeCount()!==535||c.importWarnings.length)return false;
+    if(c.navigation.width!==1086||c.navigation.height!==1448||c.currentFilename!=='/uploads/figure.skrbl')return false;
+    if(!c.activateImageTool('/uploads/figure.ink.svg')||c.drawing.getShapeCount()!==535)return false;
+    c.dismissMessage();return true;})()`))throw Error('SVG Open/Place preparation failed');
+await click(500,500);
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes().at(-1);return c.drawing.getShapeCount()===536&&s.constructor.name==='Group'&&s.children.length===42&&c.undoStack.length===1;})()`))throw Error('SVG placement did not create an editable group');
+await ctrlCommand('Z');
+if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapeCount()===535'))throw Error('SVG placement undo failed');
+const svgComparison=await call('Runtime.evaluate',{awaitPromise:true,returnByValue:true,expression:`(async()=>{
+    const c=__skrybbleTestApp.drawingController,w=272,h=362,reference=document.createElement('canvas');reference.width=w;reference.height=h;
+    const ctx=reference.getContext('2d'),image=new Image(),url=URL.createObjectURL(new Blob([${JSON.stringify(svgFull)}],{type:'image/svg+xml'}));
+    try{await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=url;});ctx.drawImage(image,0,0,271.5,362);}finally{URL.revokeObjectURL(url);}
+    const pixels=ctx.getImageData(0,0,w,h).data,port=pdg.gfx.createOffscreenPort(new pdg.Rect(w,h));let interior=0,matched=0;
+    try{for(const shape of c.drawing.getShapes())port.drawDrawing(shape.getArtwork(.25),new pdg.Point(0,0),new pdg.Attributes().setTransform([.25,0,0,0,.25,0,0,0,1]));
+        const native=new pdg.Image(port);
+        for(let y=2;y<h-2;y+=2)for(let x=2;x<w-2;x+=2){const i=(y*w+x)*4;if(pixels[i+3]<250)continue;
+            if([i-8,i+8,i-w*8,i+w*8].some(j=>[0,1,2,3].some(k=>Math.abs(pixels[i+k]-pixels[j+k])>8)))continue;
+            interior++;const p=native.getPixel(x,y);if(Math.abs(p.red*255-pixels[i])<25&&Math.abs(p.green*255-pixels[i+1])<25&&Math.abs(p.blue*255-pixels[i+2])<25&&p.alpha>.9)matched++;
+        }
+    }finally{pdg.gfx.closeGraphicsPort(port);}return {interior,agreement:matched/interior};})()`});
+if(svgComparison.exceptionDetails)throw Error(svgComparison.exceptionDetails.exception?.description||'SVG comparison failed');
+const svgMetrics=svgComparison.result.value;
+if(svgMetrics.interior<1000||svgMetrics.agreement<.98)throw Error('SVG rendering differs from the browser reference: '+JSON.stringify(svgMetrics));
+console.log('PASS: SVG editable Open, grouped Place, undo and browser-reference rendering '+JSON.stringify(svgMetrics));
+
+const svgPaint='<svg width="300" height="150"><defs><linearGradient id="g"><stop stop-color="red"/><stop offset="1" stop-color="blue"/></linearGradient></defs><rect x="10" y="10" width="100" height="100" fill="url(#g)"/><text x="130" y="80" font-family="Arial" font-size="24" fill="url(#g)">SVG text</text><rect x="200" y="10" width="50" height="30" fill="blue" style="mix-blend-mode:screen"/><image href="missing.png"/></svg>';
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;FS.writeFile('/uploads/paint.svg',${JSON.stringify(svgPaint)});
+    if(!c.openDrawingFile('/uploads/paint.svg')||!c.saveMessage.includes('<image>'))return false;
+    const shapes=c.drawing.getShapes();if(shapes.length!==3||shapes[1].text!=='SVG text'||!shapes[1].fillGradient||shapes[2].blendMode!=='Screen')return false;
+    const port=pdg.gfx.createOffscreenPort(new pdg.Rect(300,150));try{for(const s of shapes)s.draw(port);const image=new pdg.Image(port);if(image.getPixel(20,50).red<.8||image.getPixel(100,50).blue<.8)return false;}finally{pdg.gfx.closeGraphicsPort(port);}
+    c.dismissMessage();return c.saveAs('/uploads/paint.skrbl')&&c.openDrawingFile('/uploads/paint.skrbl')&&!!c.drawing.getShapes()[1].fillGradient;})()`))throw Error('SVG text, gradients, blend modes, warnings or editable save/reopen failed');
+console.log('PASS: SVG text, gradients, blend modes, unsupported-feature reporting and editable save/reopen');
+
 const inkFixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/v5-ink-network.json'),'utf8'));
 await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses(),fixture=${JSON.stringify(inkFixture)};
     c.pointEditor.clear();c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];c.navigation.setCanvas(...fixture.canvas);

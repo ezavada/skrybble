@@ -605,6 +605,15 @@ class Rectangle extends Shape {
 }
 
 // Cardinal Spline Shape
+function editablePathContains(shape,x,y) {
+    const G=require('./path-editing'),point={x,y};
+    return G.pathGeometry(shape).segments.some(s=>{const points=G.flatten(s,.25);return points.some((p,i)=>i&&G.distance(point,points[i-1],p)<=Math.max(5,shape.strokeWidth/2));});
+}
+function editablePathIntersects(shape,left,top,right,bottom) {
+    const G=require('./path-editing'),corners=[{x:left,y:top},{x:right,y:top},{x:right,y:bottom},{x:left,y:bottom}];
+    const inside=p=>p.x>=left&&p.x<=right&&p.y>=top&&p.y<=bottom;
+    return G.pathGeometry(shape).segments.some(s=>{const points=G.flatten(s,.25);return points.some((p,i)=>inside(p)||i&&corners.some((a,j)=>G.crosses(points[i-1],p,a,corners[(j+1)%4])));});
+}
 class Spline extends Shape {
     constructor(points, fillColor = '#ffffff', strokeColor = '#000000', strokeWidth = 1) {
         super(points[0].x, points[0].y, fillColor, strokeColor, strokeWidth);
@@ -615,6 +624,13 @@ class Spline extends Shape {
     drawArtwork(port) {
         // Need at least 2 points to draw a spline
         if (this.points.length < 2) return;
+        if(this.joinCorrections) {
+            const spline=new pdg.Spline(pdg.spline_CubicBezier);
+            for(const s of require('./path-editing').pathGeometry(this).segments)
+                spline.addSegment(...['p0','p1','p2','p3'].map(k=>new pdg.Point(s[k])));
+            port.drawSpline(spline,new pdg.Attributes().lineColor(toColor(this.strokeColor)).lineThickness(this.strokeWidth).lineStyle(pdg.lineStyle_Solid));
+            return;
+        }
         
         // Create a PDG Spline object
         const spline = new pdg.Spline(pdg.spline_Cardinal);
@@ -744,6 +760,7 @@ class Spline extends Shape {
     }
 
     contains(x, y) {
+        if(this.joinCorrections)return editablePathContains(this,x,y);
         // If rotated, inverse-rotate the test point
         let testX = x, testY = y;
         if (this.rotation !== 0) {
@@ -816,6 +833,7 @@ class Spline extends Shape {
     }
 
     intersectsRect(left, top, right, bottom) {
+        if(this.joinCorrections)return editablePathIntersects(this,left,top,right,bottom);
         const rotation = this.rotation || 0;
         const center = this.getCenterPoint();
         
@@ -1588,6 +1606,19 @@ class Polygon extends Shape {
     }
 }
 
+// A straight open path; unlike Polygon, neither rendering nor hit testing
+// invents a closing edge. It shares Polygon's editable anchor controls.
+class Polyline extends Polygon {
+    constructor(points,strokeColor='#000000',strokeWidth=1){super(points,null,strokeColor,strokeWidth);}
+    drawArtwork(port) {
+        const center=this.getCenterPoint(),world=p=>this.rotation?this.rotatePoint(p.x,p.y,center.x,center.y,this.rotation):p;
+        const attrs=new pdg.Attributes().lineColor(toColor(this.strokeColor)).lineThickness(this.strokeWidth).lineStyle(pdg.lineStyle_Solid);
+        for(let i=1;i<this.points.length;i++)port.drawLine(new pdg.Point(world(this.points[i-1])),new pdg.Point(world(this.points[i])),attrs);
+    }
+    contains(x,y){return editablePathContains(this,x,y);}
+    intersectsRect(left,top,right,bottom){return editablePathIntersects(this,left,top,right,bottom);}
+}
+
 class Image extends Shape {
     constructor(x, y, width, height, imageData, imageExtension = '.png', sourceName = '') {
         super(x, y, null, null, 0);
@@ -2009,6 +2040,7 @@ module.exports = {
     BezierSpline,
     Oval,
     Polygon,
+    Polyline,
     Image,
     Group
 };

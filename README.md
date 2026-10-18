@@ -215,10 +215,31 @@ Use `PDG_SOURCE=release` or unset `PDG_SOURCE` to return to the pinned release.
 is rejected in development mode. Runtime selection does not change vendored
 JavaScript framework sources.
 
+### Select All and Joining Paths
+
+**Cmd/Ctrl+A** selects every top-level object. In point-selection mode, it selects
+all anchors and handles on the already-selected editable paths. During text
+editing it selects the text instead.
+
+**Cmd/Ctrl+J** joins two or more selected open paths of the same type. Lines and
+existing polylines join into one straight, editable Polyline; Cardinal/freehand
+splines remain Cardinal splines and Bézier splines remain Bézier splines.
+The command repeatedly joins the nearest free endpoints, reversing paths when
+needed. Endpoints within **0.25 document pixels** weld at their midpoint; larger
+gaps receive a straight segment or a tangent-following spline segment. Existing
+curve segments are preserved, apart from the tiny endpoint/handle adjustments
+needed for welding. Cardinal joins store tangent corrections to retain their
+original curves while keeping Cardinal point editing.
+
+The result stays open, uses the first selected object's style in drawing order,
+and replaces that object at its drawing position. Joining is one undo step.
+Mixed path types, closed paths, polygons and other objects produce a message
+without changing the drawing. Curve fitting and ink tracing now use **Cmd/Ctrl+L**.
+
 ### Partial point selection and scissors
 
 In Select mode, Option-click a point or Option-drag a marquee to select points
-within already-selected polygons, cardinal/freehand paths or Bézier paths.
+within already-selected polygons, polylines, cardinal/freehand paths or Bézier paths.
 Shift+Option adds points; Control+Option toggles them. Selected points turn blue
 and remain selected after Option is released. A normal selection click returns
 to whole-object selection. Two-point Line objects and primitive resize/radius
@@ -232,7 +253,7 @@ polygon fragments with at least three anchors. Cut reconnects surviving anchors,
 removing the source if too few remain. Isolated anchors and tangent-only
 selections can be nudged, but cannot be copied or cut as drawable fragments.
 
-**Cmd/Ctrl+J** fits editable Bézier curves to consecutive runs of selected
+**Cmd/Ctrl+L** fits editable Bézier curves to consecutive runs of selected
 anchors using the current Smoothness level (higher levels allow a looser fit).
 With no selected run, it fits all points on each selected path and replaces that
 path with the curve, preserving its style and closure. With selected runs on a
@@ -244,7 +265,7 @@ The fitted anchors remain selected, and the command is one undo step. Isolated
 points or tangent handles alone count as no selected run. Two-point Line objects
 are unaffected.
 
-For a whole filled polygon with no outline stroke, Cmd/Ctrl+J also checks whether
+For a whole filled polygon with no outline stroke, Cmd/Ctrl+L also checks whether
 its geometry looks like a thin ink ribbon. Ink ribbons become centerline Bézier
 strokes using the polygon's fill color and an estimated width for each branch.
 Junctions split into separate curves, while loops remain connected. Compact
@@ -303,6 +324,9 @@ Skrybble-specific tools use the additional shortcuts shown here.
 | ? | Help |
 
 #### Editing & Navigation
+- `Cmd/Ctrl+A` - Select all objects, points, or text in the active editing mode
+- `Cmd/Ctrl+J` - Join matching open lines or spline paths
+- `Cmd/Ctrl+L` - Fit curves or trace ink centerlines using current Smoothness
 - `Tab` - Select next shape (backward in draw order)
 - `Shift+Tab` - Select previous shape (forward in draw order)
 - `Delete` / `Backspace` - Delete selected shapes (or remove last point while drawing multi-point shapes)

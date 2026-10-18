@@ -379,25 +379,42 @@ await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.ge
     const shape=new S.Polygon(points,'red','blue',2);shape.selected=true;c.drawing.addShape(shape);
     c.pointEditor.active=true;c.pointEditor.selection.set(shape,new Set(points.map((_,i)=>'a:'+i)));
     c.toolManager.setSmoothnessLevel(3);return true;})()`);
-await ctrlCommand('J');
+await ctrlCommand('L');
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];
     return c.undoStack.length===1 && s.constructor.name==='BezierSpline' && s.points.length<61 && s.fillColor==='red' &&
-        s.points[0].x===s.points.at(-1).x && s.points[0].y===s.points.at(-1).y && c.pointEditor.count()>0;})()`))throw Error('Ctrl+J did not fit selected points into a closed curve');
+        s.points[0].x===s.points.at(-1).x && s.points[0].y===s.points.at(-1).y && c.pointEditor.count()>0;})()`))throw Error('Ctrl+L did not fit selected points into a closed curve');
 await shot();await ctrlCommand('Z');
 if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapes()[0].constructor.name==="Polygon"'))throw Error('Curve fitting undo did not restore polygon');
 await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];
     s.selected=true;c.pointEditor.active=true;c.pointEditor.selection.set(s,new Set([0,1,2,3,4,5].map(i=>'a:'+i)));return true;})()`);
-await ctrlCommand('J');
+await ctrlCommand('L');
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,[poly,curve]=c.drawing.getShapes();
     return c.drawing.getShapeCount()===2 && poly.constructor.name==='Polygon' && poly.points.length===55 && !poly.selected &&
-        curve.constructor.name==='BezierSpline' && curve.fillColor===null && curve.points[0].x===150 && curve.points.at(-1).x===165;})()`))throw Error('Ctrl+J did not detach fitted points and patch their polygon');
+        curve.constructor.name==='BezierSpline' && curve.fillColor===null && curve.points[0].x===150 && curve.points.at(-1).x===165;})()`))throw Error('Ctrl+L did not detach fitted points and patch their polygon');
 await ctrlCommand('Z');
 await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;c.pointEditor.clear();
     c.drawing.getShapes()[0].selected=true;return true;})()`);
-await ctrlCommand('J');
+await ctrlCommand('L');
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];
-    return c.drawing.getShapeCount()===1 && s.constructor.name==='BezierSpline' && s.points.length<61 && s.fillColor==='red';})()`))throw Error('Ctrl+J without selected points did not replace the whole path');
-console.log('PASS: Ctrl+J selected-point curve fitting and undo');
+    return c.drawing.getShapeCount()===1 && s.constructor.name==='BezierSpline' && s.points.length<61 && s.fillColor==='red';})()`))throw Error('Ctrl+L without selected points did not replace the whole path');
+console.log('PASS: Ctrl+L selected-point curve fitting and undo');
+
+await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses();c.pointEditor.clear();c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];
+    c.drawing.addShape(new S.Line(100,100,200,100,'blue',3));c.drawing.addShape(new S.Line(300,200,200.2,100,'red',2));return true;})()`);
+await ctrlCommand('A');
+if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapes().every(s=>s.selected)'))throw Error('Ctrl+A did not select all objects');
+await ctrlCommand('J');
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];return c.drawing.getShapeCount()===1&&s.constructor.name==='Polyline'&&s.points.length===3&&Math.abs(s.points[1].x-200.1)<1e-6&&s.strokeColor==='blue'&&c.undoStack.length===1;})()`))throw Error('Ctrl+J did not join/weld straight paths');
+await evalPage('__skrybbleTestApp.drawingController.pointEditor.active=true;true');
+await ctrlCommand('A');
+if(!await evalPage('__skrybbleTestApp.drawingController.pointEditor.count()===3'))throw Error('Ctrl+A did not select polyline points');
+await ctrlCommand('Z');
+if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapeCount()===2'))throw Error('Join undo failed');
+await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses();c.pointEditor.clear();c.drawing.clearShapes();
+    for(const x of [100,250]){const s=new S.Spline([{x:x-20,y:80},{x,y:100},{x:x+40,y:140},{x:x+80,y:100},{x:x+100,y:80}],null,'blue',3);s.selected=true;c.drawing.addShape(s);}return true;})()`);
+await ctrlCommand('J');
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];return c.drawing.getShapeCount()===1&&s.constructor.name==='Spline'&&!!s.joinCorrections&&c.saveAs('/uploads/join.skrbl')&&c.openDrawingFile('/uploads/join.skrbl')&&!!c.drawing.getShapes()[0].joinCorrections;})()`))throw Error('Cardinal join/save/reopen failed');
+console.log('PASS: Ctrl+A objects and points, Ctrl+J line welding and Cardinal joins, undo and save/reopen');
 
 const svgFull=fs.readFileSync(path.join(__dirname,'fixtures/v5-figure.svg'),'utf8');
 const svgInk=fs.readFileSync(path.join(__dirname,'fixtures/v5-figure.ink.svg'),'utf8');
@@ -446,11 +463,11 @@ if(process.env.SKRYBBLE_INK_SOURCE_SCREENSHOT) {
     fs.writeFileSync(process.env.SKRYBBLE_INK_SOURCE_SCREENSHOT,Buffer.from(await shot(),'base64'));
     await evalPage('__skrybbleTestApp.drawingController.drawing.getShapes()[0].selected=true;true');
 }
-await ctrlCommand('J');
+await ctrlCommand('L');
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,curves=c.drawing.getShapes();
     const strokes=curves.filter(s=>s.constructor.name==='BezierSpline'),fills=curves.filter(s=>s.constructor.name==='Polygon');
     return c.undoStack.length===1 && strokes.length>10 && fills.length>0 && strokes.every(s=>s.points.length>=2 && s.fillColor===null && s.strokeColor==='#202020' && s.strokeWidth>0) &&
-        fills.every(s=>s.fillColor==='#202020' && s.strokeWidth===0) && strokes.reduce((sum,s)=>sum+s.points.length,0)<4655;})()`))throw Error('Ctrl+J did not recover qualifying centerlines and preserve rejected ink regions');
+        fills.every(s=>s.fillColor==='#202020' && s.strokeWidth===0) && strokes.reduce((sum,s)=>sum+s.points.length,0)<4655;})()`))throw Error('Ctrl+L did not recover qualifying centerlines and preserve rejected ink regions');
 await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;c.pointEditor.clear();c.drawing.getShapes().forEach(s=>s.selected=false);return true;})()`);
 const inkPreview=await shot();
 if(process.env.SKRYBBLE_INK_SCREENSHOT)fs.writeFileSync(process.env.SKRYBBLE_INK_SCREENSHOT,Buffer.from(inkPreview,'base64'));
@@ -466,7 +483,7 @@ await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,bytes=Uint8Arr
     shapes.forEach(s=>s.selected=s===ribbon);window.badRibbonJunk=shapes.filter(s=>s!==ribbon);
     window.badRibbonBefore=JSON.stringify(shapes.map(s=>c.drawing.serializeShape(s)));
     c.toolManager.setSmoothnessLevel(4);return true;})()`);
-await ctrlCommand('J');
+await ctrlCommand('L');
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,shapes=c.drawing.getShapes(),curves=shapes.filter(s=>s.constructor.name==='BezierSpline');
     return curves.length>=3 && curves.some(s=>s.points.length===2) && window.badRibbonJunk.every(s=>shapes.includes(s)) &&
         shapes.filter(s=>s.constructor.name==='Polygon').length>window.badRibbonJunk.length && c.undoStack.length===1;})()`))throw Error('Bad ribbon did not convert at high smoothness while keeping junk filled');

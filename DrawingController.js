@@ -1220,6 +1220,7 @@ class DrawingController extends Controller {
                 this.updateRectangleCorner(shape, index, x, y);
                 break;
             case 'Polygon':
+            case 'Polyline':
                 shape.points[index].x = x;
                 shape.points[index].y = y;
                 break;
@@ -1306,6 +1307,7 @@ class DrawingController extends Controller {
 
     executeShortcut(command, argument) {
         const commands={
+            selectAll:()=>this.selectAll(), joinPaths:()=>this.joinPaths(),
             fitCurve:()=>this.pointEditor.fitCurve(),
             copy:()=>this.copySelectedShapes(argument?.closePolygon), cut:()=>this.cutSelectedShapes(argument?.closePolygon),
             paste:()=>this.pasteShapes(), undo:()=>this.undo(), redo:()=>this.redo(),
@@ -1323,6 +1325,30 @@ class DrawingController extends Controller {
         if (!commands[command]) return false;
         commands[command]();
         return true;
+    }
+
+    selectAll() {
+        if(this.pointEditor.active) {
+            this.pointEditor.selection=new Map(this.pointEditor.paths().map(path=>
+                [path.shape,new Set(this.pointEditor.points(path).map(ref=>ref.key))]));
+        } else {
+            this.drawing.getShapes().forEach(shape=>shape.selected=true);
+            this.selectedShape=this.drawing.getShapes().at(-1)||null;
+        }
+        return true;
+    }
+
+    joinPaths() {
+        try {
+            const selected=this.drawing.getShapes().filter(shape=>shape.selected);
+            const result=require('./join-paths')(selected);
+            this.saveUndoState('join paths');
+            const shapes=this.drawing.getShapes(),index=shapes.indexOf(selected[0]),set=new Set(selected);
+            const remaining=shapes.filter(shape=>!set.has(shape));remaining.splice(index,0,result);
+            shapes.splice(0,shapes.length,...remaining);
+            this.pointEditor.clear();result.selected=true;this.selectedShape=result;
+            return true;
+        } catch(error) {this.showErrorMessage(error.message);return false;}
     }
 
     nudgeSelection(direction, shift) {

@@ -107,6 +107,7 @@ class Drawing {
                 shape.y += dy;
                 break;
             case 'Polygon':
+            case 'Polyline':
             case 'Spline':
             case 'BezierSpline':
                 shape.points.forEach(point => {
@@ -355,6 +356,7 @@ class Drawing {
                 }
                 break;
             case 'Polygon':
+            case 'Polyline':
             case 'Spline':
                 data = {
                     points: shape.points.map(point => ({ x: point.x, y: point.y })),
@@ -386,6 +388,7 @@ class Drawing {
         }
         
         return { type: typeName, ...data, ...(shape.rigBone ? {rigBone:shape.rigBone} : {}),
+            ...(shape.joinCorrections ? {joinCorrections:JSON.parse(JSON.stringify(shape.joinCorrections))} : {}),
             ...(shape.fillGradient ? {fillGradient:JSON.parse(JSON.stringify(shape.fillGradient))} : {}),
             ...(shape.blendMode ? {blendMode:shape.blendMode} : {}) };
     }
@@ -454,6 +457,9 @@ class Drawing {
                     data.fillColor, data.strokeColor, data.strokeWidth
                 );
                 break;
+            case 'Polyline':
+                shape = new ShapeClasses.Polyline(data.points,data.strokeColor,data.strokeWidth);
+                break;
             case 'BezierSpline':
                 shape = new ShapeClasses.BezierSpline(
                     data.points,
@@ -483,6 +489,7 @@ class Drawing {
         }
         
         if(shape && typeof data.rigBone==='string')shape.rigBone=data.rigBone;
+        if(shape && type==='Spline' && data.joinCorrections)shape.joinCorrections=JSON.parse(JSON.stringify(data.joinCorrections));
         if(shape && data.fillGradient)shape.fillGradient=JSON.parse(JSON.stringify(data.fillGradient));
         if(shape && ['Multiply','Screen'].includes(data.blendMode))shape.blendMode=data.blendMode;
         return shape;

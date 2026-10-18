@@ -1,7 +1,7 @@
 const Shapes=require('./shapes');
 const copy=p=>({x:p.x,y:p.y});
 const mix=(a,b,t)=>({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t});
-const supported=shape=>['Polygon','Spline','BezierSpline'].includes(shape.constructor.name);
+const supported=shape=>['Polygon','Polyline','Spline','BezierSpline'].includes(shape.constructor.name);
 
 // All geometry is in document coordinates. Cubics preserve existing Cardinal
 // and Bezier curves exactly; flattening is used only for scissors hit testing.
@@ -23,6 +23,14 @@ function pathGeometry(shape) {
             if(!after)continue;
             p1={x:p0.x+(p3.x-before.x)/6,y:p0.y+(p3.y-before.y)/6};
             p2={x:p3.x-(after.x-p0.x)/6,y:p3.y-(after.y-p0.y)/6};
+            const corrections=shape.joinCorrections?.[i];
+            if(corrections) {
+                const dx=p3.x-p0.x,dy=p3.y-p0.y;
+                const offset=v=>v.absolute?{x:Math.cos(rotation)*v.x-Math.sin(rotation)*v.y,y:Math.sin(rotation)*v.x+Math.cos(rotation)*v.y}
+                    :{x:dx*v.x-dy*v.y,y:dy*v.x+dx*v.y};
+                const a=offset(corrections[0]),b=offset(corrections[1]);
+                p1={x:p1.x+a.x,y:p1.y+a.y};p2={x:p2.x+b.x,y:p2.y+b.y};
+            }
         }
         segments.push({index:i,start:i,end:next,p0,p1,p2,p3});
     }
@@ -45,8 +53,9 @@ function segmentRuns(path,indices) {
     if(run.length)runs.push(run);
     return runs;
 }
-function curveFragment(shape,segments) {
+function curveFragment(shape,segments,forceBezier=false) {
     const points=[copy(segments[0].p0),...segments.map(s=>copy(s.p3))];
+    if(!forceBezier && shape.constructor.name==='Polyline')return require('./fill-style').copy(shape,new Shapes.Polyline(points,shape.strokeColor,shape.strokeWidth));
     const result=new Shapes.BezierSpline(points,null,shape.strokeColor,shape.strokeWidth);
     result.controlPoints=segments.flatMap(s=>[copy(s.p1),copy(s.p2)]);
     result.manuallyEditedControls=new Set(result.controlPoints.map((_,i)=>i));
@@ -72,6 +81,7 @@ function reconnect(path,removed) {
     const ids=path.anchors.map((_,i)=>i).filter(i=>!removed.has(i));
     if(ids.length<(path.closed?3:2))return [];
     if(path.closed)return [require('./fill-style').copy(path.shape,new Shapes.Polygon(ids.map(i=>copy(path.anchors[i])),path.shape.fillColor,path.shape.strokeColor,path.shape.strokeWidth))];
+    if(path.type==='Polyline')return [require('./fill-style').copy(path.shape,new Shapes.Polyline(ids.map(i=>copy(path.anchors[i])),path.shape.strokeColor,path.shape.strokeWidth))];
     const result=new Shapes.BezierSpline(ids.map(i=>copy(path.anchors[i])),null,path.shape.strokeColor,path.shape.strokeWidth);
     // Keep exact controls on untouched segments; new connections use generated handles.
     ids.slice(0,-1).forEach((id,i)=>{
@@ -100,7 +110,7 @@ function fitSelected(path,selected,tolerance) {
             for(const segment of fitted){segments.push(segment);keys.add('a:'+segments.length);}
         } else if(!included.has(index))segments.push(path.segments[index]);
     }
-    const shape=curveFragment(path.shape,segments);
+    const shape=curveFragment(path.shape,segments,true);
     shape.fillColor=path.shape.fillColor;
     return {shape,keys};
 }
@@ -110,7 +120,7 @@ function fitFragments(path,selected,tolerance) {
     for(const run of segmentRuns(path,included)) {
         const fitted=require('./curve-fit')([run[0].p0,...run.map(s=>s.p3)],tolerance);
         if(!fitted.length)continue;
-        const shape=curveFragment(path.shape,fitted);
+        const shape=curveFragment(path.shape,fitted,true);
         if(path.closed && run.length===path.segments.length)shape.fillColor=path.shape.fillColor;
         fragments.push(shape);
         for(const segment of run){removed.add(segment.start);removed.add(segment.end);}

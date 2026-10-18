@@ -198,7 +198,7 @@ test('whole-polygon fitting preserves closure and fill',()=>withController(c=>{
         finally {pdg.gfx.closeGraphicsPort(surface);}
     }
 }));
-test('Cmd/Ctrl+J fits point runs and falls back to the whole path without a selected run',()=>withController(c=>{
+test('Cmd/Ctrl+L fits point runs and falls back to the whole path without a selected run',()=>withController(c=>{
     const shape=bezier();select(c,shape,['c:0','a:1']);const before=c.drawing.serializeShape(shape),undo=c.undoStack.length;
     assert.ok(c.pointEditor.fitCurve());assert.strictEqual(c.undoStack.length,undo+1);
     c.undo();assert.deepStrictEqual(c.drawing.serializeShape(c.drawing.getShapes()[0]),before);
@@ -206,7 +206,7 @@ test('Cmd/Ctrl+J fits point runs and falls back to the whole path without a sele
         const current=c.drawing.getShapes()[0];current.selected=true;c.pointEditor.active=true;
         c.pointEditor.selection.set(current,new Set(['a:0','a:1','a:2']));
         const input=pdg.getInputManager();
-        for(const [code,down,modifiers] of [[modifier,true,mask],['KeyJ',true,mask],['KeyJ',false,mask],[modifier,false,0]]) {
+        for(const [code,down,modifiers] of [[modifier,true,mask],['KeyL',true,mask],['KeyL',false,mask],[modifier,false,0]]) {
             input.feed({kind:'key',code,down,modifiers});if(down)c.doKeyDown({keyCode:code});else c.doKeyUp({keyCode:code});
         }
         assert.notStrictEqual(c.drawing.getShapes()[0],current);

@@ -19,6 +19,6 @@ module.exports=function selectionReadout(shapes) {
     unrotated.rotation=0;
     const label=shape.isQuad?'Quadrilateral':({BezierSpline:'Bezier spline',NativeDrawing:'Drawing'}[type] || type);
     const count=type==='Spline'?Math.max(0,shape.points.length-2)
-        :['Polygon','BezierSpline'].includes(type)?shape.points.length:null;
+        :['Polygon','Polyline','BezierSpline'].includes(type)?shape.points.length:null;
     return `${label} · ${count===null?'':`${count}pts · `}${dimensions(getShapeBounds(unrotated))}`;
 };

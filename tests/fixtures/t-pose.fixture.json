@@ -1,0 +1,17 @@
+{
+  "name": "t-pose",
+  "smoothnessLevel": 2,
+  "canvas": [
+    1086,
+    1448
+  ],
+  "sha256": {
+    "svg": "43b1016dcf409a42a8969ba4796740fed0354ba52f98bc6b2185bb6b014df95c",
+    "inkSvg": "754ab26a3ff2a4aa758cf4dd3581546d88cb7336fbfe5255336f3b9e4bb7b3f3"
+  },
+  "networkVertices": 5625,
+  "fullPolygons": 380,
+  "inkPolygons": 25,
+  "fullNestedChildren": 666,
+  "inkNestedChildren": 217
+}

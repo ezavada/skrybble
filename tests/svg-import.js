@@ -10,12 +10,16 @@ const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-6,`${a} != ${b}`);
 const fixture=name=>path.join(__dirname,'fixtures',name);
 function withController(fn){const port=pdg.gfx.createOffscreenPort(new pdg.Rect(900,700)),c=new Controller({getEventManager:()=>pdg.evt},port);try{fn(c);}finally{c.destroy();pdg.getInputManager().feed({kind:'focusLost'});pdg.gfx.closeGraphicsPort(port);}}
 
-test('v5 full drawing and ink SVG retain exact editable vertices, canvas, paint and ordering',()=>{
-    const full=importer.readDocument(fixture('v5-figure.svg')),ink=importer.readDocument(fixture('v5-figure.ink.svg'));
-    const network=JSON.parse(fs.readFileSync(fixture('v5-ink-network.json'),'utf8'));
+test('t-pose full drawing and ink SVG retain exact editable vertices, canvas, paint and ordering',()=>{
+    const info=require('./fixtures/t-pose.fixture.json');
+    const hash=name=>require('crypto').createHash('sha256').update(fs.readFileSync(fixture(name))).digest('hex');
+    assert.strictEqual(hash(info.name+'.svg'),info.sha256.svg);
+    assert.strictEqual(hash(info.name+'.ink.svg'),info.sha256.inkSvg);
+    const full=importer.readDocument(fixture('t-pose.svg')),ink=importer.readDocument(fixture('t-pose.ink.svg'));
+    const network=JSON.parse(fs.readFileSync(fixture('t-pose.ink-network.json'),'utf8'));
     assert.deepStrictEqual(full.canvas,[1086,1448]);assert.deepStrictEqual(ink.canvas,full.canvas);
     assert.deepStrictEqual(full.importWarnings,[]);assert.deepStrictEqual(ink.importWarnings,[]);
-    assert.strictEqual(ink.shapes.length,42);assert.ok(full.shapes.length>ink.shapes.length);
+    assert.strictEqual(ink.shapes.length,25);assert.ok(full.shapes.length>ink.shapes.length);
     assert.deepStrictEqual(full.shapes.slice(-ink.shapes.length),ink.shapes);
     const largest=ink.shapes.reduce((a,b)=>a.data.points.length>b.data.points.length?a:b);
     assert.strictEqual(largest.type,'Polygon');assert.deepStrictEqual(largest.data.points,network.points.map(([x,y])=>({x,y})));
@@ -109,18 +113,18 @@ test('malformed XML, path data, invalid dimensions and entity declarations fail 
 });
 test('opening SVG preserves clipboard, resets undo and saves to a new editor filename',()=>withController(c=>{
     const original=new Shapes.Rectangle(0,0,20,20,'blue',null,0);c.drawing.addShape(original);original.selected=true;c.copySelectedShapes();
-    const clipboard=c.clipboard;assert.ok(c.openDrawingFile(fixture('v5-figure.ink.svg')));
-    assert.strictEqual(c.clipboard,clipboard);assert.strictEqual(c.undoStack.length,0);assert.ok(c.currentFilename.endsWith('v5-figure.ink.skrbl'));
-    assert.strictEqual(c.drawing.getShapeCount(),42);
+    const clipboard=c.clipboard;assert.ok(c.openDrawingFile(fixture('t-pose.ink.svg')));
+    assert.strictEqual(c.clipboard,clipboard);assert.strictEqual(c.undoStack.length,0);assert.ok(c.currentFilename.endsWith('t-pose.ink.skrbl'));
+    assert.strictEqual(c.drawing.getShapeCount(),25);
     const doc={fileFormat:'skrbl-v0.0.4',imageData:[],shapes:c.drawing.getShapes().map(s=>({type:s.constructor.name,data:c.drawing.serializeShape(s)}))};assert.deepStrictEqual(c.drawing.deserializeDocument(doc).map(s=>c.drawing.serializeShape(s)),c.drawing.getShapes().map(s=>c.drawing.serializeShape(s)));
 }));
 test('placing SVG keeps the document and canvas; placement is editable and undoable',()=>withController(c=>{
     const original=new Shapes.Rectangle(0,0,20,20,'blue',null,0);c.drawing.addShape(original);const canvas=c.navigation.getCanvas?c.navigation.getCanvas():null;
-    assert.ok(c.activateImageTool(fixture('v5-figure.ink.svg')));assert.strictEqual(c.drawing.getShapeCount(),1);
-    const manager=c.toolManager;manager.startDrawing(200,200,c.drawing.getShapeClasses());const group=manager.getCurrentShape();assert.strictEqual(group.children.length,42);
+    assert.ok(c.activateImageTool(fixture('t-pose.ink.svg')));assert.strictEqual(c.drawing.getShapeCount(),1);
+    const manager=c.toolManager;manager.startDrawing(200,200,c.drawing.getShapeClasses());const group=manager.getCurrentShape();assert.strictEqual(group.children.length,25);
     const center=group.getCenterPoint();near(center.x,200);near(center.y,200);
     c.saveUndoState('add shape');c.drawing.addShape(group);manager.finishCurrentDrawing();assert.strictEqual(c.drawing.getShapeCount(),2);
-    c.undo();assert.strictEqual(c.drawing.getShapeCount(),1);c.redo();assert.strictEqual(c.drawing.getShapes()[1].children.length,42);
+    c.undo();assert.strictEqual(c.drawing.getShapeCount(),1);c.redo();assert.strictEqual(c.drawing.getShapes()[1].children.length,25);
     if(canvas)assert.deepStrictEqual(c.navigation.getCanvas(),canvas);
 }));
 test('Open and Place surface limitations in the notification',()=>withController(c=>{

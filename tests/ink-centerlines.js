@@ -121,8 +121,8 @@ test('a qualifying wavy ribbon yields a curve with more than two anchors and at 
     assert.ok(c.pointEditor.fitCurve());const curves=c.drawing.getShapes().filter(s=>s instanceof Shapes.BezierSpline);
     assert.ok(curves.length>0);curves.forEach(assertEligible);
 }));
-const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/v5-ink-network.json'),'utf8'));
-test('the supplied v5 figure network preserves branching and cycles without tracing both sides of strokes',()=>withController(c=>{
+const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/t-pose.ink-network.json'),'utf8'));
+test('the t-pose ink network preserves branching and cycles without tracing both sides of strokes',()=>withController(c=>{
     const shape=new Shapes.Polygon(points(fixture.points),fixture.fillColor,null,0),lines=centerlines(shape.points);
     assert.ok(lines.length>10 && lines.length<1000);assert.ok(cycles(lines)>25);
     assert.ok(lines.every(line=>line.width>0 && Number.isFinite(line.width)));
@@ -146,7 +146,7 @@ test('the supplied v5 figure network preserves branching and cycles without trac
         const close=(mask,x,y)=>{for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++)if(x+dx>=0&&x+dx<w&&y+dy>=0&&y+dy<h&&mask[(y+dy)*w+x+dx])return true;return false;};
         for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(a[i]&&close(b,x,y))matchedA++;if(b[i]&&close(a,x,y))matchedB++;}
         assert.ok(matchedA/countA>.9,`Source coverage ${matchedA/countA}`);assert.ok(matchedB/countB>.9,`Trace precision ${matchedB/countB}`);
-        console.log(`v5 network: ${fixture.points.length} outline vertices -> ${curves.length} qualifying curves + ${fills.length} retained fills, ${cycles(lines)} source cycles, coverage ${(matchedA/countA).toFixed(3)}, precision ${(matchedB/countB).toFixed(3)}, ink mass ${(massB/massA).toFixed(3)}`);
+        console.log(`t-pose network: ${fixture.points.length} outline vertices -> ${curves.length} qualifying curves + ${fills.length} retained fills, ${cycles(lines)} source cycles, coverage ${(matchedA/countA).toFixed(3)}, precision ${(matchedB/countB).toFixed(3)}, ink mass ${(massB/massA).toFixed(3)}`);
     } finally {pdg.gfx.closeGraphicsPort(port);}
     const converted=artwork.map(s=>c.drawing.serializeShape(s));
     c.undo();assert.strictEqual(c.drawing.getShapeCount(),1);assert.deepStrictEqual(c.drawing.getShapes()[0].points,shape.points);

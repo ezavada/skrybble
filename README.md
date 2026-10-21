@@ -414,7 +414,7 @@ arcs), polygons, polylines, lines, rectangles, circles and ellipses become edita
 polygons or Bézier paths. Group transforms, viewBox alignment, inherited/inline
 paint styles and opacity are applied. Compound even-odd paths preserve holes;
 curved compound fills are approximated as editable polygons with separate strokes.
-The v5 full-color and ink SVGs import without warnings and retain their vertices.
+The t-pose full-color and ink SVG fixtures import without warnings and retain their vertices.
 
 Text becomes editable Text objects with font family, size, bold/italic, alphabetic
 baseline, text anchor and rotation. Linear and centered circular radial gradient
@@ -588,10 +588,11 @@ Each shape implements:
 ## Verification
 
 ```sh
-PDG_SOURCE=devel ./skrybble tests/smoke.js
-PDG_SOURCE=devel ./skrybble tests/unit.js
-PDG_SOURCE=devel ./skrybble tests/points.js
-PDG_SOURCE=devel ./skrybble tests/pdg-drawing.js
+for suite in smoke unit points bones cursors shutdown join-paths pdg-drawing \
+    ink-centerlines svg-import pdg-editable-import launch-conversion; do
+    PDG_SOURCE=devel ./skrybble "tests/$suite.js" || exit 1
+done
+node tests/launch-options.js
 python3 tests/test_runtime_selection.py
 PDG_SOURCE=devel ./tools/build-web.sh
 node tests/browser.cjs
@@ -603,6 +604,11 @@ grouping/ungrouping, text/undo/persistence, captured picker input, layout, and r
 pixels. The browser suite uses Chrome's debugging pipe with no npm dependencies.
 Set `CHROME` to your Chrome executable on non-macOS systems; optionally set
 `SKRYBBLE_SCREENSHOT` to save its final canvas screenshot.
+
+Default tests use the committed `t-pose` fixtures and
+`bad-ribbon`. Regenerate the derived PDG fixtures with
+`PDG_SOURCE=devel ./skrybble tools/generate-pose-fixtures.js`.
+Wider native corpus checks are opt-in with `PDG_POSE_DIR` or `PDG_R2_DIR`.
 
 ## Recent Updates
 
@@ -693,7 +699,7 @@ Open the pose converter's `.pdgdrawing` or `.drawing.json` files with Ctrl/Cmd+O
 or pass a file to the launcher:
 
 ```sh
-./skrybble ../v5-pose-library/drawings/t-pose-000-v5-tank-yoga-shaded.pdgdrawing
+./skrybble tests/fixtures/t-pose.flat.pdgdrawing
 ```
 
 Shift+I also accepts these files and places their polygons as a group in the
@@ -709,8 +715,7 @@ document beside the import and preserves page dimensions, leaving the source
 PDG file unchanged. Existing `.skrbl` files without canvas metadata use 1024 × 1024.
 
 The portable pose reader supports flat polygon snapshots v4/v5. A recursive
-reader also imports nested v4/v5/v6 drawings, including the `v5-pose-library/r2`
-files, as editable Groups containing polygons, lines and Cardinal/Bézier paths.
+reader also imports nested v4/v5/v6 drawings as editable Groups containing polygons, lines and Cardinal/Bézier paths.
 Shared drawing references become independent editable objects. Nested destination
 rectangles, affine transforms, opacity and supported gradients/blend modes are
 preserved. Select the imported group and use **Cmd/Ctrl+Shift+G** to ungroup it;

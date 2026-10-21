@@ -12,10 +12,12 @@ const send=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const {targetId}=await send('Target.createTarget',{url:'about:blank'});const {sessionId}=await send('Target.attachToTarget',{targetId,flatten:true});// Wait for a PDG draw frame, rather than Chrome's independent animation clock.
 const call=async(m,p)=>{
-    let frame;
-    if(m==='Input.dispatchKeyEvent')frame=(await send('Runtime.evaluate',{expression:'__skrybbleTestApp.drawingController._lastAnimationFrame',returnByValue:true},sessionId)).result.value;
     const result=await send(m,p,sessionId);
     if(m==='Input.dispatchKeyEvent') {
+        // Capture after Chrome acknowledges dispatch. A frame between the old
+        // pre-dispatch snapshot and the event could otherwise satisfy this wait
+        // before PDG processes the key, making modifier assertions intermittent.
+        const frame=(await send('Runtime.evaluate',{expression:'__skrybbleTestApp.drawingController._lastAnimationFrame',returnByValue:true},sessionId)).result.value;
         const settled=await send('Runtime.evaluate',{expression:`new Promise((resolve,reject)=>{const start=performance.now();const check=()=>{
             if(__skrybbleTestApp.drawingController._lastAnimationFrame!==${JSON.stringify(frame)})resolve(true);
             else if(performance.now()-start>5000)reject(Error('PDG did not process a keyboard frame'));
@@ -26,12 +28,10 @@ const call=async(m,p)=>{
 };const evalPage=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);return r.result.value;};
 await call('Page.enable');await call('Runtime.enable');await call('Emulation.setDeviceMetricsOverride',{width:1280,height:960,deviceScaleFactor:1,mobile:false});await call('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/'});
 let ready=false;for(let i=0;i<120;i++){await delay(250);const status=await evalPage('document.documentElement.dataset.status');if(status==='failed')throw Error(await evalPage('document.getElementById("status").textContent'));if(status==='ready'){ready=true;break;}}if(!ready)throw Error('Startup timed out');
-const poseRoot=process.env.PDG_POSE_DIR || path.resolve(__dirname,'../../v5-pose-library/drawings');
-const poseFile=path.join(poseRoot,'t-pose-000-v5-tank-yoga-shaded.pdgdrawing');
-if(fs.existsSync(poseFile)) {
+const poseFile=path.join(__dirname,'fixtures/t-pose.flat.pdgdrawing');
+{
     const bytes=fs.readFileSync(poseFile),base64=bytes.toString('base64');
-    const expected=JSON.parse(fs.readFileSync(poseFile.replace('.pdgdrawing','.drawing.json'),'utf8'));
-    const count=expected.layers.reduce((n,layer)=>n+layer.polygons.length,0);
+    const count=380;
     if(!await evalPage(`(()=> {
         const raw=atob(${JSON.stringify(base64)}),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
         FS.mkdirTree('/uploads');FS.writeFile('/uploads/pose.pdgdrawing',bytes);
@@ -416,7 +416,7 @@ await ctrlCommand('J');
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes()[0];return c.drawing.getShapeCount()===1&&s.constructor.name==='Spline'&&!!s.joinCorrections&&c.saveAs('/uploads/join.skrbl')&&c.openDrawingFile('/uploads/join.skrbl')&&!!c.drawing.getShapes()[0].joinCorrections;})()`))throw Error('Cardinal join/save/reopen failed');
 console.log('PASS: Ctrl+A objects and points, Ctrl+J line welding and Cardinal joins, undo and save/reopen');
 
-for(const [r2Name,r2Count] of [['r2-figure.pdgdrawing',1025],['r2-figure.ink.pdgdrawing',315]]) {
+for(const [r2Name,r2Count] of [['t-pose.nested.pdgdrawing',666],['t-pose.ink.nested.pdgdrawing',217]]) {
     const r2Bytes=fs.readFileSync(path.join(__dirname,'fixtures',r2Name)).toString('base64');
     if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;FS.writeFile('/uploads/r2.pdgdrawing',Uint8Array.from(atob(${JSON.stringify(r2Bytes)}),ch=>ch.charCodeAt(0)));
         if(!c.openDrawingFile('/uploads/r2.pdgdrawing'))return false;const s=c.drawing.getShapes()[0];c.dismissMessage();c.selectAll();
@@ -435,20 +435,20 @@ for(const [r2Name,r2Count] of [['r2-figure.pdgdrawing',1025],['r2-figure.ink.pdg
         const x=curve.points[0].x;c.updateShapeEndpoint(curve,0,x+.5,curve.points[0].y);if(curve.points[0].x!==x+.5)return false;
         const before=c.drawing.exportShapes();return c.saveAs('/uploads/r2-edit.skrbl')&&c.openDrawingFile('/uploads/r2-edit.skrbl')&&c.drawing.exportShapes()===before;})()`))throw Error('R2 point editing or editable save/reopen failed');
 }
-console.log('PASS: r2 full and ink editable import, Ctrl+Shift+G, undo, point editing and save/reopen');
+console.log('PASS: nested t-pose full and ink editable import, Ctrl+Shift+G, undo, point editing and save/reopen');
 
-const svgFull=fs.readFileSync(path.join(__dirname,'fixtures/v5-figure.svg'),'utf8');
-const svgInk=fs.readFileSync(path.join(__dirname,'fixtures/v5-figure.ink.svg'),'utf8');
+const svgFull=fs.readFileSync(path.join(__dirname,'fixtures/t-pose.svg'),'utf8');
+const svgInk=fs.readFileSync(path.join(__dirname,'fixtures/t-pose.ink.svg'),'utf8');
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;FS.mkdirTree('/uploads');
     FS.writeFile('/uploads/figure.svg',${JSON.stringify(svgFull)});FS.writeFile('/uploads/figure.ink.svg',${JSON.stringify(svgInk)});
-    if(!c.openDrawingFile('/uploads/figure.svg')||c.drawing.getShapeCount()!==535||c.importWarnings.length)return false;
+    if(!c.openDrawingFile('/uploads/figure.svg')||c.drawing.getShapeCount()!==380||c.importWarnings.length)return false;
     if(c.navigation.width!==1086||c.navigation.height!==1448||c.currentFilename!=='/uploads/figure.skrbl')return false;
-    if(!c.activateImageTool('/uploads/figure.ink.svg')||c.drawing.getShapeCount()!==535)return false;
+    if(!c.activateImageTool('/uploads/figure.ink.svg')||c.drawing.getShapeCount()!==380)return false;
     c.dismissMessage();return true;})()`))throw Error('SVG Open/Place preparation failed');
 await click(500,500);
-if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes().at(-1);return c.drawing.getShapeCount()===536&&s.constructor.name==='Group'&&s.children.length===42&&c.undoStack.length===1;})()`))throw Error('SVG placement did not create an editable group');
+if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,s=c.drawing.getShapes().at(-1);return c.drawing.getShapeCount()===381&&s.constructor.name==='Group'&&s.children.length===25&&c.undoStack.length===1;})()`))throw Error('SVG placement did not create an editable group');
 await ctrlCommand('Z');
-if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapeCount()===535'))throw Error('SVG placement undo failed');
+if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapeCount()===380'))throw Error('SVG placement undo failed');
 const svgComparison=await call('Runtime.evaluate',{awaitPromise:true,returnByValue:true,expression:`(async()=>{
     const c=__skrybbleTestApp.drawingController,w=272,h=362,reference=document.createElement('canvas');reference.width=w;reference.height=h;
     const ctx=reference.getContext('2d'),image=new Image(),url=URL.createObjectURL(new Blob([${JSON.stringify(svgFull)}],{type:'image/svg+xml'}));
@@ -474,7 +474,7 @@ if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;FS.writeFi
     c.dismissMessage();return c.saveAs('/uploads/paint.skrbl')&&c.openDrawingFile('/uploads/paint.skrbl')&&!!c.drawing.getShapes()[1].fillGradient;})()`))throw Error('SVG text, gradients, blend modes, warnings or editable save/reopen failed');
 console.log('PASS: SVG text, gradients, blend modes, unsupported-feature reporting and editable save/reopen');
 
-const inkFixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/v5-ink-network.json'),'utf8'));
+const inkFixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/t-pose.ink-network.json'),'utf8'));
 await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,S=c.drawing.getShapeClasses(),fixture=${JSON.stringify(inkFixture)};
     c.pointEditor.clear();c.drawing.clearShapes();c.undoStack=[];c.redoStack=[];c.navigation.setCanvas(...fixture.canvas);
     c.toolManager.setTool('select');const shape=new S.Polygon(fixture.points.map(([x,y])=>({x,y})),fixture.fillColor,null,0);
@@ -488,13 +488,13 @@ await ctrlCommand('L');
 if(!await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,curves=c.drawing.getShapes();
     const strokes=curves.filter(s=>s.constructor.name==='BezierSpline'),fills=curves.filter(s=>s.constructor.name==='Polygon');
     return c.undoStack.length===1 && strokes.length>10 && fills.length>0 && strokes.every(s=>s.points.length>=2 && s.fillColor===null && s.strokeColor==='#202020' && s.strokeWidth>0) &&
-        fills.every(s=>s.fillColor==='#202020' && s.strokeWidth===0) && strokes.reduce((sum,s)=>sum+s.points.length,0)<4655;})()`))throw Error('Ctrl+L did not recover qualifying centerlines and preserve rejected ink regions');
+        fills.every(s=>s.fillColor==='#202020' && s.strokeWidth===0) && strokes.reduce((sum,s)=>sum+s.points.length,0)<2812.5;})()`))throw Error('Ctrl+L did not recover qualifying centerlines and preserve rejected ink regions');
 await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController;c.pointEditor.clear();c.drawing.getShapes().forEach(s=>s.selected=false);return true;})()`);
 const inkPreview=await shot();
 if(process.env.SKRYBBLE_INK_SCREENSHOT)fs.writeFileSync(process.env.SKRYBBLE_INK_SCREENSHOT,Buffer.from(inkPreview,'base64'));
 await ctrlCommand('Z');
-if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapeCount()===1 && __skrybbleTestApp.drawingController.drawing.getShapes()[0].points.length===9310'))throw Error('Ink tracing undo did not restore the original polygon');
-console.log('PASS: v5 ink centerline conversion, inferred widths, render and undo');
+if(!await evalPage('__skrybbleTestApp.drawingController.drawing.getShapeCount()===1 && __skrybbleTestApp.drawingController.drawing.getShapes()[0].points.length===5625'))throw Error('Ink tracing undo did not restore the original polygon');
+console.log('PASS: t-pose ink centerline conversion, inferred widths, render and undo');
 
 const badRibbon=fs.readFileSync(path.join(__dirname,'fixtures/bad-ribbon.pdgdrawing')).toString('base64');
 await evalPage(`(()=>{const c=__skrybbleTestApp.drawingController,bytes=Uint8Array.from(atob(${JSON.stringify(badRibbon)}),ch=>ch.charCodeAt(0));
